@@ -1,0 +1,94 @@
+# Error Codes (A pipeline)
+
+A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 하나를 사용합니다.
+(확장 가능하지만, MVP에서는 이 목록을 우선 사용)
+
+## 공통 규칙
+
+- `collection_status.<stage>.status = "FAILED"` 면 `error_code` 필수
+- 가능하면 `retryable`을 함께 채웁니다.
+
+---
+
+## 인증/권한
+
+- `ASSUME_ROLE_FAILED`  
+  대상 계정 Role Assume 실패 (trust/external id/권한/정책 문제)
+
+- `ACCESS_DENIED`  
+  AWS API 호출 권한 부족 (예: cloudtrail:LookupEvents, config:GetResourceConfigHistory)
+
+- `INVALID_EXTERNAL_ID`  
+  External ID 불일치로 AssumeRole 거부된 것으로 추정되는 경우
+
+---
+
+## 호출/쿼리/쓰로틀링
+
+- `THROTTLED`  
+  AWS API Throttling (재시도 필요)
+
+- `RATE_LIMITED`  
+  호출량 제한(서비스별)로 실패 (재시도 필요)
+
+- `NETWORK_ERROR`  
+  네트워크/일시 장애(재시도 필요)
+
+---
+
+## Trigger / 입력(고객 선택형 트리거 포함)
+
+- `INVALID_PAYLOAD`  
+  run_job(payload) 입력이 필수값 누락/형식 오류
+
+- `TRIGGER_CATALOG_NOT_FOUND`  
+  selector.mode=CATALOG 인데 catalog/pack/item을 찾지 못함(설정 오류)
+
+- `TRIGGER_PATTERN_INVALID`  
+  CUSTOM_PATTERN JSON이 파싱/검증에 실패
+
+- `TRIGGER_PATTERN_TOO_BROAD`  
+  너무 광범위한 패턴(폭주 위험)으로 정책상 거부
+
+---
+
+## CloudTrail
+
+- `CLOUDTRAIL_LOOKUP_FAILED`  
+  LookupEvents 실패
+
+- `CLOUDTRAIL_EVENT_PARSE_FAILED`  
+  CloudTrailEvent(JSON string) 파싱 실패
+
+- `CLOUDTRAIL_UNAVAILABLE`  
+  CloudTrail 이벤트 조회 불가(계정/리전 정책상)
+
+---
+
+## AWS Config
+
+- `CONFIG_GET_HISTORY_FAILED`  
+  get_resource_config_history 실패
+
+- `CONFIG_DISABLED`  
+  Config Recorder/Delivery 비활성 (정책에 따라 NA로도 처리 가능)
+
+- `CONFIG_NOT_SUPPORTED`  
+  해당 resource_type이 Config에서 조회 불가
+
+---
+
+## 저장/검증
+
+- `S3_PUT_FAILED`  
+  S3 저장 실패
+
+- `SCHEMA_VALIDATION_FAILED`  
+  스키마 검증 실패(버그 가능성 높음)
+
+---
+
+## retryable 권장값(가이드)
+
+- 재시도 O(대체로): `THROTTLED`, `RATE_LIMITED`, `NETWORK_ERROR`, 일시적 `S3_PUT_FAILED`
+- 재시도 X(대체로): `ASSUME_ROLE_FAILED`, `ACCESS_DENIED`, `INVALID_PAYLOAD`, `SCHEMA_VALIDATION_FAILED`, `TRIGGER_*`

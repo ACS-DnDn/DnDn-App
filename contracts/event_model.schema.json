@@ -1,0 +1,883 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dndn.example/contracts/event_model.schema.json",
+  "title": "DnDn Event Model (EVENT only)",
+  "type": "object",
+  "description": "EVENT-only normalized JSON produced by A. This schema is standalone and enforces meta.type=EVENT and meta.trigger presence.",
+  "required": [
+    "meta",
+    "collection_status",
+    "events",
+    "resources"
+  ],
+  "properties": {
+    "meta": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/meta"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "EVENT"
+            }
+          },
+          "required": [
+            "type",
+            "trigger"
+          ]
+        }
+      ]
+    },
+    "collection_status": {
+      "$ref": "#/$defs/collection_status"
+    },
+    "events": {
+      "type": "array",
+      "description": "Normalized CloudTrail management WRITE events in the time_range (and/or event window).",
+      "items": {
+        "$ref": "#/$defs/cloudtrail_event_normalized"
+      },
+      "default": []
+    },
+    "resources": {
+      "type": "array",
+      "description": "Primary reporting unit. Events are grouped by resource (resource_type/resource_id[/region]).",
+      "items": {
+        "$ref": "#/$defs/resource_group"
+      },
+      "default": []
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Reserved for non-MVP fields (stats, trigger catalog hints, extra aggregations, experimental fields). Not validated strictly.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "schema_version": {
+      "type": "string",
+      "description": "Semantic version of the contracts schema (e.g., 0.2.0).",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": [
+        "0.2.0"
+      ]
+    },
+    "job_type_enum": {
+      "type": "string",
+      "enum": [
+        "WEEKLY",
+        "EVENT"
+      ],
+      "description": "WEEKLY: scheduled collection for a time period; EVENT: on-demand windowed collection around a trigger."
+    },
+    "status_enum": {
+      "type": "string",
+      "enum": [
+        "OK",
+        "FAILED",
+        "NA",
+        "PARTIAL"
+      ],
+      "description": "OK: successful; FAILED: error; NA: not applicable (service off/no access/no data); PARTIAL: partial success."
+    },
+    "na_reason_enum": {
+      "type": "string",
+      "enum": [
+        "SERVICE_DISABLED",
+        "PERMISSION_DENIED",
+        "NO_DATA",
+        "REGION_DISABLED",
+        "NOT_SUPPORTED",
+        "OUT_OF_SCOPE",
+        "UNKNOWN"
+      ],
+      "description": "Standard reasons for NA. See contracts/na_rules.md for wording rules."
+    },
+    "s3_uri": {
+      "type": "string",
+      "format": "uri",
+      "description": "S3 URI, e.g., s3://bucket/prefix/object"
+    },
+    "account_id": {
+      "type": "string",
+      "pattern": "^\\d{12}$",
+      "description": "AWS Account ID (12 digits)."
+    },
+    "region": {
+      "type": "string",
+      "minLength": 3,
+      "description": "AWS region code (e.g., ap-northeast-2)."
+    },
+    "time_range": {
+      "type": "object",
+      "description": "Inclusive start, exclusive end is recommended. Use ISO 8601 date-time with timezone offset (e.g., +09:00) or Z.",
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string",
+          "default": "Asia/Seoul"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trigger_selector": {
+      "type": "object",
+      "description": "Optional trigger definition info. Use this when EVENT is driven by tenant-selected catalog items or custom patterns.",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "CATALOG",
+            "CUSTOM_EVENT",
+            "CUSTOM_PATTERN",
+            "MANUAL_API",
+            "UNKNOWN"
+          ],
+          "description": "CATALOG: selected from provided trigger catalog; CUSTOM_EVENT: eventSource+eventName(s); CUSTOM_PATTERN: full EventBridge pattern; MANUAL_API: on-demand call."
+        },
+        "catalog": {
+          "type": "object",
+          "description": "When mode=CATALOG, identifies the catalog item.",
+          "properties": {
+            "catalog_id": {
+              "type": "string",
+              "description": "Catalog identifier (e.g., 'default')."
+            },
+            "pack_id": {
+              "type": "string",
+              "description": "Trigger pack id (e.g., 'PACK_EKS')."
+            },
+            "item_id": {
+              "type": "string",
+              "description": "Trigger item id (e.g., 'EKS_CLUSTER_UPDATE')."
+            },
+            "version": {
+              "type": "string",
+              "description": "Catalog version."
+            }
+          },
+          "additionalProperties": false
+        },
+        "match": {
+          "type": "object",
+          "description": "Normalized match definition (recommended).",
+          "properties": {
+            "event_source": {
+              "type": "string",
+              "description": "e.g., eks.amazonaws.com"
+            },
+            "event_names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "event_pattern_hash": {
+          "type": "string",
+          "description": "SHA-256 hash of the EventBridge pattern JSON (hex).",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "event_pattern_s3_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri",
+          "description": "Pointer to stored event pattern JSON, if provided by tenant (custom pattern)."
+        },
+        "rule_name": {
+          "type": "string",
+          "description": "EventBridge rule name, if applicable."
+        },
+        "rule_arn": {
+          "type": "string",
+          "description": "EventBridge rule ARN, if applicable."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-form operator note (avoid secrets)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "trigger": {
+      "type": "object",
+      "description": "Trigger metadata for EVENT type (and optionally for WEEKLY scheduler runs).",
+      "required": [
+        "source",
+        "received_at"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "EVENTBRIDGE",
+            "SQS",
+            "CRONJOB",
+            "MANUAL",
+            "API",
+            "SCHEDULER"
+          ],
+          "description": "Where this job was triggered from."
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the trigger payload was received by the worker."
+        },
+        "event_id": {
+          "type": "string",
+          "description": "Trigger event id (e.g., EventBridge event id) if available."
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Trigger time (usually the event's time)."
+        },
+        "detail_type": {
+          "type": "string"
+        },
+        "correlation_id": {
+          "type": "string",
+          "description": "Stable correlation id across systems, if provided."
+        },
+        "raw_event_s3_uri": {
+          "type": "string",
+          "format": "uri",
+          "description": "Pointer to stored raw trigger event payload, if stored."
+        },
+        "selector": {
+          "$ref": "#/$defs/trigger_selector"
+        }
+      },
+      "additionalProperties": false
+    },
+    "collector": {
+      "type": "object",
+      "description": "Collector implementation identity for reproducibility.",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "examples": [
+            "dndn-collector"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "examples": [
+            "0.3.2"
+          ]
+        },
+        "git_sha": {
+          "type": "string"
+        },
+        "build_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "runtime": {
+          "type": "string",
+          "examples": [
+            "python3.12"
+          ]
+        },
+        "rule_set_version": {
+          "type": "string",
+          "description": "Version of filtering/extraction rules used for this run."
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Pointers to raw/normalized artifacts stored by A. B can package these into evidence_bundle.zip.",
+      "required": [
+        "raw_prefix_s3_uri",
+        "normalized_prefix_s3_uri"
+      ],
+      "properties": {
+        "raw_prefix_s3_uri": {
+          "$ref": "#/$defs/s3_uri"
+        },
+        "normalized_prefix_s3_uri": {
+          "$ref": "#/$defs/s3_uri"
+        },
+        "job_payload_s3_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri",
+          "description": "Optional pointer to stored run_job input payload."
+        }
+      },
+      "additionalProperties": false
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "type",
+        "run_id",
+        "account_id",
+        "regions",
+        "time_range",
+        "generated_at",
+        "collector",
+        "evidence"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schema_version"
+        },
+        "type": {
+          "$ref": "#/$defs/job_type_enum"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 8,
+          "description": "Unique id for this collection run. Recommended: ULID/UUIDv7."
+        },
+        "account_id": {
+          "$ref": "#/$defs/account_id"
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          },
+          "minItems": 1,
+          "description": "Regions attempted for CloudTrail/Config queries. Ordering should be stable (sorted)."
+        },
+        "time_range": {
+          "$ref": "#/$defs/time_range"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "collector": {
+          "$ref": "#/$defs/collector"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "trigger": {
+          "$ref": "#/$defs/trigger"
+        },
+        "partition": {
+          "type": "object",
+          "description": "Optional partitioning hints used in S3 paths (year/week or year/month/day).",
+          "properties": {
+            "year": {
+              "type": "integer",
+              "minimum": 1970
+            },
+            "week": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 53
+            },
+            "month": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "day": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "stage_status": {
+      "type": "object",
+      "description": "Status for each pipeline stage. 'NA' must include na_reason. 'FAILED' must include error_code.",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/status_enum"
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Standardized error code. See contracts/error_codes.md."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable context for debugging (not for end-user report)."
+        },
+        "na_reason": {
+          "$ref": "#/$defs/na_reason_enum"
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Hint whether retry is expected to succeed."
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NA"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "na_reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAILED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "error_code"
+            ]
+          }
+        }
+      ]
+    },
+    "collection_status": {
+      "type": "object",
+      "required": [
+        "assume_role",
+        "cloudtrail",
+        "config",
+        "normalized"
+      ],
+      "properties": {
+        "assume_role": {
+          "$ref": "#/$defs/stage_status"
+        },
+        "cloudtrail": {
+          "$ref": "#/$defs/stage_status"
+        },
+        "config": {
+          "$ref": "#/$defs/stage_status"
+        },
+        "normalized": {
+          "$ref": "#/$defs/stage_status"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resource_ref": {
+      "type": "object",
+      "description": "Resource identity extracted from events or explicit trigger fields.",
+      "required": [
+        "resource_type",
+        "resource_id"
+      ],
+      "properties": {
+        "resource_type": {
+          "type": "string",
+          "description": "Preferred: AWS Config type notation (e.g., AWS::EKS::Cluster)."
+        },
+        "resource_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arn": {
+          "type": "string"
+        },
+        "account_id": {
+          "$ref": "#/$defs/account_id"
+        },
+        "region": {
+          "$ref": "#/$defs/region"
+        }
+      },
+      "additionalProperties": false
+    },
+    "user_identity": {
+      "type": "object",
+      "description": "Subset of CloudTrail userIdentity used for report attribution.",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "arn": {
+          "type": "string"
+        },
+        "principal_id": {
+          "type": "string"
+        },
+        "account_id": {
+          "$ref": "#/$defs/account_id"
+        },
+        "user_name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "cloudtrail_raw_ref": {
+      "type": "object",
+      "description": "Pointers to raw CloudTrail records stored in S3.",
+      "properties": {
+        "lookup_event_s3_uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "cloudtrail_event_s3_uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cloudtrail_event_normalized": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "event_time",
+        "aws_region",
+        "event_source",
+        "event_name",
+        "read_only",
+        "resources",
+        "raw"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "CloudTrail eventID (or derived unique id if missing)."
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ingested_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "aws_region": {
+          "$ref": "#/$defs/region"
+        },
+        "event_source": {
+          "type": "string",
+          "description": "e.g., eks.amazonaws.com"
+        },
+        "event_name": {
+          "type": "string",
+          "description": "e.g., CreateCluster"
+        },
+        "read_only": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "CloudTrail readOnly field if available."
+        },
+        "management_event": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "event_category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "e.g., Management, Data (if available)."
+        },
+        "user_identity": {
+          "$ref": "#/$defs/user_identity"
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_ref"
+          },
+          "description": "Resources extracted from CloudTrail resources + parsed CloudTrailEvent (requestParameters/responseElements).",
+          "default": []
+        },
+        "raw": {
+          "$ref": "#/$defs/cloudtrail_raw_ref"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "event_link": {
+      "type": "object",
+      "description": "Lightweight link to an event (avoid duplicating full event object under resources).",
+      "required": [
+        "event_id"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "event_name": {
+          "type": "string"
+        },
+        "event_source": {
+          "type": "string"
+        },
+        "user_arn": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "change_summary": {
+      "type": "object",
+      "properties": {
+        "first_event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_event_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "event_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "json_patch_op": {
+      "type": "object",
+      "required": [
+        "op",
+        "path"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "add",
+            "remove",
+            "replace",
+            "move",
+            "copy",
+            "test"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "config_join": {
+      "type": "object",
+      "description": "AWS Config before/after join for this resource (best-effort).",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/status_enum"
+        },
+        "before": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Config snapshot before the change (nullable)."
+        },
+        "after": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Config snapshot after the change (nullable)."
+        },
+        "before_s3_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "after_s3_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "diff": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/json_patch_op"
+          }
+        },
+        "collected_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "na_reason": {
+          "$ref": "#/$defs/na_reason_enum"
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NA"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "na_reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAILED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "error_code"
+            ]
+          }
+        }
+      ]
+    },
+    "resource_group": {
+      "type": "object",
+      "description": "Resource-centric grouping. This is the main unit B uses to build narratives.",
+      "required": [
+        "key",
+        "resource",
+        "events"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Stable grouping key."
+        },
+        "resource": {
+          "$ref": "#/$defs/resource_ref"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event_link"
+          },
+          "default": []
+        },
+        "change_summary": {
+          "$ref": "#/$defs/change_summary"
+        },
+        "config": {
+          "$ref": "#/$defs/config_join"
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

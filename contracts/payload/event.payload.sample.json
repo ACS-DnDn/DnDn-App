@@ -1,0 +1,30 @@
+{
+  "account_id": "123456789012",
+  "assume_role": {
+    "external_id": "dndn-extid-example",
+    "role_arn": "arn:aws:iam::123456789012:role/DnDnCollectorReadRole"
+  },
+  "event_time": "2026-02-24T10:30:00+09:00",
+  "hint": {
+    "resource": {
+      "region": "ap-northeast-2",
+      "resource_id": "my-eks-cluster",
+      "resource_type": "AWS::EKS::Cluster"
+    }
+  },
+  "regions": [
+    "ap-northeast-2"
+  ],
+  "rule_set_version": "eks-mvp-0.1",
+  "run_id": "01J0EVENTULID5678",
+  "s3": {
+    "bucket": "dndn-data",
+    "prefix": "account_id=123456789012/type=EVENT/year=2026/month=02/day=24/run_id=01J0EVENTULID5678"
+  },
+  "trigger": {
+    "event_id": "evt-bridge-id-abc",
+    "source": "EVENTBRIDGE"
+  },
+  "type": "EVENT",
+  "window_minutes": 60
+}

@@ -1,0 +1,169 @@
+{
+  "$id": "https://dndn.example/contracts/job_payload.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "WEEKLY"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "time_range"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "EVENT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "event_time",
+          "window_minutes"
+        ]
+      }
+    }
+  ],
+  "description": "Standard input payload to run_job(payload). Keeps trigger layer independent from worker logic.",
+  "properties": {
+    "account_id": {
+      "pattern": "^\\d{12}$",
+      "type": "string"
+    },
+    "assume_role": {
+      "additionalProperties": false,
+      "properties": {
+        "external_id": {
+          "type": "string"
+        },
+        "role_arn": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "role_arn",
+        "external_id"
+      ],
+      "type": "object"
+    },
+    "event_time": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "hint": {
+      "additionalProperties": false,
+      "properties": {
+        "resource": {
+          "additionalProperties": false,
+          "properties": {
+            "arn": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "resource_id": {
+              "type": "string"
+            },
+            "resource_type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "regions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "rule_set_version": {
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 8,
+      "type": "string"
+    },
+    "s3": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket",
+        "prefix"
+      ],
+      "type": "object"
+    },
+    "time_range": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "additionalProperties": true,
+      "description": "Optional pass-through trigger info (e.g., EventBridge event id).",
+      "type": "object"
+    },
+    "type": {
+      "enum": [
+        "WEEKLY",
+        "EVENT"
+      ],
+      "type": "string"
+    },
+    "window_minutes": {
+      "maximum": 1440,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "type",
+    "account_id",
+    "regions",
+    "assume_role",
+    "s3"
+  ],
+  "title": "DnDn Collector Job Payload",
+  "type": "object"
+}

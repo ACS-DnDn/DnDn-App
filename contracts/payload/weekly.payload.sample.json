@@ -1,0 +1,22 @@
+{
+  "account_id": "123456789012",
+  "assume_role": {
+    "external_id": "dndn-extid-example",
+    "role_arn": "arn:aws:iam::123456789012:role/DnDnCollectorReadRole"
+  },
+  "regions": [
+    "ap-northeast-2"
+  ],
+  "rule_set_version": "eks-mvp-0.1",
+  "run_id": "01J0EXAMPLEULID1234",
+  "s3": {
+    "bucket": "dndn-data",
+    "prefix": "account_id=123456789012/type=WEEKLY/year=2026/week=09/run_id=01J0EXAMPLEULID1234"
+  },
+  "time_range": {
+    "end": "2026-03-02T00:00:00+09:00",
+    "start": "2026-02-23T00:00:00+09:00",
+    "timezone": "Asia/Seoul"
+  },
+  "type": "WEEKLY"
+}
