@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="221.4375" height="100" viewBox="-6 0 221.4375 100" style="background-color: transparent;">
+
+  <!-- D1 -->
+  <text id="bg1" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#ffffff" stroke="#ffffff" stroke-width="10" stroke-linejoin="round" x="0" opacity="0">D</text>
+  <text id="fg1" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#228BE6" stroke="#228BE6" stroke-width="3" x="0" opacity="0">D</text>
+
+  <!-- n1 -->
+  <text id="bg2" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#ffffff" stroke="#ffffff" stroke-width="10" stroke-linejoin="round" x="43.609375" opacity="0">n</text>
+  <text id="fg2" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#0d1117" stroke="#0d1117" stroke-width="3" x="43.609375" opacity="0">n</text>
+
+  <!-- D2 -->
+  <text id="bg3" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#ffffff" stroke="#ffffff" stroke-width="10" stroke-linejoin="round" x="87.21875" opacity="0">D</text>
+  <text id="fg3" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#228BE6" stroke="#228BE6" stroke-width="3" x="87.21875" opacity="0">D</text>
+
+  <!-- n2 -->
+  <text id="bg4" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#ffffff" stroke="#ffffff" stroke-width="10" stroke-linejoin="round" x="130.828125" opacity="0">n</text>
+  <text id="fg4" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700"
+        fill="#0d1117" stroke="#0d1117" stroke-width="3" x="130.828125" opacity="0">n</text>
+
+  <!-- 커서 -->
+  <rect id="cursor" rx="1" fill="#228BE6" x="0" y="16.390625" width="11" height="97.4375"/>
+
+  <script><![CDATA[
+    const CHAR_X    = [0, 43.609375, 87.21875, 130.828125];
+    const CURSOR_X  = [0, 43.609375, 87.21875, 130.828125, 194.4375];
+    const TYPE_GAP  = 100;   // 타이핑 간격 ms
+    const HOLD_MS   = 30000; // 완성 후 대기
+    const WAIT_MS   = 1000;  // 지운 후 대기
+    const BLINK_MS  = 500;   // 커서 깜빡임 반주기
+
+    const chars  = [1,2,3,4].map(i => [
+      document.getElementById('bg'+i),
+      document.getElementById('fg'+i)
+    ]);
+    const cursor = document.getElementById('cursor');
+
+    let blinkTimer = null;
+    let blinkState = true;
+
+    function setCursorX(idx) {
+      cursor.setAttribute('x', CURSOR_X[idx]);
+    }
+    function showCursor() {
+      cursor.setAttribute('opacity', '1');
+    }
+    function startBlink() {
+      blinkState = true;
+      showCursor();
+      blinkTimer = setInterval(() => {
+        blinkState = !blinkState;
+        cursor.setAttribute('opacity', blinkState ? '1' : '0');
+      }, BLINK_MS);
+    }
+    function stopBlink() {
+      if (blinkTimer) { clearInterval(blinkTimer); blinkTimer = null; }
+      showCursor();
+    }
+    function showChar(idx, visible) {
+      chars[idx].forEach(el => el.setAttribute('opacity', visible ? '1' : '0'));
+    }
+
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+
+    async function run() {
+      while (true) {
+        // 초기화
+        chars.forEach((_, i) => showChar(i, false));
+        setCursorX(0);
+        showCursor();
+
+        await sleep(300); // 시작 전 잠깐 대기
+
+        // 타이핑
+        stopBlink();
+        for (let i = 0; i < 4; i++) {
+          showChar(i, true);
+          setCursorX(i + 1);
+          await sleep(TYPE_GAP);
+        }
+
+        // 완성 후 깜빡이며 대기
+        startBlink();
+        await sleep(HOLD_MS);
+        stopBlink();
+
+        // 삭제 (역순)
+        for (let i = 3; i >= 0; i--) {
+          showChar(i, false);
+          setCursorX(i);
+          await sleep(TYPE_GAP);
+        }
+
+        // 지운 후 깜빡이며 대기
+        startBlink();
+        await sleep(WAIT_MS);
+        stopBlink();
+      }
+    }
+
+    run();
+  ]]></script>
+</svg>

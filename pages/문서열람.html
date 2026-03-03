@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DnDn — 문서 열람</title>
+  <link rel="stylesheet" href="../assets/css/pretendard.css">
+  <link rel="stylesheet" href="../assets/css/theme.css">
+  <style>
+    :root {
+      --sidebar-w: 300px;
+    }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Pretendard',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+    /* ── 네비 ── */
+    .topnav { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); background: var(--bg-nav); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; z-index: 300; }
+    .menu-btn { width: 40px; height: 40px; border-radius: 8px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s; padding: 0; color: var(--mint); }
+    .menu-btn:hover { background: var(--mint-soft); }
+    .menu-btn svg { transform: translateY(1px); }
+    .nav-logo-obj { height: 35px; width: auto; display: block; flex-shrink: 0; pointer-events: none; transform: translateY(-4px); background: transparent; }
+    #nav-logo-dark { display: none; }
+    :root.dark #nav-logo-light { display: none; }
+    :root.dark #nav-logo-dark  { display: block; }
+    .nav-title { margin-left: 100px; font-size: 14px; font-weight: 600; color: var(--text-sub); letter-spacing: 0.3px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100vw - 440px); }
+    .nav-title .sep { font-weight: 400; opacity: 0.45; margin: 0 6px; }
+    .nav-title .crumb-cur { color: var(--text); }
+    .topnav-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+    .profile-info { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+    .profile-name { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; }
+    .profile-role { font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.2; }
+    .divider-v { width: 1px; height: 22px; background: var(--text-muted); opacity: 0.3; flex-shrink: 0; }
+    .company-logo { height: 26px; width: auto; border-radius: 6px; flex-shrink: 0; }
+    .company-name { font-size: 13.5px; font-weight: 700; color: var(--text); }
+
+    /* ── 사이드바 ── */
+    .sidebar { position: fixed; top: var(--nav-h); left: 0; width: 220px; height: calc(100vh - var(--nav-h)); background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 200; transform: translateX(-220px); transition: transform 0.25s cubic-bezier(0.4,0,0.2,1); box-shadow: 4px 0 20px rgba(0,0,0,0.08); }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-nav { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+    .nav-section-label { font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: 1.2px; text-transform: uppercase; padding: 12px 10px 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--text-sub); cursor: pointer; transition: all 0.15s; text-decoration: none; }
+    .nav-item:hover { color: var(--mint); }
+    .nav-item.active { background: var(--mint-soft); color: var(--mint); font-weight: 600; }
+    .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+    .nav-item.active .nav-icon, .nav-item:hover .nav-icon { opacity: 1; }
+    .nav-group .nav-sub { display: flex; flex-direction: column; gap: 0; margin: 0 0 0 44px; padding: 0 0 0 6px; border-left: 2px solid var(--border-med); max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease, margin 0.22s ease; }
+    .nav-group:hover .nav-sub { max-height: 100px; opacity: 1; padding: 1px 0 1px 6px; margin: -4px 0 4px 44px; }
+    .nav-sub-item { display: flex; align-items: center; padding: 5px 12px 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--text-sub); cursor: pointer; transition: all 0.15s; text-decoration: none; }
+    .nav-sub-item:hover { color: var(--mint); }
+    .nav-sub-item.active { color: var(--mint); font-weight: 600; }
+    .sidebar-bottom { padding: 12px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
+    .sidebar-company-logo { width: 30px; height: 30px; border-radius: 6px; object-fit: contain; flex-shrink: 0; }
+    .sidebar-toggle { background: none; border: none; cursor: pointer; padding: 0; margin-left: auto; pointer-events: all; }
+    .sidebar-toggle .toggle-track { width: 36px; height: 20px; background: var(--mint); border-radius: 10px; position: relative; transition: background 0.25s; }
+    .sidebar-toggle .toggle-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform 0.25s cubic-bezier(0.22,1,0.36,1); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    :root.dark .sidebar-toggle .toggle-thumb { transform: translateX(16px); }
+    .overlay { display: none; position: fixed; top: var(--nav-h); left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.10); z-index: 199; }
+    .overlay.visible { display: block; }
+
+    /* ── 데스크탑: 사이드바 항상 표시 ── */
+    @media (min-width: 1024px) {
+      #sidebar { transform: translateX(0); box-shadow: none; }
+      .menu-btn { display: none; }
+      .workspace { margin-left: 220px; }
+      .overlay { display: none !important; }
+    }
+
+    /* ── 2패널 레이아웃 ── */
+    .workspace{margin-top:var(--nav-h);display:grid;grid-template-columns:1fr var(--sidebar-w);height:calc(100vh - var(--nav-h));overflow:hidden;}
+
+    /* ── 문서 본문 ── */
+    .doc-main{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+    .doc-toolbar{background:var(--bg-card);border-bottom:1px solid var(--border);padding:10px 28px;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+    .doc-status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:11.5px;font-weight:700;}
+    .doc-status-badge::before{content:'';width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+    .s-progress{background:rgba(34,139,230,.1);color:var(--mint);}
+    .s-progress::before{background:var(--mint);}
+    .s-done{background:var(--green-soft);color:var(--green);}
+    .s-done::before{background:var(--green);}
+    .s-rejected{background:var(--orange-soft);color:var(--orange);}
+    .s-rejected::before{background:var(--orange);}
+    .s-failed{background:var(--red-soft);color:var(--red);}
+    .s-failed::before{background:var(--red);}
+    .toolbar-spacer{flex:1;}
+    .btn-tf-popup{padding:7px 14px;border-radius:8px;border:1px solid rgba(112,72,232,.22);background:var(--purple-soft);cursor:pointer;font-size:12px;font-weight:700;color:var(--purple);display:flex;align-items:center;gap:6px;transition:all .15s;font-family:'Pretendard',sans-serif;}
+    .btn-tf-popup:hover{background:rgba(112,72,232,.14);}
+
+    .doc-scroll{flex:1;overflow-y:auto;padding:36px 44px;}
+    .doc-scroll::-webkit-scrollbar{width:4px;}
+    .doc-scroll::-webkit-scrollbar-thumb{background:var(--border-med);border-radius:2px;}
+
+    /* 문서 본문 스타일 */
+    .doc-title{font-size:24px;font-weight:800;color:var(--text);margin-bottom:6px;line-height:1.3;}
+    .doc-meta-row{display:flex;align-items:center;gap:16px;padding-bottom:18px;border-bottom:1px solid var(--border);margin-bottom:26px;flex-wrap:wrap;}
+    .doc-meta-item{font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;}
+    .doc-meta-item strong{color:var(--text-sub);font-weight:600;}
+
+    /* 참조 문서 인라인 */
+    .ref-docs-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg);border-radius:9px;border:1px solid var(--border);margin-bottom:24px;flex-wrap:wrap;}
+    .ref-docs-label{font-size:11px;font-weight:700;color:var(--text-muted);flex-shrink:0;}
+    .ref-doc-link{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-med);font-size:12px;font-weight:600;color:var(--text-sub);cursor:pointer;transition:all .15s;text-decoration:none;}
+    .ref-doc-link:hover{border-color:var(--mint-border);color:var(--mint);background:var(--mint-soft);}
+    .ref-doc-link svg{width:11px;height:11px;flex-shrink:0;}
+
+    .doc-section{margin-bottom:26px;}
+    .doc-section-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:11px;display:flex;align-items:center;gap:8px;}
+    .doc-section-title::before{content:'';width:3px;height:14px;border-radius:2px;background:var(--mint);flex-shrink:0;}
+    .doc-text{font-size:13.5px;color:var(--text-sub);line-height:1.85;background:var(--bg);border-radius:9px;padding:14px 16px;border:1px solid var(--border);}
+    .doc-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .doc-table th{background:var(--bg-alt);font-weight:700;color:var(--text-sub);padding:9px 13px;text-align:left;border:1px solid var(--border);font-size:12px;}
+    .doc-table td{padding:9px 13px;border:1px solid var(--border);color:var(--text-sub);line-height:1.6;}
+    .doc-table tr:hover td{background:var(--mint-soft);}
+    .risk-badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;}
+    .risk-high{background:var(--red-soft);color:var(--red);}
+    .risk-med{background:var(--orange-soft);color:var(--orange);}
+    .risk-low{background:var(--green-soft);color:var(--green);}
+
+    /* ── 우측 패널 ── */
+    .doc-panel{background:var(--bg-card);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+
+    .sidebar-section{padding:0;flex-shrink:0;}
+    .sidebar-section-title{font-size:11.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;margin-bottom:9px;}
+    .sidebar-section-title svg{width:12px;height:12px;color:var(--mint);}
+
+    /* 참조 문서 사이드바 */
+    .sidebar-refs{display:flex;flex-direction:column;height:100%;overflow-y:auto;}
+    .sidebar-refs::-webkit-scrollbar{width:3px;}
+    .sidebar-refs::-webkit-scrollbar-thumb{background:var(--border-med);border-radius:2px;}
+    .sidebar-ref-item{padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;}
+    .sidebar-ref-item:last-child{border-bottom:none;}
+    .sidebar-ref-no{font-size:10.5px;color:var(--text-muted);font-weight:600;margin-bottom:2px;}
+    .sidebar-ref-row{display:flex;align-items:baseline;justify-content:space-between;gap:6px;}
+    .sidebar-ref-name{font-size:12px;font-weight:600;color:var(--text);transition:color .1s;}
+    .sidebar-ref-item:hover .sidebar-ref-name{color:var(--mint);}
+    .sidebar-ref-date{font-size:10.5px;color:var(--text-muted);flex-shrink:0;}
+
+    /* 패널 탭 */
+    .panel-tabs{display:flex;gap:0;padding:0 14px;border-bottom:1px solid var(--border);}
+    .panel-tab{font-size:11.5px;font-weight:700;color:var(--text-muted);cursor:pointer;padding:10px 0 8px;border-bottom:2px solid transparent;margin-bottom:-1px;margin-right:14px;transition:all .12s;}
+    .panel-tab:last-child{margin-right:0;}
+    .panel-tab:hover{color:var(--text-sub);}
+    .panel-tab.active{color:var(--mint);border-bottom-color:var(--mint);}
+    .panel-tab-content{display:none;padding:8px 14px;height:136px;overflow:hidden;}
+    .panel-tab-content.active{display:block;}
+
+    /* 결재선 구분 헤더 */
+    .approval-hd{display:flex;align-items:center;gap:6px;padding:10px 14px 8px;border-top:2px solid var(--border-med);flex-shrink:0;font-size:11.5px;font-weight:700;color:var(--text);}
+    .approval-hd svg{width:12px;height:12px;}
+
+    /* 첨부 파일 */
+    .attach-list{display:flex;flex-direction:column;max-height:80px;overflow-y:auto;}
+    .attach-list::-webkit-scrollbar{width:3px;}
+    .attach-list::-webkit-scrollbar-thumb{background:var(--border-med);border-radius:2px;}
+    .attach-item{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid var(--border);flex-shrink:0;}
+    .attach-item:last-child{border-bottom:none;}
+    .attach-check{width:13px;height:13px;accent-color:var(--mint);flex-shrink:0;cursor:pointer;}
+    .attach-name{flex:1;min-width:0;font-size:11.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .attach-size{font-size:10px;color:var(--text-muted);flex-shrink:0;}
+    .btn-attach-dl{width:100%;margin-top:6px;padding:5px 0;border-radius:7px;border:1.5px solid var(--border-med);background:transparent;color:var(--text-sub);font-size:11px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;display:flex;align-items:center;justify-content:center;gap:4px;transition:all .12s;}
+    .btn-attach-dl:hover{border-color:var(--mint);color:var(--mint);background:var(--mint-soft);}
+    .btn-attach-dl:disabled{opacity:0.38;cursor:default;pointer-events:none;}
+    .btn-attach-dl svg{width:10px;height:10px;}
+
+    /* 결재선 */
+    .approval-scroll{flex:1;overflow-y:auto;padding:0 14px;min-height:0;}
+    .approval-scroll::-webkit-scrollbar{width:3px;}
+    .approval-scroll::-webkit-scrollbar-thumb{background:var(--border-med);border-radius:2px;}
+
+    .approval-line{display:flex;flex-direction:column;position:relative;}
+    .approval-line::before{content:'';position:absolute;left:4px;top:20px;bottom:20px;width:2px;background:var(--border);border-radius:1px;}
+    .approval-step{display:flex;gap:12px;padding:10px 0;position:relative;}
+    .step-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px;position:relative;z-index:1;}
+    .step-dot.dot-author{background:var(--purple);}
+    .step-dot.dot-approved{background:var(--green);}
+    .step-dot.dot-current{background:var(--mint);box-shadow:0 0 0 3px rgba(34,139,230,.2);}
+    .step-dot.dot-wait{background:var(--bg-card);border:2px solid var(--border-med);}
+    .step-content{flex:1;min-width:0;}
+    .step-header{display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap;}
+    .step-seq{font-size:9.5px;font-weight:700;color:var(--text-muted);min-width:26px;flex-shrink:0;}
+    .step-name{font-size:12px;font-weight:700;color:var(--text);}
+    .step-role{font-size:10.5px;color:var(--text-muted);flex:1;min-width:0;}
+    .step-status{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;flex-shrink:0;}
+    .step-status.wait{background:rgba(0,0,0,.05);color:var(--text-muted);}
+    .step-status.approved{background:var(--green-soft);color:var(--green);}
+    .step-status.rejected{background:var(--orange-soft);color:var(--orange);}
+    .step-status.current{background:rgba(34,139,230,.12);color:var(--mint);}
+    .step-status.author{background:var(--purple-soft);color:var(--purple);}
+    .step-date{font-size:10.5px;color:var(--text-muted);flex-shrink:0;}
+    .step-comment{font-size:11.5px;color:var(--text-sub);background:var(--bg);border-radius:6px;padding:7px 9px;line-height:1.6;border:1px solid var(--border);}
+    .step-comment.reject-comment{background:var(--orange-soft);border-color:rgba(247,103,7,.2);color:var(--orange);}
+
+    /* 협조/참조 영역 */
+    .collab-area{border-top:1px solid var(--border);padding-top:2px;}
+    .collab-area .step-dot{display:none;}
+    .collab-area .approval-step{gap:0;}
+
+    /* 결재 액션 버튼 */
+    .sidebar-actions{padding:14px 18px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:8px;}
+    .btn-approve{width:100%;padding:10px;border-radius:9px;border:none;background:var(--mint);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:background .15s;display:flex;align-items:center;justify-content:center;gap:7px;}
+    .btn-approve:hover{background:#1c7ed6;}
+    .btn-reject{width:100%;padding:10px;border-radius:9px;border:1.5px solid var(--border-med);background:transparent;color:var(--text-sub);font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;}
+    .btn-reject:hover{border-color:var(--orange);color:var(--orange);background:var(--orange-soft);}
+    .btn-edit{width:100%;padding:10px;border-radius:9px;border:1.5px solid var(--border-med);background:transparent;color:var(--text-sub);font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;}
+    .btn-edit:hover{border-color:var(--mint);color:var(--mint);background:var(--mint-soft);}
+
+    /* 결재 의견 팝업 */
+    .approve-modal{background:var(--bg-card);width:min(460px,90vw);}
+    .approve-modal-body{padding:16px 16px 0;display:flex;flex-direction:column;gap:10px;}
+    .approve-textarea{width:100%;border:1px solid var(--border-med);border-radius:8px;padding:11px 13px;font-size:13px;font-family:'Pretendard',sans-serif;color:var(--text);background:var(--bg);resize:none;height:88px;line-height:1.7;outline:none;transition:border-color .15s;}
+    .approve-textarea:focus{border-color:var(--mint);background:var(--bg-card);}
+    .tf-apply-notice{display:none;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(34,139,230,.07);border:1px solid rgba(34,139,230,.18);font-size:12px;color:var(--mint);line-height:1.6;}
+    .tf-apply-notice.show{display:flex;}
+    .tf-apply-notice svg{flex-shrink:0;margin-top:1px;}
+    .approve-actions{display:flex;gap:8px;padding:12px 16px 16px;}
+    .btn-modal-approve{flex:1;padding:10px;border-radius:9px;border:none;background:var(--mint);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:background .15s;}
+    .btn-modal-approve:hover{background:#1c7ed6;}
+
+    /* ════════════════════════════
+       Terraform 팝업
+    ════════════════════════════ */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:500;align-items:center;justify-content:center;padding:20px;}
+    .modal-overlay.open{display:flex;}
+    .modal{border-radius:14px;box-shadow:0 32px 80px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden;animation:popIn .18s ease;max-height:calc(100vh - 40px);}
+    @keyframes popIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:none}}
+
+    /* TF 모달 */
+    .tf-modal{background:#0d1117;width:min(800px,92vw);}
+    .tf-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.07);}
+    .tf-modal-title{font-size:13px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.8px;text-transform:uppercase;display:flex;align-items:center;gap:8px;}
+    .tf-modal-title span{color:rgba(255,255,255,.22);}
+    .modal-close{width:28px;height:28px;border-radius:7px;border:1px solid rgba(255,255,255,.1);background:transparent;cursor:pointer;color:rgba(255,255,255,.4);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s;}
+    .modal-close:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);}
+
+    .tf-modal-tabs{display:flex;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.07);gap:0;}
+    .tf-tab{padding:10px 14px;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.28);cursor:pointer;border-bottom:2px solid transparent;transition:all .12s;white-space:nowrap;}
+    .tf-tab:hover{color:rgba(255,255,255,.55);}
+    .tf-tab.active{color:#74c0fc;border-bottom-color:#74c0fc;}
+
+    .tf-modal-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px;}
+    .tf-modal-body::-webkit-scrollbar{width:4px;}
+    .tf-modal-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px;}
+
+    .tf-code-block{margin-bottom:14px;}
+    .tf-code-file{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;color:rgba(255,255,255,.28);letter-spacing:.5px;margin-bottom:5px;padding:0 2px;}
+    .f-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+    .f-dot-purple{background:rgba(112,72,232,.55);}
+    .f-dot-ok{background:#40c057;}
+    pre.tf-pre{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:14px 16px;font-family:'Courier New',monospace;font-size:12px;line-height:1.75;color:#e0e0e0;white-space:pre-wrap;word-break:break-all;overflow-x:hidden;}
+    .tf-kw{color:#c792ea;}.tf-str{color:#c3e88d;}.tf-attr{color:#f78c6c;}.tf-val{color:#89ddff;}.tf-num{color:#ff9cac;}.tf-cmt{color:rgba(255,255,255,.28);font-style:italic;}
+    .tf-plan-box{border-radius:8px;padding:13px 15px;font-family:'Courier New',monospace;font-size:11.5px;line-height:1.85;white-space:pre-wrap;word-break:break-all;background:rgba(64,192,87,.07);border:1px solid rgba(64,192,87,.2);color:rgba(255,255,255,.6);}
+    .pl-ok{color:#40c057;font-weight:700;}.pl-add{color:#74c0fc;}.pl-warn{color:#fcc419;}
+
+    /* 참조문서 팝업 */
+    .ref-modal{background:var(--bg-card);width:min(660px,90vw);}
+    .ref-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 15px;border-bottom:1px solid var(--border);}
+    .ref-modal-title{font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:8px;}
+    .modal-close-light{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--text-muted);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s;}
+    .modal-close-light:hover{background:var(--red-soft);color:var(--red);border-color:transparent;}
+    .ref-modal-meta{padding:12px 22px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+    .ref-modal-body{flex:1;overflow-y:auto;padding:22px 26px;}
+    .ref-modal-body::-webkit-scrollbar{width:4px;}
+    .ref-modal-body::-webkit-scrollbar-thumb{background:var(--border-med);border-radius:2px;}
+
+    /* 반려 사유 입력 팝업 */
+    .reject-modal{background:var(--bg-card);width:min(460px,90vw);}
+    .reject-modal-body{padding:16px 16px 0;display:flex;flex-direction:column;}
+    .reject-textarea{width:100%;border:1px solid var(--border-med);border-radius:8px;padding:11px 13px;font-size:13px;font-family:'Pretendard',sans-serif;color:var(--text);background:var(--bg);resize:none;height:88px;line-height:1.7;outline:none;transition:border-color .15s;}
+    .reject-textarea:focus{border-color:var(--orange);background:var(--bg-card);}
+    .reject-actions{display:flex;gap:8px;padding:12px 16px 16px;}
+    .btn-modal-cancel{flex:1;padding:10px;border-radius:9px;border:1.5px solid var(--border-med);background:transparent;color:var(--text-sub);font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;}
+    .btn-modal-cancel:hover{background:var(--bg);}
+    .btn-modal-reject{flex:1;padding:10px;border-radius:9px;border:none;background:var(--orange);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:background .15s;}
+    .btn-modal-reject:hover{background:#e8590c;}
+  </style>
+</head>
+<body>
+
+<!-- 오버레이 -->
+<div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+<!-- 사이드바 -->
+<aside class="sidebar" id="sidebar">
+  <nav class="sidebar-nav">
+    <span class="nav-section-label">메뉴</span>
+    <a class="nav-item" href="대시보드.html">
+      <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
+        <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/>
+      </svg>홈
+    </a>
+    <a class="nav-item" href="계획서 작성.html">
+      <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M12 3H5a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V8l-4-5z"/><path d="M12 3v5h5"/>
+      </svg>작업계획서 작성
+    </a>
+    <div class="nav-group">
+      <a class="nav-item active" href="#">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M5 3h10a1 1 0 011 1v13l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z"/>
+        </svg>문서 보관함
+      </a>
+      <div class="nav-sub">
+        <a class="nav-sub-item" href="#">처리할 문서</a>
+        <a class="nav-sub-item" href="#">전체 문서</a>
+      </div>
+    </div>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/>
+      </svg>보고서 설정
+    </a>
+    <span class="nav-section-label" style="margin-top:8px;">계정</span>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 10h14M10 3c-3 3-3 11 0 14M10 3c3 3 3 11 0 14"/><circle cx="10" cy="10" r="7"/>
+      </svg>계정 연동
+    </a>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="10" cy="7" r="3"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6"/>
+      </svg>마이페이지
+    </a>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="nav-item" style="gap:10px; cursor:default; pointer-events:none;">
+      <img id="sidebar-company-logo" class="sidebar-company-logo" alt="" style="display:none;">
+      <div>
+        <div id="sidebar-name" style="font-size:13px;font-weight:600;color:var(--text);"></div>
+        <div id="sidebar-role" style="font-size:11.5px;color:var(--text-muted);"></div>
+      </div>
+      <button class="sidebar-toggle" onclick="toggleTheme()" aria-label="테마 전환">
+        <div class="toggle-track"><div class="toggle-thumb"></div></div>
+      </button>
+    </div>
+  </div>
+</aside>
+
+<!-- 네비 -->
+<header class="topnav nav-logo">
+  <button class="menu-btn" onclick="toggleSidebar()" aria-label="메뉴">
+    <svg width="20" height="16" viewBox="0 0 16 13" fill="none">
+      <rect x="0" y="0"  width="16" height="3" rx="1" fill="currentColor"/>
+      <rect x="0" y="5"  width="16" height="3" rx="1" fill="currentColor"/>
+      <rect x="0" y="10" width="16" height="3" rx="1" fill="currentColor"/>
+    </svg>
+  </button>
+  <object id="nav-logo-light" class="nav-logo-obj" data="../assets/images/logo-light-animated.svg" type="image/svg+xml"></object>
+  <object id="nav-logo-dark"  class="nav-logo-obj" data="../assets/images/logo-dark-animated.svg"  type="image/svg+xml"></object>
+  <span class="nav-title">홈<span class="sep">›</span>문서 보관함<span class="sep">›</span><span class="crumb-cur" id="crumbDocTitle"></span></span>
+  <div class="topnav-right">
+    <div class="profile-info">
+      <span id="profile-name" class="profile-name"></span>
+      <span id="profile-role" class="profile-role"></span>
+    </div>
+    <span id="company-name" class="company-name"></span>
+    <div class="divider-v"></div>
+    <img id="company-logo" class="company-logo" alt="" style="display:none;">
+  </div>
+</header>
+
+<!-- 워크스페이스 -->
+<div class="workspace">
+
+  <!-- ── 문서 본문 ── -->
+  <main class="doc-main">
+    <div class="doc-toolbar">
+      <span class="doc-status-badge s-progress">진행 중</span>
+      <div class="toolbar-spacer"></div>
+      <button class="btn-tf-popup" onclick="openModal('tfModal')">
+        Terraform 코드 보기
+      </button>
+    </div>
+
+    <div class="doc-scroll">
+      <h1 class="doc-title">EKS 노드그룹 인스턴스 타입 변경 계획서</h1>
+      <div class="doc-meta-row">
+        <div class="doc-meta-item">📅 <strong>작업일</strong> 2026.03.05</div>
+        <div class="doc-meta-item">👤 <strong>작성자</strong> 이서연</div>
+        <div class="doc-meta-item">🏷 <strong>유형</strong> 계획서</div>
+        <div class="doc-meta-item">🕐 <strong>작성일시</strong> 2026.02.24 14:22</div>
+      </div>
+
+      <!-- 참조 문서 인라인 바 -->
+      <div class="ref-docs-bar">
+        <span class="ref-docs-label">📎 참조 문서</span>
+        <a class="ref-doc-link" onclick="openRefDoc('weekly')">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z"/><path d="M9 2v4h4"/></svg>
+          주간 보고서 (02.17~02.23)
+        </a>
+        <a class="ref-doc-link" onclick="openRefDoc('eks')">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z"/><path d="M9 2v4h4"/></svg>
+          EKS 노드 추가 계획서
+        </a>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-title">개요</div>
+        <div class="doc-text">EKS 노드그룹(production-ng)의 인스턴스 타입을 <strong>t3.medium에서 t3.large</strong>로 변경합니다. 피크 시간대(18~22시) CPU 사용률 90% 이상 초과로 인한 서비스 응답 지연 이슈에 대응하기 위함입니다. 해당 이슈는 주간 보고서에서 연속 2주간 지적된 사항으로, 즉각적인 조치가 필요합니다.</div>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-title">변경 전 / 후 비교</div>
+        <table class="doc-table">
+          <thead><tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr></thead>
+          <tbody>
+            <tr><td>인스턴스 타입</td><td>t3.medium (2 vCPU, 4GB)</td><td>t3.large (2 vCPU, 8GB)</td></tr>
+            <tr><td>노드 수</td><td>3</td><td>3 (동일)</td></tr>
+            <tr><td>예상 월 비용</td><td>$108 / 월</td><td>$216 / 월 (+$108)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-title">위험도 분석</div>
+        <table class="doc-table">
+          <thead><tr><th>위험 항목</th><th>수준</th><th>대응 방안</th></tr></thead>
+          <tbody>
+            <tr><td>노드 교체 중 파드 재스케줄</td><td><span class="risk-badge risk-low">낮음</span></td><td>Rolling update, PDB 설정으로 서비스 무중단</td></tr>
+            <tr><td>비용 증가</td><td><span class="risk-badge risk-med">중간</span></td><td>월 $108 추가 예산 승인 필요</td></tr>
+            <tr><td>인스턴스 가용성</td><td><span class="risk-badge risk-low">낮음</span></td><td>ap-northeast-2 리전 t3.large 충분히 확보</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-title">롤백 계획</div>
+        <div class="doc-text">변경 후 이상 징후 감지 시 t3.medium으로 즉시 롤백합니다. Terraform state를 통해 이전 상태 복구 가능하며, 예상 소요 시간은 약 5분입니다. 롤백 판단 기준: CPU 사용률 80% 이상 30분 지속 또는 에러율 1% 초과 시.</div>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-title">작업 절차</div>
+        <div class="doc-text">1. Terraform 코드 변경 (instance_types = ["t3.large"])<br>2. GitHub PR 생성 → terraform plan 검증<br>3. 결재 완료 후 PR Merge → terraform apply 자동 실행<br>4. 노드 Rolling update 진행 (약 10분 소요)<br>5. CloudWatch 메트릭 모니터링 (30분간 CPU / 응답시간 추적)</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── 우측 패널 ── -->
+  <aside class="doc-panel">
+
+    <!-- 참조 문서 / 첨부 파일 탭 -->
+    <div class="sidebar-section">
+      <div class="panel-tabs">
+        <div class="panel-tab active" onclick="switchPanelTab(this,'tabRefs')">참조 문서</div>
+        <div class="panel-tab" onclick="switchPanelTab(this,'tabAttach')">첨부 파일</div>
+      </div>
+
+      <div id="tabRefs" class="panel-tab-content active">
+        <div class="sidebar-refs">
+          <div class="sidebar-ref-item" onclick="openRefDoc('weekly')">
+            <div class="sidebar-ref-no">DOC-2026-001</div>
+            <div class="sidebar-ref-row">
+              <span class="sidebar-ref-name">주간 보고서 (02.17~02.23)</span>
+              <span class="sidebar-ref-date">2026.02.23</span>
+            </div>
+          </div>
+          <div class="sidebar-ref-item" onclick="openRefDoc('eks')">
+            <div class="sidebar-ref-no">DOC-2026-004</div>
+            <div class="sidebar-ref-row">
+              <span class="sidebar-ref-name">EKS 노드 추가 계획서</span>
+              <span class="sidebar-ref-date">2026.02.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tabAttach" class="panel-tab-content">
+        <div class="attach-list">
+          <div class="attach-item">
+            <input type="checkbox" class="attach-check">
+            <span class="attach-name">CPU_usage_peaktime.png</span>
+            <span class="attach-size">1.2 MB</span>
+          </div>
+          <div class="attach-item">
+            <input type="checkbox" class="attach-check">
+            <span class="attach-name">cloudwatch_metrics_0224.csv</span>
+            <span class="attach-size">85 KB</span>
+          </div>
+          <div class="attach-item">
+            <input type="checkbox" class="attach-check">
+            <span class="attach-name">eks_plan_output.txt</span>
+            <span class="attach-size">4 KB</span>
+          </div>
+        </div>
+        <button class="btn-attach-dl" id="btnAttachDl" disabled>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
+          <span id="attachDlLabel">다운로드</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 결재선 -->
+    <div class="approval-hd">
+      <svg viewBox="0 0 16 16" fill="none" stroke="#228BE6" stroke-width="1.8"><path d="M2 12c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4"/><circle cx="8" cy="5" r="3"/></svg>
+      결재선
+    </div>
+
+    <div class="approval-scroll">
+      <div class="approval-line">
+
+        <!-- 작성자 -->
+        <div class="approval-step">
+          <div class="step-dot dot-author"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">기안</span>
+              <span class="step-name">이서연</span>
+              <span class="step-role">엔지니어</span>
+              <span class="step-date">2026.02.24 14:22</span>
+              <div class="step-status author">기안</div>
+            </div>
+            <div class="step-comment">EKS CPU 이슈 2주 지속되어 긴급 스케일업 요청드립니다. 비용 증가 사전 승인 부탁드립니다.</div>
+          </div>
+        </div>
+
+        <!-- 1차 결재 (완료) -->
+        <div class="approval-step">
+          <div class="step-dot dot-approved"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">1차</span>
+              <span class="step-name">박지훈</span>
+              <span class="step-role">팀장</span>
+              <span class="step-date">2026.02.24 16:05</span>
+              <div class="step-status approved">결재</div>
+            </div>
+            <div class="step-comment">피크타임 CPU 수치 확인했습니다. 비용 증가 합리적인 수준으로 판단하여 결재합니다.</div>
+          </div>
+        </div>
+
+        <!-- 2차 결재 (대기 중 — 현재 결재자: 정지은 = session.name) -->
+        <div class="approval-step" id="step-current">
+          <div class="step-dot dot-current"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">2차</span>
+              <span class="step-name">정지은</span>
+              <span class="step-role">선임연구원</span>
+              <div id="stepStatus-current" class="step-status current">대기</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3차 결재 (대기 중) -->
+        <div class="approval-step">
+          <div class="step-dot dot-wait"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">3차</span>
+              <span class="step-name">최현우</span>
+              <span class="step-role">매니저</span>
+              <div class="step-status wait">대기</div>
+            </div>
+          </div>
+        </div>
+
+
+      </div>
+
+      <!-- 협조/참조 (타임라인 바깥) -->
+      <div class="collab-area">
+
+        <div class="approval-step">
+          <div class="step-dot dot-approved"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">협조</span>
+              <span class="step-name">홍길동</span>
+              <span class="step-role">선임</span>
+              <span class="step-date">2026.02.25 09:12</span>
+              <div class="step-status approved">확인</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="approval-step">
+          <div class="step-dot dot-wait"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">협조</span>
+              <span class="step-name">이수진</span>
+              <span class="step-role">과장</span>
+              <div class="step-status wait">대기</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="approval-step">
+          <div class="step-dot dot-approved"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">참조</span>
+              <span class="step-name">김민준</span>
+              <span class="step-role">매니저</span>
+              <span class="step-date">2026.02.25 11:40</span>
+              <div class="step-status approved">확인</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="approval-step">
+          <div class="step-dot dot-wait"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">참조</span>
+              <span class="step-name">박소연</span>
+              <span class="step-role">과장</span>
+              <div class="step-status wait">대기</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="approval-step">
+          <div class="step-dot dot-wait"></div>
+          <div class="step-content">
+            <div class="step-header">
+              <span class="step-seq">참조</span>
+              <span class="step-name">장우진</span>
+              <span class="step-role">담당</span>
+              <div class="step-status wait">대기</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 액션 버튼 (session.name이 현재 결재자와 일치할 때만 표시) -->
+    <div class="sidebar-actions" id="sidebarActions">
+      <button class="btn-approve" id="btnApprove" onclick="handleApprove()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 8l4 4 6-6"/></svg>
+        결재
+      </button>
+      <button class="btn-reject" id="btnReject" onclick="openRejectModal()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        반려
+      </button>
+    </div>
+  </aside>
+</div>
+
+<!-- ════════════════════════════
+  Terraform 코드 팝업
+════════════════════════════ -->
+<div class="modal-overlay" id="tfModal" onclick="if(event.target.id==='tfModal')closeModal('tfModal')">
+  <div class="modal tf-modal">
+    <div class="tf-modal-header">
+      <div class="tf-modal-title">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v6M9 11.5h5"/></svg>
+        Terraform Code <span>· EKS 노드그룹 변경</span>
+      </div>
+      <button class="modal-close" onclick="closeModal('tfModal')">×</button>
+    </div>
+    <div class="tf-modal-tabs">
+      <div class="tf-tab active" onclick="switchTfTab(this,'tf-code')">코드</div>
+      <div class="tf-tab" onclick="switchTfTab(this,'tf-plan')">Plan 결과</div>
+    </div>
+    <div class="tf-modal-body" id="tf-code" style="max-height:60vh;">
+      <div class="tf-code-block">
+        <div class="tf-code-file"><span class="f-dot f-dot-purple"></span>eks_node_group.tf</div>
+        <pre class="tf-pre"><span class="tf-kw">resource</span> <span class="tf-str">"aws_eks_node_group"</span> <span class="tf-str">"production_ng"</span> {
+  <span class="tf-attr">cluster_name</span>    = <span class="tf-val">aws_eks_cluster.main.name</span>
+  <span class="tf-attr">node_group_name</span> = <span class="tf-str">"production-ng"</span>
+  <span class="tf-attr">node_role_arn</span>   = <span class="tf-val">aws_iam_role.node.arn</span>
+  <span class="tf-attr">subnet_ids</span>      = <span class="tf-val">var.private_subnet_ids</span>
+
+  <span class="tf-attr">instance_types</span> = [<span class="tf-str">"t3.large"</span>]
+  <span class="tf-cmt"># 변경: t3.medium → t3.large</span>
+
+  <span class="tf-kw">scaling_config</span> {
+    <span class="tf-attr">desired_size</span> = <span class="tf-num">3</span>
+    <span class="tf-attr">min_size</span>     = <span class="tf-num">2</span>
+    <span class="tf-attr">max_size</span>     = <span class="tf-num">6</span>
+  }
+
+  <span class="tf-kw">update_config</span> {
+    <span class="tf-attr">max_unavailable</span> = <span class="tf-num">1</span>
+  }
+
+  <span class="tf-kw">tags</span> = {
+    <span class="tf-attr">Environment</span> = <span class="tf-str">"production"</span>
+    <span class="tf-attr">ManagedBy</span>   = <span class="tf-str">"terraform"</span>
+    <span class="tf-attr">ChangedBy</span>   = <span class="tf-str">"dndn"</span>
+    <span class="tf-attr">RFC</span>         = <span class="tf-str">"PLAN-2026-0224-001"</span>
+  }
+}</pre>
+      </div>
+      <div class="tf-code-block">
+        <div class="tf-code-file"><span class="f-dot f-dot-purple"></span>iam_node_role.tf</div>
+        <pre class="tf-pre"><span class="tf-kw">resource</span> <span class="tf-str">"aws_iam_role"</span> <span class="tf-str">"node"</span> {
+  <span class="tf-attr">name</span> = <span class="tf-str">"eks-node-role"</span>
+
+  <span class="tf-attr">assume_role_policy</span> = <span class="tf-val">jsonencode</span>({
+    <span class="tf-attr">Version</span>   = <span class="tf-str">"2012-10-17"</span>
+    <span class="tf-attr">Statement</span> = [{
+      <span class="tf-attr">Action</span>    = <span class="tf-str">"sts:AssumeRole"</span>
+      <span class="tf-attr">Effect</span>    = <span class="tf-str">"Allow"</span>
+      <span class="tf-attr">Principal</span> = {
+        <span class="tf-attr">Service</span> = <span class="tf-str">"ec2.amazonaws.com"</span>
+      }
+    }]
+  })
+}</pre>
+      </div>
+      <div class="tf-code-block">
+        <div class="tf-code-file"><span class="f-dot f-dot-purple"></span>rollback_vars.tf</div>
+        <pre class="tf-pre"><span class="tf-cmt"># 롤백용 원본 설정 보존</span>
+<span class="tf-kw">variable</span> <span class="tf-str">"rollback_instance_type"</span> {
+  <span class="tf-attr">description</span> = <span class="tf-str">"이전 인스턴스 타입 (롤백 시 참조)"</span>
+  <span class="tf-attr">default</span>     = <span class="tf-str">"t3.medium"</span>
+}</pre>
+      </div>
+    </div>
+    <div class="tf-modal-body" id="tf-plan" style="display:none;max-height:60vh;">
+      <div class="tf-plan-box"><span class="pl-ok">✓ terraform plan 성공</span>
+
+Terraform will perform the following actions:
+
+<span class="pl-add">~ aws_eks_node_group.production_ng</span>
+    instance_types: [
+        - "t3.medium"
+        + "t3.large"
+    ]
+    update_config.max_unavailable: 1
+
+<span class="pl-warn">Plan: 0 to add, 1 to change, 0 to destroy.</span>
+
+<span class="pl-ok">─────────────────────────────────────────</span>
+Note: You didn't use the -out option to save this plan.
+Next steps: Review → Merge PR → apply will run automatically.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════
+  참조문서 팝업
+════════════════════════════ -->
+<div class="modal-overlay" id="refDocModal" onclick="if(event.target.id==='refDocModal')closeModal('refDocModal')">
+  <div class="modal ref-modal">
+    <div class="ref-modal-header">
+      <div class="ref-modal-title" id="refModalTitle">📊 주간 보고서</div>
+      <button class="modal-close-light" onclick="closeModal('refDocModal')">×</button>
+    </div>
+    <div class="ref-modal-meta" id="refModalMeta"></div>
+    <div class="ref-modal-body" id="refModalBody" style="max-height:65vh;"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════
+  반려 사유 팝업
+════════════════════════════ -->
+<div class="modal-overlay" id="rejectModal" onclick="if(event.target.id==='rejectModal')closeModal('rejectModal')">
+  <div class="modal reject-modal">
+    <div class="reject-modal-body">
+      <textarea class="reject-textarea" id="rejectReason"></textarea>
+    </div>
+    <div class="reject-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('rejectModal')">취소</button>
+      <button class="btn-modal-reject" onclick="handleReject()">반려</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════
+  결재 의견 팝업
+════════════════════════════ -->
+<div class="modal-overlay" id="approveModal" onclick="if(event.target.id==='approveModal')closeModal('approveModal')">
+  <div class="modal approve-modal">
+    <div class="approve-modal-body">
+      <textarea class="approve-textarea" id="approveOpinion"></textarea>
+      <div class="tf-apply-notice" id="tfApplyNotice">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l1.5 1.5"/></svg>
+        <span><strong>nexon-production</strong> 계정에 <strong>terraform apply</strong>가 자동 반영됩니다.</span>
+      </div>
+    </div>
+    <div class="approve-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('approveModal')">취소</button>
+      <button class="btn-modal-approve" onclick="handleApproveConfirm()">결재</button>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/theme.js"></script>
+<script src="../assets/mock/mock.js"></script>
+<script>
+  /* ── 세션 정보 렌더링 ── */
+  document.getElementById('profile-name').textContent = session.name;
+  document.getElementById('profile-role').textContent  = session.role;
+  document.getElementById('company-name').textContent  = session.company.name;
+  document.getElementById('sidebar-name').textContent  = session.name;
+  document.getElementById('sidebar-role').textContent  = session.role;
+  if (session.company.logoUrl) {
+    const isDark = document.documentElement.classList.contains('dark');
+    const logoSrc = (isDark && session.company.logoDarkUrl) ? session.company.logoDarkUrl : session.company.logoUrl;
+    const logo = document.getElementById('company-logo');
+    logo.src = logoSrc; logo.style.display = 'block';
+    const sl = document.getElementById('sidebar-company-logo');
+    sl.src = logoSrc; sl.style.display = 'block';
+  }
+
+  /* ── 브레드크럼: 문서 제목 설정 ── */
+  document.getElementById('crumbDocTitle').textContent =
+    document.querySelector('.doc-title')?.textContent ?? '';
+
+  /* ── VIEW_MODE: 'author' | 'approver' | 'final-approver' | 'completed' ── */
+  const VIEW_MODE = 'approver'; // 데모 전환용
+
+  /* ── 뷰모드별 UI 초기화 ── */
+  (function initActions() {
+    const actions   = document.getElementById('sidebarActions');
+    const btnReject = document.getElementById('btnReject');
+
+    if (VIEW_MODE === 'completed') {
+      actions.style.display = 'none';
+      const badge = document.querySelector('.doc-status-badge');
+      badge.className = 'doc-status-badge s-done';
+      badge.textContent = '완료';
+      document.querySelectorAll('.step-dot.dot-current, .step-dot.dot-wait').forEach(dot => {
+        dot.className = 'step-dot dot-approved';
+      });
+      document.querySelectorAll('.step-status.current, .step-status.wait').forEach(st => {
+        const seq = st.closest('.step-header').querySelector('.step-seq').textContent;
+        st.className = 'step-status approved';
+        st.textContent = ['협조', '참조'].includes(seq) ? '확인' : '결재';
+      });
+      return;
+    }
+    if (VIEW_MODE === 'author') {
+      btnReject.className = 'btn-edit';
+      btnReject.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 2l3 3-8 8H3v-3L11 2z"/></svg>수정';
+      btnReject.onclick = function() { location.href = '계획서 작성.html'; };
+    }
+    if (VIEW_MODE === 'final-approver') {
+      document.getElementById('tfApplyNotice').classList.add('show');
+    }
+  })();
+
+  /* ── 사이드바 토글 ── */
+  let isOpen = false;
+  function toggleSidebar() {
+    isOpen = !isOpen;
+    document.getElementById('sidebar').classList.toggle('open', isOpen);
+    document.getElementById('overlay').classList.toggle('visible', isOpen);
+  }
+
+  /* ── 첨부파일 체크박스 연동 ── */
+  (function initAttachDownload() {
+    const checks = document.querySelectorAll('.attach-check');
+    const btn    = document.getElementById('btnAttachDl');
+    const label  = document.getElementById('attachDlLabel');
+    function updateBtn() {
+      const cnt = [...checks].filter(c => c.checked).length;
+      btn.disabled = cnt === 0;
+      label.textContent = cnt > 0 ? cnt + '개 다운로드' : '다운로드';
+    }
+    checks.forEach(c => c.addEventListener('change', updateBtn));
+  })();
+
+  /* ── 패널 탭 ── */
+  function switchPanelTab(el, target) {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-tab-content').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById(target).classList.add('active');
+  }
+
+  /* ── 모달 ── */
+  function openModal(id)  { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  /* ── TF 탭 ── */
+  function switchTfTab(el, target) {
+    document.querySelectorAll('.tf-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tf-code').style.display = target === 'tf-code' ? 'block' : 'none';
+    document.getElementById('tf-plan').style.display = target === 'tf-plan' ? 'block' : 'none';
+  }
+
+  /* ── 참조문서 팝업 ── */
+  function openRefDoc(key) {
+    const doc = REF_DOCS[key];
+    document.getElementById('refModalTitle').innerHTML = `${doc.icon} ${doc.title}`;
+    document.getElementById('refModalMeta').innerHTML = doc.meta.map(([k, v]) =>
+      `<div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:4px;"><strong style="color:var(--text-sub);font-weight:600;">${k}</strong> ${v}</div>`
+    ).join('');
+    document.getElementById('refModalBody').innerHTML = doc.body;
+    openModal('refDocModal');
+  }
+
+  /* ── 결재 처리 ── */
+  function handleApprove() {
+    document.getElementById('approveOpinion').value = '';
+    openModal('approveModal');
+  }
+
+  function handleApproveConfirm() {
+    const opinion = document.getElementById('approveOpinion').value.trim();
+    closeModal('approveModal');
+    if (VIEW_MODE === 'final-approver') {
+      alert(`결재가 완료되었습니다.${opinion ? '\n의견: "' + opinion + '"' : ''}\n\nnexon-production 계정에\nterraform apply가 자동 반영됩니다.`);
+    } else {
+      alert(`결재 완료!${opinion ? '\n의견: "' + opinion + '"' : ''}\n\n다음 결재자에게 알림이 전송됩니다.`);
+    }
+  }
+
+  /* ── 반려 처리 ── */
+  function openRejectModal() {
+    document.getElementById('rejectReason').value = '';
+    openModal('rejectModal');
+  }
+
+  function handleReject() {
+    const reason = document.getElementById('rejectReason').value.trim();
+    if (!reason) { alert('반려 사유를 입력해주세요.'); return; }
+    closeModal('rejectModal');
+    alert(`반려 처리되었습니다.\n사유: "${reason}"\n\n이전 결재자와 작성자에게 알림이 전송됩니다.`);
+  }
+</script>
+</body>
+</html>
