@@ -1,0 +1,162 @@
+/* ═══════════════════════════════════════════
+   DnDn Design System — Theme Variables
+   Light (default) / Dark (.dark on <html>)
+═══════════════════════════════════════════ */
+
+/* ── Light (기본값) ── */
+:root {
+  color-scheme: light;
+
+  /* 배경 */
+  --bg:          #f5f7fa;
+  --bg-card:     #ffffff;
+  --bg-nav:      #ffffff;
+  --bg-sidebar:  #ffffff;
+  --bg-alt:      #fafbfc;   /* 테이블 헤더 등 약간 어두운 배경 */
+
+  /* 주 색상 */
+  --mint:        #228BE6;
+  --mint-soft:   rgba(34, 139, 230, 0.08);
+  --mint-soft2:  rgba(34, 139, 230, 0.15);
+  --mint-border: rgba(34, 139, 230, 0.25);
+
+  /* 텍스트 */
+  --text:        #111318;
+  --text-sub:    #5a6070;
+  --text-muted:  #9ba3b2;
+
+  /* 선/구분 */
+  --border:        rgba(0, 0, 0, 0.07);
+  --border-med:    rgba(0, 0, 0, 0.11);
+  --border-hover:  rgba(34, 139, 230, 0.3);
+
+  /* 그림자 */
+  --shadow:        0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-hover:  0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+
+  /* 상태 색상 */
+  --red:           #f03e3e;
+  --red-soft:      rgba(240, 62, 62, 0.08);
+  --orange:        #f76707;
+  --orange-soft:   rgba(247, 103, 7, 0.08);
+  --green:         #2f9e44;
+  --green-soft:    rgba(47, 158, 68, 0.08);
+  --purple:        #7048e8;
+  --purple-soft:   rgba(112, 72, 232, 0.08);
+
+  /* 네비 로고 */
+  --logo-bg:     #ffffff;
+  --logo-D:      #228BE6;
+  --logo-n:      #111318;
+  --logo-cursor: #228BE6;
+
+  /* 레이아웃 */
+  --nav-h: 56px;
+}
+
+/* ── Dark ── */
+:root.dark {
+  color-scheme: dark;
+
+  /* 배경 */
+  --bg:          #0d1117;
+  --bg-card:     #161b22;
+  --bg-nav:      #161b22;
+  --bg-sidebar:  #161b22;
+  --bg-alt:      #0d1117;
+
+  /* 주 색상 */
+  --mint:        #4ADEAA;
+  --mint-soft:   rgba(74, 222, 170, 0.10);
+  --mint-soft2:  rgba(74, 222, 170, 0.18);
+  --mint-border: rgba(74, 222, 170, 0.30);
+
+  /* 텍스트 */
+  --text:        #e6edf3;
+  --text-sub:    #8b949e;
+  --text-muted:  #6e7681;
+
+  /* 선/구분 */
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-med:    rgba(255, 255, 255, 0.13);
+  --border-hover:  rgba(74, 222, 170, 0.35);
+
+  /* 그림자 */
+  --shadow:        0 1px 3px rgba(0,0,0,0.30), 0 4px 12px rgba(0,0,0,0.20);
+  --shadow-hover:  0 2px 8px rgba(0,0,0,0.40), 0 8px 24px rgba(0,0,0,0.30);
+
+  /* 상태 색상 */
+  --red:           #ff6b6b;
+  --red-soft:      rgba(255, 107, 107, 0.12);
+  --orange:        #ffa94d;
+  --orange-soft:   rgba(255, 169, 77, 0.12);
+  --green:         #51cf66;
+  --green-soft:    rgba(81, 207, 102, 0.12);
+  --purple:        #a78bfa;
+  --purple-soft:   rgba(167, 139, 250, 0.12);
+
+  /* 네비 로고 */
+  --logo-bg:     #161b22;
+  --logo-D:      #4ADEAA;
+  --logo-n:      #e6edf3;
+  --logo-cursor: #4ADEAA;
+}
+
+/* ═══════════════════════════════════════════
+   전환 애니메이션 (테마 전환 시 부드럽게)
+═══════════════════════════════════════════ */
+*, *::before, *::after {
+  transition:
+    background-color 0.25s ease,
+    border-color     0.25s ease,
+    color            0.20s ease,
+    box-shadow       0.25s ease;
+}
+/* fill/stroke 전환 (SVG) */
+svg * {
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+/* 입력/버튼/링크는 전환 제외 또는 별도 관리 */
+input, button, select, textarea, a {
+  transition:
+    background-color 0.15s ease,
+    border-color     0.15s ease,
+    color            0.15s ease,
+    opacity          0.15s ease,
+    box-shadow       0.15s ease;
+}
+
+/* ═══════════════════════════════════════════
+   네비 로고 — CSS로 SVG fill/stroke 오버라이드
+   (SVG presentation attribute < CSS property)
+═══════════════════════════════════════════ */
+.nav-logo .logo-bg     { fill: var(--logo-bg); stroke: var(--logo-bg); }
+.nav-logo .logo-D      { fill: var(--logo-D);  stroke: var(--logo-D);  }
+.nav-logo .logo-n      { fill: var(--logo-n);  stroke: var(--logo-n);  }
+.nav-logo .logo-cursor { fill: var(--logo-cursor); }
+
+/* ═══════════════════════════════════════════
+   테마 토글 버튼 (상단 네비용)
+═══════════════════════════════════════════ */
+.theme-btn {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding: 0;
+}
+.theme-btn:hover {
+  background: var(--mint-soft);
+  color: var(--mint);
+  border-color: var(--mint-border);
+}
+/* 라이트: 달 아이콘 표시 (→ 다크로 전환) */
+.theme-btn .icon-sun  { display: none; }
+.theme-btn .icon-moon { display: block; }
+/* 다크: 해 아이콘 표시 (→ 라이트로 전환) */
+:root.dark .theme-btn .icon-sun  { display: block; }
+:root.dark .theme-btn .icon-moon { display: none; }
