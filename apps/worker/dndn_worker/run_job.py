@@ -286,7 +286,7 @@ def _normalize_resources(
 def normalize_cloudtrail_events(
     raw_events: List[Dict[str, Any]],
     payload: Dict[str, Any],
-    raw_s3_uris: Dict[str, str],
+    raw_s3_uris: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     account_id = payload["account_id"]
     job_type = payload["type"]
