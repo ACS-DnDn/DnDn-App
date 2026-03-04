@@ -6,9 +6,10 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -23,6 +24,14 @@ except ImportError:  # pragma: no cover
 
 KST_TZ = "Asia/Seoul"
 
+
+def _json_default(o):
+    if isinstance(o, (datetime, date)):
+        # 2026-03-04T01:23:45Z 같은 형태로 남기고 싶으면 +00:00 -> Z 치환
+        return o.isoformat().replace("+00:00", "Z")
+    if isinstance(o, Decimal):
+        return float(o)
+    return str(o)
 
 def _now_kst() -> datetime:
     if ZoneInfo is None:
@@ -66,7 +75,7 @@ def dump_json(path: Path, obj: Any) -> None:
 def dump_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False))
+            f.write(json.dumps(r, ensure_ascii=False, default=_json_default))
             f.write("\n")
 
 
