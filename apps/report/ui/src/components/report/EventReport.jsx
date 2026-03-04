@@ -8,6 +8,7 @@ function fmtTime(iso) {
     month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false,
+    timeZone: 'Asia/Seoul',
   });
 }
 
@@ -197,7 +198,7 @@ export default function EventReport({ canonical }) {
         </div>
       )}
 
-      {/* 3 or 4. 변경 리소스 (CloudTrail) / Finding 상세 (SecurityHub) */}
+      {/* 4. 보안 Finding 상세 (SecurityHub) / 3. 변경 리소스 (CloudTrail) */}
       {isSecurityHub ? (
         <div className="section">
           <SectionTitle>4. 보안 Finding 상세</SectionTitle>
