@@ -91,6 +91,7 @@
 
   .form {
     width: 100%;
+    position: relative;
     animation: fadeUp 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both;
   }
 
@@ -149,6 +150,26 @@
     transition: width 0.4s cubic-bezier(0.22,1,0.36,1);
   }
   .field:focus-within::after { width: 100%; }
+
+  .error-msg {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -28px;
+    text-align: center;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #eb3737;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.3s, transform 0.3s cubic-bezier(0.22,1,0.36,1);
+    pointer-events: none;
+  }
+  .error-msg.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
 
   .btn-login {
     width: 100%;
@@ -367,15 +388,16 @@
     <object id="logo-dark"  data="../assets/images/logo-dark-animated.svg"  type="image/svg+xml"></object>
   </div>
 
-  <div class="form">
+  <form class="form" id="loginForm" onsubmit="handleLogin(event)">
     <div class="field">
       <input class="field-input" id="input-id" type="text" placeholder="아이디" autocomplete="username"/>
     </div>
     <div class="field">
       <input class="field-input" id="input-pw" type="password" placeholder="비밀번호" autocomplete="current-password"/>
+      <div class="error-msg" id="errorMsg"></div>
     </div>
-    <button class="btn-login">LOGIN</button>
-  </div>
+    <button class="btn-login" type="submit">LOGIN</button>
+  </form>
 
   <div class="footer">
     <a class="link" onclick="openPwReset()">비밀번호를 잊으셨나요?</a>
@@ -421,6 +443,33 @@
 
 <script src="../assets/js/theme.js"></script>
 <script>
+  /* ── 로그인 처리 ── */
+  function handleLogin(e) {
+    e.preventDefault();
+    const id = document.getElementById('input-id').value.trim();
+    const pw = document.getElementById('input-pw').value;
+    const errEl = document.getElementById('errorMsg');
+
+    // 빈 값 검증
+    if (!id) { showError('아이디를 입력해 주세요.'); document.getElementById('input-id').focus(); return; }
+    if (!pw) { showError('비밀번호를 입력해 주세요.'); document.getElementById('input-pw').focus(); return; }
+
+    // TODO: Cognito authenticateUser 연동 예정
+    // 현재는 mock — 어떤 값이든 로그인 성공 처리
+    hideError();
+    window.location.href = '대시보드.html';
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideError() {
+    document.getElementById('errorMsg').classList.remove('show');
+  }
+
+  /* ── 비밀번호 재설정 ── */
   function openPwReset() {
     document.getElementById('pwStep1').classList.add('active');
     document.getElementById('pwStep2').classList.remove('active');
