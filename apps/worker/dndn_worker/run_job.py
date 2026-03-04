@@ -26,9 +26,11 @@ KST_TZ = "Asia/Seoul"
 
 
 def _json_default(o):
+    # CloudTrail EventTime 같은 datetime 대응
     if isinstance(o, (datetime, date)):
         # 2026-03-04T01:23:45Z 같은 형태로 남기고 싶으면 +00:00 -> Z 치환
         return o.isoformat().replace("+00:00", "Z")
+    # Cost Explorer 등 붙이면 Decimal 튀어나올 수 있어서 미리 대응
     if isinstance(o, Decimal):
         return float(o)
     return str(o)
@@ -68,8 +70,11 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def dump_json(path: Path, obj: Any) -> None:
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+def dump_json(path, obj):
+    path.write_text(
+        json.dumps(obj, ensure_ascii=False, indent=2, default=_json_default),
+        encoding="utf-8",
+    )
 
 
 def dump_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
