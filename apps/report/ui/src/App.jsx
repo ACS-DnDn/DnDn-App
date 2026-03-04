@@ -3,7 +3,7 @@ import EventReport from './components/report/EventReport';
 import WeeklyReport from './components/report/WeeklyReport';
 import WorkPlan from './components/report/WorkPlan';
 import WorkPlanForm from './components/report/WorkPlanForm';
-import eventSample from './data/event.sample.json';
+import eventSample from './data/event.securityhub.sample.json';
 import canonicalSample from './data/canonical.sample.json';
 import './index.css';
 
@@ -52,7 +52,7 @@ const SAMPLE_WORKPLAN = {
 
 export default function App() {
   const [tab, setTab] = useState('event');
-  const [workplanMode, setWorkplanMode] = useState('view'); // 'view' | 'edit'
+  const [workplanMode, setWorkplanMode] = useState('view');
   const [workplanData, setWorkplanData] = useState(SAMPLE_WORKPLAN);
 
   function handleSave(formData) {
