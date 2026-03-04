@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from decimal import Decimal
+from dndn_worker.s3_uploader import upload_tree_to_s3
 
 import boto3
 from botocore.exceptions import ClientError
@@ -622,4 +623,15 @@ def run_job_from_payload_file(
 
     result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
     dump_json(result_path, result)
+    # PR4: Upload raw/normalized artifacts to S3
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+
+    try:
+        # storage_session은 "우리(DnDn) 계정" 권한으로 S3에 쓰는 세션.
+        # (AssumeRole로 고객 계정에 들어갔더라도 S3는 우리 버킷에 저장해야 하므로 분리 권장)
+        storage_session = boto3.Session()
+        upload_tree_to_s3(storage_session, job_dir, bucket=bucket, prefix=prefix)
+    except Exception as e:
+        raise RuntimeError(f"S3 upload failed: {e}") from e
     return result_path
