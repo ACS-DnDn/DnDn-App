@@ -1,18 +1,18 @@
 /* ── Pretendard 로컬 폰트 ── */
-@font-face { font-family: 'Pretendard'; font-weight: 100; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Thin.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Light.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Medium.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 800; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 900; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Black.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 100; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Thin.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 200; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 300; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Light.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 400; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 500; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Medium.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 600; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 700; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 800; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 900; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Black.subset.woff2') format('woff2'); }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  font-family: Pretendard, 'Apple SD Gothic Neo', sans-serif;
   font-size: 13px;
   line-height: 1.65;
   color: #1a1a1a;
@@ -80,7 +80,7 @@ body {
 .td-risk { text-align: center; font-weight: 600; color: #1a1a1a; background: #f0f0f0; vertical-align: middle; }
 
 /* ── 타임라인 ── */
-.td-time { font-family: 'SFMono-Regular', 'Consolas', monospace; font-size: 12px; white-space: nowrap; text-align: center; vertical-align: middle; }
+.td-time { font-family: SFMono-Regular, Consolas, monospace; font-size: 12px; white-space: nowrap; text-align: center; vertical-align: middle; }
 .td-type { font-weight: 600; color: #333; vertical-align: middle; text-align: center; }
 
 /* ── 작업 절차 ── */
@@ -94,7 +94,7 @@ body {
 .na-box { padding: 10px 14px; background: #f9f9f9; border: 1px solid #ddd; border-left: 3px solid #aaa; font-size: 12px; color: #777; }
 
 /* ── code ── */
-code { font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace; font-size: 11.5px; background: #f4f4f4; border: 1px solid #ddd; padding: 0 4px; border-radius: 2px; }
+code { font-family: SFMono-Regular, Consolas, Menlo, monospace; font-size: 11.5px; background: #f4f4f4; border: 1px solid #ddd; padding: 0 4px; border-radius: 2px; }
 
 /* ── 비고 ── */
 .note { font-size: 11.5px; color: #666; margin-top: 6px; line-height: 1.65; }
@@ -104,11 +104,8 @@ code { font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace; font-size:
 
 /* ── 개발용 탭 ── */
 .dev-tabs { max-width: 860px; margin: 24px auto 0; display: flex; gap: 8px; padding: 0 4px; }
-.dev-tab { padding: 6px 16px; font-size: 12px; font-family: 'Pretendard', sans-serif; border: 1px solid #bbb; background: #fff; border-radius: 3px; cursor: pointer; color: #444; }
+.dev-tab { padding: 6px 16px; font-size: 12px; font-family: Pretendard, sans-serif; border: 1px solid #bbb; background: #fff; border-radius: 3px; cursor: pointer; color: #444; }
 .dev-tab.active { background: #1f3864; color: #fff; border-color: #1f3864; }
-
-/* ── 인쇄 ── */
-@media print { body { font-size: 11px; } .doc { padding: 0; max-width: 100%; } }
 
 /* ── KPI 카드 ── */
 .tbl-summary { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
@@ -132,3 +129,6 @@ code { font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace; font-size:
 .st-warn   { color: #9a7000; font-weight: 600; }
 .st-danger { color: #c00;    font-weight: 700; }
 .st-skip   { color: #888;    font-weight: 600; }
+
+/* ── 인쇄 ── */
+@media print { body { font-size: 11px; } .doc { padding: 0; max-width: 100%; } }
