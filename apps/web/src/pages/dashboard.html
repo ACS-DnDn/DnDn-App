@@ -156,7 +156,7 @@
         </svg>
         홈
       </a>
-      <a class="nav-item" href="계획서 작성.html">
+      <a class="nav-item" href="plan.html">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
           <path d="M12 3H5a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V8l-4-5z"/>
           <path d="M12 3v5h5"/>
@@ -164,15 +164,15 @@
         작업계획서 작성
       </a>
       <div class="nav-group">
-        <a class="nav-item" href="문서보관함.html">
+        <a class="nav-item" href="documents.html">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M5 3h10a1 1 0 011 1v13l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z"/>
           </svg>
           문서 보관함
         </a>
         <div class="nav-sub">
-          <a class="nav-sub-item" href="문서보관함.html">처리할 문서</a>
-          <a class="nav-sub-item" href="문서보관함.html">전체 문서</a>
+          <a class="nav-sub-item" href="documents.html">처리할 문서</a>
+          <a class="nav-sub-item" href="documents.html">전체 문서</a>
         </div>
       </div>
       <a class="nav-item" href="#">
@@ -183,12 +183,12 @@
         보고서 설정
       </a>
       <span class="nav-section-label" style="margin-top:8px;">계정</span>
-      <a class="nav-item" href="#">
+      <a class="nav-item" href="workspace.html">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
           <path d="M3 10h14M10 3c-3 3-3 11 0 14M10 3c3 3 3 11 0 14"/>
           <circle cx="10" cy="10" r="7"/>
         </svg>
-        계정 연동
+        워크스페이스
       </a>
       <a class="nav-item" href="#">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -322,7 +322,7 @@
                   </div>
                 </div>
                 <div class="cal-btn-wrap">
-                  <a class="btn-write" href="계획서 작성.html">
+                  <a class="btn-write" href="plan.html">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                       <path d="M8 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V8"/><path d="M14 2l-6 6"/><path d="M10 2h4v4"/>
                     </svg>
@@ -454,11 +454,13 @@
       done:     { cls: 'badge-done',     label: '완료' }
     };
     function renderPendingDocs() {
+      const typeDocMap = { '이벤트': 5, '계획서': 1, '주간': 4 };
       const items = dashboardData.pendingDocs.slice(0, 5);
       document.querySelector('#pending-table tbody').innerHTML =
         items.map(d => {
           const s = statusMap[d.status];
-          return `<tr onclick="this.classList.add('doc-read')">
+          const docId = typeDocMap[d.type] || 1;
+          return `<tr style="cursor:pointer" onclick="window.location.href='viewer.html?id=${docId}'">
             <td class="td-num">${d.docNum}</td>
             <td><div class="doc-title-row"><div class="doc-title">${d.title}</div><span class="badge ${s.cls}">${s.label}</span></div></td>
             <td class="td-type">${d.type}</td>
@@ -471,15 +473,19 @@
 
     /* ── 완료된 문서 렌더링 (max 5) ── */
     function renderCompletedDocs() {
+      const typeDocMap = { '이벤트': 5, '계획서': 9, '주간': 4 };
       const items = dashboardData.completedDocs.slice(0, 5);
       document.querySelector('#completed-table tbody').innerHTML =
-        items.map(d => `<tr onclick="this.classList.add('doc-read')">
-          <td class="td-num">${d.docNum}</td>
-          <td><div class="doc-title">${d.title}</div></td>
-          <td class="td-type">${d.type}</td>
-          <td class="td-author">${d.author}</td>
-          <td class="td-date">${d.date}</td>
-        </tr>`).join('');
+        items.map(d => {
+          const docId = typeDocMap[d.type] || 9;
+          return `<tr style="cursor:pointer" onclick="window.location.href='viewer.html?id=${docId}'">
+            <td class="td-num">${d.docNum}</td>
+            <td><div class="doc-title">${d.title}</div></td>
+            <td class="td-type">${d.type}</td>
+            <td class="td-author">${d.author}</td>
+            <td class="td-date">${d.date}</td>
+          </tr>`;
+        }).join('');
       document.getElementById('completed-count').textContent = dashboardData.completedDocs.length;
     }
 
