@@ -282,13 +282,13 @@
 <aside class="sidebar" id="sidebar">
   <nav class="sidebar-nav">
     <span class="nav-section-label">메뉴</span>
-    <a class="nav-item" href="대시보드.html">
+    <a class="nav-item" href="dashboard.html">
       <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
         <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
         <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/>
       </svg>홈
     </a>
-    <a class="nav-item" href="계획서 작성.html">
+    <a class="nav-item" href="plan.html">
       <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
         <path d="M12 3H5a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V8l-4-5z"/><path d="M12 3v5h5"/>
       </svg>작업계획서 작성
@@ -310,10 +310,10 @@
       </svg>보고서 설정
     </a>
     <span class="nav-section-label" style="margin-top:8px;">계정</span>
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="workspace.html">
       <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
         <path d="M3 10h14M10 3c-3 3-3 11 0 14M10 3c3 3 3 11 0 14"/><circle cx="10" cy="10" r="7"/>
-      </svg>계정 연동
+      </svg>워크스페이스
     </a>
     <a class="nav-item" href="#">
       <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -364,73 +364,15 @@
   <!-- ── 문서 본문 ── -->
   <main class="doc-main">
     <div class="doc-toolbar">
-      <span class="doc-status-badge s-progress">진행 중</span>
+      <span class="doc-status-badge" id="docStatusBadge"></span>
       <div class="toolbar-spacer"></div>
-      <button class="btn-tf-popup" onclick="openModal('tfModal')">
+      <button class="btn-tf-popup" id="btnTfPopup" onclick="openModal('tfModal')">
         Terraform 코드 보기
       </button>
     </div>
 
     <div class="doc-scroll">
-      <h1 class="doc-title">EKS 노드그룹 인스턴스 타입 변경 계획서</h1>
-      <div class="doc-meta-row">
-        <div class="doc-meta-item">📅 <strong>작업일</strong> 2026.03.05</div>
-        <div class="doc-meta-item">👤 <strong>작성자</strong> 이서연</div>
-        <div class="doc-meta-item">🏷 <strong>유형</strong> 계획서</div>
-        <div class="doc-meta-item">🕐 <strong>작성일시</strong> 2026.02.24 14:22</div>
-      </div>
-
-      <!-- 참조 문서 인라인 바 -->
-      <div class="ref-docs-bar">
-        <span class="ref-docs-label">📎 참조 문서</span>
-        <a class="ref-doc-link" onclick="openRefDoc('weekly')">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z"/><path d="M9 2v4h4"/></svg>
-          주간 보고서 (02.17~02.23)
-        </a>
-        <a class="ref-doc-link" onclick="openRefDoc('eks')">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z"/><path d="M9 2v4h4"/></svg>
-          EKS 노드 추가 계획서
-        </a>
-      </div>
-
-      <div class="doc-section">
-        <div class="doc-section-title">개요</div>
-        <div class="doc-text">EKS 노드그룹(production-ng)의 인스턴스 타입을 <strong>t3.medium에서 t3.large</strong>로 변경합니다. 피크 시간대(18~22시) CPU 사용률 90% 이상 초과로 인한 서비스 응답 지연 이슈에 대응하기 위함입니다. 해당 이슈는 주간 보고서에서 연속 2주간 지적된 사항으로, 즉각적인 조치가 필요합니다.</div>
-      </div>
-
-      <div class="doc-section">
-        <div class="doc-section-title">변경 전 / 후 비교</div>
-        <table class="doc-table">
-          <thead><tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr></thead>
-          <tbody>
-            <tr><td>인스턴스 타입</td><td>t3.medium (2 vCPU, 4GB)</td><td>t3.large (2 vCPU, 8GB)</td></tr>
-            <tr><td>노드 수</td><td>3</td><td>3 (동일)</td></tr>
-            <tr><td>예상 월 비용</td><td>$108 / 월</td><td>$216 / 월 (+$108)</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="doc-section">
-        <div class="doc-section-title">위험도 분석</div>
-        <table class="doc-table">
-          <thead><tr><th>위험 항목</th><th>수준</th><th>대응 방안</th></tr></thead>
-          <tbody>
-            <tr><td>노드 교체 중 파드 재스케줄</td><td><span class="risk-badge risk-low">낮음</span></td><td>Rolling update, PDB 설정으로 서비스 무중단</td></tr>
-            <tr><td>비용 증가</td><td><span class="risk-badge risk-med">중간</span></td><td>월 $108 추가 예산 승인 필요</td></tr>
-            <tr><td>인스턴스 가용성</td><td><span class="risk-badge risk-low">낮음</span></td><td>ap-northeast-2 리전 t3.large 충분히 확보</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="doc-section">
-        <div class="doc-section-title">롤백 계획</div>
-        <div class="doc-text">변경 후 이상 징후 감지 시 t3.medium으로 즉시 롤백합니다. Terraform state를 통해 이전 상태 복구 가능하며, 예상 소요 시간은 약 5분입니다. 롤백 판단 기준: CPU 사용률 80% 이상 30분 지속 또는 에러율 1% 초과 시.</div>
-      </div>
-
-      <div class="doc-section">
-        <div class="doc-section-title">작업 절차</div>
-        <div class="doc-text">1. Terraform 코드 변경 (instance_types = ["t3.large"])<br>2. GitHub PR 생성 → terraform plan 검증<br>3. 결재 완료 후 PR Merge → terraform apply 자동 실행<br>4. 노드 Rolling update 진행 (약 10분 소요)<br>5. CloudWatch 메트릭 모니터링 (30분간 CPU / 응답시간 추적)</div>
-      </div>
+      <div id="docContent"></div>
     </div>
   </main>
 
@@ -797,12 +739,30 @@ Next steps: Review → Merge PR → apply will run automatically.</div>
     sl.src = logoSrc; sl.style.display = 'block';
   }
 
-  /* ── 브레드크럼: 문서 제목 설정 ── */
-  document.getElementById('crumbDocTitle').textContent =
-    document.querySelector('.doc-title')?.textContent ?? '';
+  /* ── URL 파라미터로 문서 로드 ── */
+  const _params = new URLSearchParams(location.search);
+  const _docId  = parseInt(_params.get('id'));
+  const _doc    = (_docId && ALL_DOCS.find(d => d.id === _docId)) || ALL_DOCS[0];
+  const _tmpl   = MOCK_DOC_CONTENT[_doc.type] || MOCK_DOC_CONTENT['계획서'];
+
+  // 문서 본문 렌더링
+  document.getElementById('docContent').innerHTML = _tmpl.render(_doc);
+
+  // 상태 배지
+  const _statusMap = { progress: ['s-progress','진행 중'], done: ['s-done','완료'], rejected: ['s-rejected','반려'], failed: ['s-failed','실패'] };
+  const [_sCls, _sLbl] = _statusMap[_doc.status] || ['s-progress','진행 중'];
+  const _badge = document.getElementById('docStatusBadge');
+  _badge.className = 'doc-status-badge ' + _sCls;
+  _badge.textContent = _sLbl;
+
+  // Terraform 버튼 표시 여부
+  document.getElementById('btnTfPopup').style.display = _tmpl.hasTerraform ? '' : 'none';
+
+  /* ── 브레드크럼 ── */
+  document.getElementById('crumbDocTitle').textContent = _doc.name;
 
   /* ── VIEW_MODE: 'author' | 'approver' | 'final-approver' | 'completed' ── */
-  const VIEW_MODE = 'approver'; // 데모 전환용
+  const VIEW_MODE = _doc.action === 'approve' ? 'approver' : 'completed';
 
   /* ── 뷰모드별 UI 초기화 ── */
   (function initActions() {
@@ -827,7 +787,7 @@ Next steps: Review → Merge PR → apply will run automatically.</div>
     if (VIEW_MODE === 'author') {
       btnReject.className = 'btn-edit';
       btnReject.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 2l3 3-8 8H3v-3L11 2z"/></svg>수정';
-      btnReject.onclick = function() { location.href = '계획서 작성.html'; };
+      btnReject.onclick = function() { location.href = 'plan.html'; };
     }
     if (VIEW_MODE === 'final-approver') {
       document.getElementById('tfApplyNotice').classList.add('show');

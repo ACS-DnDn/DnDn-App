@@ -102,6 +102,11 @@ function renderTable() {
       <td class="td-date">${formatDate(doc.date)}</td>
       <td>${statusLabel}</td>
     `;
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => {
+      readIds.add(doc.id);
+      window.location.href = `문서열람.html?id=${doc.id}`;
+    };
     tbody.appendChild(tr);
   });
 
