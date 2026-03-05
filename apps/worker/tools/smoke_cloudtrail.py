@@ -10,15 +10,25 @@ from dndn_worker.run_job import assume_role_session
 
 
 def main() -> None:
+    """
+    Run a smoke test that queries CloudTrail events using an assumed AWS role.
+    
+    Parses CLI options (--role-arn, --external-id, --run-id, --region, --hours, --max), assumes the specified role, performs a CloudTrail lookup over the time window from now minus `hours` to now, handles pagination up to `max` events, and prints a brief success line plus summaries for up to five retrieved events.
+    """
     p = argparse.ArgumentParser(description="Smoke test CloudTrail lookup_events using assumed session.")
     p.add_argument("--role-arn", required=True, help="Role ARN to assume, or SELF")
     p.add_argument("--external-id", default="dndn-dev", help="ExternalId used in AssumeRole")
+    p.add_argument("--run-id", default="smoke-cloudtrail", help="Run id used for RoleSessionName")
     p.add_argument("--region", default="ap-northeast-2")
     p.add_argument("--hours", type=int, default=24)
     p.add_argument("--max", type=int, default=20)
     args = p.parse_args()
 
-    s = assume_role_session(args.role_arn, args.external_id)
+    s = assume_role_session(
+        role_arn=args.role_arn,
+        external_id=args.external_id,
+        run_id=args.run_id,
+    )
     ct = s.client("cloudtrail", region_name=args.region)
 
     end = datetime.now(timezone.utc)
