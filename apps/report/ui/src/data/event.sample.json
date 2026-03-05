@@ -1,0 +1,128 @@
+{
+  "collection_status": {
+    "assume_role": {
+      "status": "OK"
+    },
+    "cloudtrail": {
+      "status": "OK"
+    },
+    "config": {
+      "status": "OK"
+    },
+    "normalized": {
+      "status": "OK"
+    }
+  },
+  "events": [
+    {
+      "aws_region": "ap-northeast-2",
+      "event_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "event_name": "UpdateClusterVersion",
+      "event_source": "eks.amazonaws.com",
+      "event_time": "2026-02-24T10:30:00+09:00",
+      "raw": {
+        "cloudtrail_event_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=24/run_id=01J0EVENTULID5678/raw/cloudtrail/event_aaaaaaaa.json"
+      },
+      "read_only": false,
+      "resources": [
+        {
+          "account_id": "123456789012",
+          "arn": "arn:aws:eks:ap-northeast-2:123456789012:cluster/my-eks-cluster",
+          "region": "ap-northeast-2",
+          "resource_id": "my-eks-cluster",
+          "resource_type": "AWS::EKS::Cluster"
+        }
+      ],
+      "user_identity": {
+        "arn": "arn:aws:sts::123456789012:assumed-role/Admin/terraform",
+        "type": "AssumedRole"
+      }
+    }
+  ],
+  "meta": {
+    "account_id": "123456789012",
+    "collector": {
+      "name": "dndn-collector",
+      "rule_set_version": "eks-mvp-0.1",
+      "runtime": "python3.12",
+      "version": "0.1.0"
+    },
+    "evidence": {
+      "normalized_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=24/run_id=01J0EVENTULID5678/normalized/",
+      "raw_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=24/run_id=01J0EVENTULID5678/raw/"
+    },
+    "generated_at": "2026-02-24T12:00:00+09:00",
+    "partition": {
+      "day": 24,
+      "month": 2,
+      "year": 2026
+    },
+    "regions": [
+      "ap-northeast-2"
+    ],
+    "run_id": "01J0EVENTULID5678",
+    "schema_version": "0.2.0",
+    "time_range": {
+      "end": "2026-02-24T11:30:00+09:00",
+      "note": "event_time ± 60m",
+      "start": "2026-02-24T09:30:00+09:00",
+      "timezone": "Asia/Seoul"
+    },
+    "trigger": {
+      "detail_type": "AWS API Call via CloudTrail",
+      "event_id": "evt-bridge-id-abc",
+      "event_time": "2026-02-24T10:30:00+09:00",
+      "raw_event_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=24/run_id=01J0EVENTULID5678/raw/trigger/eventbridge.json",
+      "received_at": "2026-02-24T10:31:10+09:00",
+      "selector": {
+        "catalog": {
+          "catalog_id": "default",
+          "item_id": "EKS_CLUSTER_UPDATE",
+          "pack_id": "PACK_EKS",
+          "version": "1.0.0"
+        },
+        "match": {
+          "event_names": [
+            "UpdateClusterVersion"
+          ],
+          "event_source": "eks.amazonaws.com"
+        },
+        "mode": "CATALOG",
+        "rule_name": "tenant-123-pack-eks"
+      },
+      "source": "EVENTBRIDGE"
+    },
+    "type": "EVENT"
+  },
+  "resources": [
+    {
+      "change_summary": {
+        "event_count": 1,
+        "first_event_time": "2026-02-24T10:30:00+09:00",
+        "last_event_time": "2026-02-24T10:30:00+09:00"
+      },
+      "config": {
+        "after": null,
+        "before": null,
+        "message": "Config join skipped in sample",
+        "status": "OK"
+      },
+      "events": [
+        {
+          "event_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          "event_name": "UpdateClusterVersion",
+          "event_source": "eks.amazonaws.com",
+          "event_time": "2026-02-24T10:30:00+09:00"
+        }
+      ],
+      "key": "ap-northeast-2:AWS::EKS::Cluster:my-eks-cluster",
+      "resource": {
+        "account_id": "123456789012",
+        "arn": "arn:aws:eks:ap-northeast-2:123456789012:cluster/my-eks-cluster",
+        "region": "ap-northeast-2",
+        "resource_id": "my-eks-cluster",
+        "resource_type": "AWS::EKS::Cluster"
+      }
+    }
+  ]
+}
