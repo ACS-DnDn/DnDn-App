@@ -32,7 +32,10 @@ def call_claude(system_prompt: str, user_content: str) -> dict:
 
     # JSON 파싱
     clean = text.strip().removeprefix("```json").removesuffix("```").strip()
-    return json.loads(clean)
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude 응답 JSON 파싱 실패: {e}\n원문: {clean[:200]}")
 
 
 def generate_event_report(canonical: dict) -> dict:
@@ -138,7 +141,6 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    # 경로 수정
     sample_path = Path(__file__).parent.parent.parent.parent / "contracts" / "samples" / "event.sample.json"
     print(f"경로 확인: {sample_path}")
     canonical = json.loads(sample_path.read_text())
