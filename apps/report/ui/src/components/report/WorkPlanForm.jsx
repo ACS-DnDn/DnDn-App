@@ -15,15 +15,22 @@ const EMPTY_FORM = {
   pr_url: '',
 };
 
+function safePrUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return url;
+  } catch (_) {}
+  return null;
+}
+
 export default function WorkPlanForm({ initial = EMPTY_FORM, onSubmit, onCancel }) {
   const [form, setForm] = useState(initial);
 
-  // 최상위 필드 변경
   function setField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // 배열 필드 변경
   function setArrayField(key, index, subKey, value) {
     setForm((f) => {
       const arr = [...f[key]];
@@ -32,20 +39,19 @@ export default function WorkPlanForm({ initial = EMPTY_FORM, onSubmit, onCancel 
     });
   }
 
-  // 배열 행 추가
   function addRow(key, emptyRow) {
     setForm((f) => ({ ...f, [key]: [...f[key], emptyRow] }));
   }
 
-  // 배열 행 삭제
   function removeRow(key, index) {
     setForm((f) => ({ ...f, [key]: f[key].filter((_, i) => i !== index) }));
   }
 
-  // rollback 필드
   function setRollback(key, value) {
     setForm((f) => ({ ...f, rollback: { ...f.rollback, [key]: value } }));
   }
+
+  const validPrUrl = safePrUrl(form.pr_url);
 
   return (
     <div className="doc">
@@ -274,9 +280,21 @@ export default function WorkPlanForm({ initial = EMPTY_FORM, onSubmit, onCancel 
           <tbody>
             <tr>
               <th className="th-label">Terraform PR</th>
-              <td><input style={inputStyle} value={form.pr_url}
-                onChange={(e) => setField('pr_url', e.target.value)}
-                placeholder="https://github.com/..." /></td>
+              <td>
+                <input style={inputStyle} value={form.pr_url}
+                  onChange={(e) => setField('pr_url', e.target.value)}
+                  placeholder="https://github.com/..." />
+                {form.pr_url && !validPrUrl && (
+                  <div style={{ color: '#c00', fontSize: '11px', marginTop: '3px' }}>
+                    유효한 http(s) URL을 입력하세요
+                  </div>
+                )}
+                {validPrUrl && (
+                  <div style={{ fontSize: '11px', marginTop: '3px' }}>
+                    <a href={validPrUrl} target="_blank" rel="noreferrer noopener">{validPrUrl}</a>
+                  </div>
+                )}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -294,7 +312,6 @@ export default function WorkPlanForm({ initial = EMPTY_FORM, onSubmit, onCancel 
   );
 }
 
-// 인라인 스타일
 const inputStyle = {
   width: '100%',
   padding: '4px 6px',
