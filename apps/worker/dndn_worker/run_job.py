@@ -1,15 +1,14 @@
-\
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from decimal import Decimal
+from dndn_worker.s3_uploader import upload_tree_to_s3
 
 import boto3
 from botocore.exceptions import ClientError
@@ -113,18 +112,34 @@ def _stage_failed(code: str, message: str, retryable: bool = False) -> Dict[str,
     return {"status": "FAILED", "error_code": code, "message": message, "retryable": retryable}
 
 
-def assume_role_session(role_arn: str, external_id: str) -> boto3.Session:
+def _role_session_name(run_id: str) -> str:
+    return f"dndn-{run_id}"[:64]
+
+
+def assume_role_session(
+    role_arn: str,
+    external_id: str,
+    base_session: Optional[boto3.Session] = None,
+    *,
+    run_id: Optional[str] = None,
+) -> boto3.Session:
     """
     Production path: use STS AssumeRole.
-    Dev shortcut: if role_arn == 'SELF', return default session.
+    Dev shortcut: if role_arn == 'SELF', return default/base session.
     """
     if role_arn.strip().upper() == "SELF":
-        return boto3.Session()
+        return base_session or boto3.Session()
 
-    sts = boto3.client("sts")
+    sts_session = base_session or boto3.Session()
+    sts = sts_session.client("sts")
+
+    session_name = _role_session_name(
+        run_id or ("run-" + _sha256_bytes(os.urandom(16))[:12])
+    )
+
     resp = sts.assume_role(
         RoleArn=role_arn,
-        RoleSessionName="dndn-collector",
+        RoleSessionName=session_name,
         ExternalId=external_id,
     )
     c = resp["Credentials"]
@@ -285,7 +300,7 @@ def _normalize_resources(
 def normalize_cloudtrail_events(
     raw_events: List[Dict[str, Any]],
     payload: Dict[str, Any],
-    raw_s3_uris: Dict[str, str],
+    raw_s3_uris: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     account_id = payload["account_id"]
     job_type = payload["type"]
@@ -318,7 +333,11 @@ def normalize_cloudtrail_events(
             raw_ptr["lookup_event_s3_uri"] = raw_s3_uris["weekly_lookup_jsonl"]
         else:
             # EVENT: per-event file
-            raw_ptr["cloudtrail_event_s3_uri"] = raw_s3_uris["event_file_uri_by_id"].get(e.get("EventId", ""), raw_s3_uris["event_default_json"])
+            event_map = raw_s3_uris.get("event_file_uri_by_id") or {}
+            if not isinstance(event_map, dict):
+                event_map = {}
+            default_uri = raw_s3_uris.get("event_default_json")
+            raw_ptr["cloudtrail_event_s3_uri"] = event_map.get(e.get("EventId", ""), default_uri)
         # Optional sha256 is omitted in MVP
 
         resources = _normalize_resources(e, account_id=account_id)
@@ -481,6 +500,7 @@ def run_job_from_payload_file(
     validate_with_schema(payload, payload_schema)
 
     run_id = payload.get("run_id") or ("run-" + _sha256_bytes(os.urandom(16))[:12])
+    payload["run_id"] = run_id
     job_type = payload["type"]
 
     # Local output structure (independent of S3)
@@ -493,6 +513,69 @@ def run_job_from_payload_file(
     # Store payload as raw evidence (local)
     dump_json(raw_dir / "meta" / "job_payload.json", payload)
 
+    # 저장은 항상 "우리(DnDn) 계정" 권한으로 수행
+    storage_session = boto3.Session()
+
+    def _upload_all_artifacts() -> None:
+        bucket = payload["s3"]["bucket"]
+        prefix = payload["s3"]["prefix"].rstrip("/")
+        upload_tree_to_s3(
+            session=storage_session,
+            local_root=job_dir,
+            bucket=bucket,
+            prefix=prefix,
+        )
+
+    def _upload_result_json_only(result_path: Path) -> None:
+        bucket = payload["s3"]["bucket"]
+        prefix = payload["s3"]["prefix"].rstrip("/")
+        key = f"{prefix}/normalized/{result_path.name}".lstrip("/")
+        storage_session.client("s3").upload_file(
+            str(result_path),
+            bucket,
+            key,
+            ExtraArgs={
+                "ServerSideEncryption": "AES256",
+                "ContentType": "application/json",
+            },
+        )
+
+    def _finalize_result(result_path: Path, result_obj: Dict[str, Any], strict_upload: bool) -> Path:
+        bucket = payload["s3"]["bucket"]
+        prefix = payload["s3"]["prefix"].rstrip("/")
+
+        result_obj.setdefault("extensions", {})
+        dump_json(result_path, result_obj)
+
+        upload_status: Dict[str, Any] = {"ok": True, "bucket": bucket, "prefix": prefix}
+        try:
+            _upload_all_artifacts()
+        except Exception as upload_err:
+            upload_status = {
+                "ok": False,
+                "bucket": bucket,
+                "prefix": prefix,
+                "error": str(upload_err),
+            }
+            result_obj["extensions"]["upload"] = upload_status
+            dump_json(result_path, result_obj)
+            if strict_upload:
+                raise RuntimeError(f"S3 업로드 실패: {upload_err}") from upload_err
+            return result_path
+
+        result_obj["extensions"]["upload"] = upload_status
+        dump_json(result_path, result_obj)
+
+        try:
+            _upload_result_json_only(result_path)
+        except Exception as sync_err:
+            result_obj["extensions"]["upload_sync_warning"] = str(sync_err)
+            dump_json(result_path, result_obj)
+            if strict_upload:
+                raise RuntimeError(f"최종 normalized 결과 동기화 실패: {sync_err}") from sync_err
+
+        return result_path
+
     collection_status: Dict[str, Any] = {
         "assume_role": {"status": "NA", "na_reason": "UNKNOWN", "message": "not started"},
         "cloudtrail": {"status": "NA", "na_reason": "UNKNOWN", "message": "not started"},
@@ -504,7 +587,12 @@ def run_job_from_payload_file(
     try:
         role_arn = payload["assume_role"]["role_arn"]
         ext_id = payload["assume_role"]["external_id"]
-        session = assume_role_session(role_arn, ext_id)
+        session = assume_role_session(
+            role_arn=role_arn,
+            external_id=ext_id,
+            run_id=run_id,
+            base_session=storage_session,
+        )
         collection_status["assume_role"] = _stage_ok()
     except ClientError as e:
         collection_status["assume_role"] = _stage_failed(
@@ -512,19 +600,18 @@ def run_job_from_payload_file(
             f"{_client_error_code(e)}: {e}",
             retryable=False,
         )
-        # Can't proceed
         result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
-        dump_json(result_path, {
-            "meta": {"schema_version": "0.2.0", "type": job_type, "run_id": run_id, "account_id": payload["account_id"], "regions": payload["regions"],
-                     "time_range": resolve_time_range(payload), "generated_at": _to_kst_iso(_now_kst()),
-                     "collector": {"name":"dndn-collector","version":"0.1.0"},
-                     "evidence": _evidence_uris(payload)},
+        failed_result = {
+            "meta": build_meta(payload, resolve_time_range(payload)),
             "collection_status": collection_status,
             "events": [],
             "resources": [],
-            "extensions": {"fatal": True, "note": "assume_role failed; no further collection"},
-        })
-        return result_path
+            "extensions": {
+                "fatal": True,
+                "note": "assume_role failed; no further collection",
+            },
+        }
+        return _finalize_result(result_path, failed_result, strict_upload=False)
 
     # 2) Resolve time range
     time_range = resolve_time_range(payload)
@@ -621,5 +708,4 @@ def run_job_from_payload_file(
         result["extensions"]["schema_error"] = str(e)
 
     result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
-    dump_json(result_path, result)
-    return result_path
+    return _finalize_result(result_path, result, strict_upload=True)
