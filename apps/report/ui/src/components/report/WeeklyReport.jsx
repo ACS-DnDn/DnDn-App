@@ -11,7 +11,6 @@ function fmtDate(iso) {
   return iso.slice(0,10).replace(/-/g,'.');
 }
 
-// 임시 데이터
 const MOCK = {
   kpi: {
     changes: '3건',
@@ -93,6 +92,8 @@ const STATUS_CLASS = { ok: 'st-ok', warn: 'st-warn', crit: 'st-crit', high: 'st-
 const STATUS_LABEL = { ok: '정상', warn: '주의', crit: '위험', high: 'High', danger: '위험' };
 
 export default function WeeklyReport({ canonical }) {
+  if (!canonical) return <div className="na-box">데이터를 불러오는 중입니다...</div>;
+
   const { meta = {}, events = [], resources = [], collection_status = {}, advisor_checks = [] } = canonical;
 
   const weekStart = meta.time_range?.start?.slice(0,10).replace(/-/g,'.') || '-';
@@ -498,7 +499,7 @@ export default function WeeklyReport({ canonical }) {
         </table>
       </div>
 
-      {/* 수집 상태 */}
+      {/* 12. 수집 상태 */}
       <div className="section">
         <SectionTitle>12. 수집 상태</SectionTitle>
         <table className="tbl">

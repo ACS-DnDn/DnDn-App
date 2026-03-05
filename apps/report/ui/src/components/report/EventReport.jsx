@@ -21,7 +21,9 @@ const SEVERITY_CLASS = { CRITICAL: 'r-hi', HIGH: 'r-hi', MEDIUM: 'r-mid', LOW: '
 const SEVERITY_LABEL = { CRITICAL: '심각', HIGH: '상', MEDIUM: '중', LOW: '하' };
 
 export default function EventReport({ canonical }) {
-  const { meta, events = [], resources = [], collection_status = {}, extensions = {} } = canonical;
+  if (!canonical) return <div className="na-box">데이터를 불러오는 중입니다...</div>;
+
+  const { meta = {}, events = [], resources = [], collection_status = {}, extensions = {} } = canonical;
   const triggerEvent = events[0] || {};
   const resource = resources[0]?.resource || {};
   const cloudtrailStatus = collection_status.cloudtrail || {};
