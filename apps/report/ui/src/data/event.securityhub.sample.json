@@ -1,152 +1,98 @@
 {
-  "collection_status": {
-    "assume_role": {
-      "status": "OK"
+  "meta": {
+    "schema_version": "0.1.0",
+    "type": "EVENT",
+    "run_id": "a8eea725-770e-4ee4-be8c-c6528688d555",
+    "account_id": "451017115109",
+    "regions": ["ap-northeast-2"],
+    "time_range": {
+      "start": "2026-03-04T04:56:53+00:00",
+      "end": "2026-03-05T00:14:05.077Z",
+      "timezone": "Asia/Seoul"
     },
-    "cloudtrail": {
-      "status": "OK"
+    "generated_at": "2026-03-05T02:41:09.898981+00:00",
+    "collector": { "name": "dndn-finding-enricher", "version": "1.1.0" },
+    "evidence": {
+      "raw_prefix_s3_uri": "s3://dndn-test-enriched-findings-451017115109/raw-findings/2026/03/05/b5b01481-ce9b-436d-8e88-c3019f9ffb39.json",
+      "normalized_prefix_s3_uri": "s3://dndn-test-enriched-findings-451017115109/enriched-findings/2026/03/05/b5b01481-ce9b-436d-8e88-c3019f9ffb39.json"
     },
-    "config": {
-      "status": "OK"
-    },
-    "normalized": {
-      "status": "OK"
+    "trigger": {
+      "source": "EVENTBRIDGE",
+      "received_at": "2026-03-05T02:41:09.898981+00:00",
+      "detail_type": "Security Hub Findings - Imported"
     }
+  },
+  "collection_status": {
+    "assume_role": { "status": "NA", "na_reason": "NOT_SUPPORTED" },
+    "cloudtrail": { "status": "OK" },
+    "config": { "status": "NA", "na_reason": "NOT_SUPPORTED" },
+    "normalized": { "status": "OK" }
   },
   "events": [
     {
+      "event_id": "234cf196-94d1-4e1d-bbe0-d7ba5cc093f2",
+      "event_time": "2026-03-04T04:56:53+00:00",
       "aws_region": "ap-northeast-2",
-      "event_id": "b38758e8-7abe-4cd5-8850-ac943c02438b",
-      "event_name": "AuthorizeSecurityGroupIngress",
-      "event_source": "ec2.amazonaws.com",
-      "event_time": "2026-02-26T18:00:05+09:00",
-      "raw": {
-        "cloudtrail_event_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/raw/cloudtrail/event_b38758e8-7abe-4cd5-8850-ac943c02438b.json"
-      },
+      "event_source": "elasticloadbalancing.amazonaws.com",
+      "event_name": "CreateLoadBalancer",
       "read_only": false,
+      "user_identity": { "user_name": "RAPA_Admin" },
       "resources": [
         {
-          "account_id": "123456789012",
-          "arn": "arn:aws:ec2:ap-northeast-2:123456789012:security-group/sg-0abc123def456",
-          "region": "ap-northeast-2",
-          "resource_id": "sg-0abc123def456",
-          "resource_type": "AWS::EC2::SecurityGroup"
+          "resource_type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+          "resource_id": "dndn-test-alb",
+          "arn": "arn:aws:elasticloadbalancing:ap-northeast-2:451017115109:loadbalancer/app/dndn-test-alb/76aaf25f06eab8e3",
+          "account_id": "451017115109",
+          "region": "ap-northeast-2"
         }
       ],
-      "user_identity": {
-        "arn": "arn:aws:iam::123456789012:user/admin",
-        "type": "IAMUser",
-        "user_name": "admin"
-      }
+      "raw": { "lookup_event_s3_uri": null, "cloudtrail_event_s3_uri": null }
     }
   ],
-  "extensions": {
-    "securityhub_finding": {
-      "compliance": {
-        "standards_control_arn": "arn:aws:securityhub:ap-northeast-2::standards/aws-foundational-security-best-practices/v/1.0.0/EC2.19",
-        "status": "FAILED"
-      },
-      "description": "보안 그룹 sg-0abc123def456이 인터넷 전체(0.0.0.0/0)에서 SSH(22번 포트) 접근을 허용하고 있습니다.",
-      "id": "arn:aws:securityhub:ap-northeast-2:123456789012:security-control/EC2.19/finding/abc123",
-      "remediation": {
-        "text": "SSH 접근을 신뢰할 수 있는 특정 IP 주소 범위로 제한하세요.",
-        "url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules.html"
-      },
-      "resources": [
-        {
-          "group_id": "sg-0abc123def456",
-          "group_name": "production-web-sg",
-          "id": "arn:aws:ec2:ap-northeast-2:123456789012:security-group/sg-0abc123def456",
-          "region": "ap-northeast-2",
-          "type": "AwsEc2SecurityGroup"
-        }
-      ],
-      "severity": {
-        "label": "CRITICAL",
-        "normalized": 90
-      },
-      "source": "SecurityHub",
-      "title": "EC2.19 보안 그룹이 0.0.0.0/0에서 SSH 포트(22)를 허용해서는 안 됩니다"
-    }
-  },
-  "meta": {
-    "account_id": "123456789012",
-    "collector": {
-      "name": "dndn-collector",
-      "rule_set_version": "eks-mvp-0.1",
-      "runtime": "python3.12",
-      "version": "0.1.0"
-    },
-    "evidence": {
-      "normalized_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/normalized/",
-      "raw_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/raw/"
-    },
-    "generated_at": "2026-02-24T12:00:00+09:00",
-    "partition": {
-      "day": 24,
-      "month": 2,
-      "year": 2026
-    },
-    "regions": [
-      "ap-northeast-2"
-    ],
-    "run_id": "01J0SHULID9999",
-    "schema_version": "0.2.0",
-    "time_range": {
-      "end": "2026-02-26T19:00:00+09:00",
-      "note": "SecurityHub finding time ± 60m",
-      "start": "2026-02-26T17:00:00+09:00",
-      "timezone": "Asia/Seoul"
-    },
-    "trigger": {
-      "detail_type": "Security Hub Findings - Imported",
-      "event_id": "arn:aws:securityhub:ap-northeast-2:123456789012:security-control/EC2.19/finding/abc123",
-      "event_time": "2026-02-26T18:00:00+09:00",
-      "raw_event_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/raw/trigger/securityhub_finding.json",
-      "received_at": "2026-02-26T18:00:10+09:00",
-      "selector": {
-        "catalog": {
-          "catalog_id": "default",
-          "item_id": "CRITICAL_FINDING",
-          "pack_id": "PACK_SECURITYHUB",
-          "version": "1.0.0"
-        },
-        "mode": "CATALOG",
-        "note": "Upstream: SecurityHub Findings - Imported",
-        "rule_name": "tenant-123-securityhub-critical-high"
-      },
-      "source": "EVENTBRIDGE"
-    },
-    "type": "EVENT"
-  },
   "resources": [
     {
-      "change_summary": {
-        "event_count": 1,
-        "first_event_time": "2026-02-26T18:00:05+09:00",
-        "last_event_time": "2026-02-26T18:00:05+09:00"
-      },
-      "config": {
-        "after": null,
-        "before": null,
-        "message": "Config join omitted in sample (best-effort)",
-        "status": "OK"
+      "key": "AWS::ElasticLoadBalancingV2::LoadBalancer/dndn-test-alb/ap-northeast-2",
+      "resource": {
+        "resource_type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+        "resource_id": "dndn-test-alb",
+        "arn": "arn:aws:elasticloadbalancing:ap-northeast-2:451017115109:loadbalancer/app/dndn-test-alb/76aaf25f06eab8e3",
+        "account_id": "451017115109",
+        "region": "ap-northeast-2"
       },
       "events": [
         {
-          "event_id": "b38758e8-7abe-4cd5-8850-ac943c02438b",
-          "event_name": "AuthorizeSecurityGroupIngress",
-          "event_source": "ec2.amazonaws.com",
-          "event_time": "2026-02-26T18:00:05+09:00"
+          "event_id": "234cf196-94d1-4e1d-bbe0-d7ba5cc093f2",
+          "event_time": "2026-03-04T04:56:53+00:00",
+          "event_name": "CreateLoadBalancer",
+          "event_source": "elasticloadbalancing.amazonaws.com",
+          "user_arn": ""
         }
       ],
-      "key": "ap-northeast-2:AWS::EC2::SecurityGroup:sg-0abc123def456",
-      "resource": {
-        "account_id": "123456789012",
-        "arn": "arn:aws:ec2:ap-northeast-2:123456789012:security-group/sg-0abc123def456",
-        "region": "ap-northeast-2",
-        "resource_id": "sg-0abc123def456",
-        "resource_type": "AWS::EC2::SecurityGroup"
+      "change_summary": {
+        "first_event_time": "2026-03-04T04:56:53+00:00",
+        "last_event_time": "2026-03-04T04:56:53+00:00",
+        "event_count": 1
+      },
+      "config": { "status": "NA", "na_reason": "NOT_SUPPORTED" },
+      "extensions": {
+        "security_finding": {
+          "finding_id": "arn:aws:securityhub:ap-northeast-2:451017115109:security-control/ELB.16/finding/b5b01481-ce9b-436d-8e88-c3019f9ffb39",
+          "control_id": "ELB.16",
+          "severity": "MEDIUM",
+          "severity_normalized": 40,
+          "compliance_status": "FAILED",
+          "standards": ["NIST.800-53.r5 AC-4(21)"],
+          "title": "Application Load Balancers should be associated with an AWS WAF web ACL",
+          "description": "This control checks whether Application Load Balancers are associated with an AWS WAF web ACL. The control fails if the Enabled field for the WAF configuration is set to false.",
+          "first_observed_at": "2026-03-05T00:14:05.077Z",
+          "last_observed_at": "2026-03-05T00:14:05.077Z",
+          "account_alias": "rapa-cm3-08",
+          "resource_display_name": "dndn-test-alb",
+          "exposure_scope": "internal",
+          "affected_resources": [],
+          "detection_delay": "19:17:12",
+          "remediation_url": "https://docs.aws.amazon.com/console/securityhub/ELB.16/remediation"
+        }
       }
     }
   ]

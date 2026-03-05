@@ -23,9 +23,7 @@ function toSafeUrl(url) {
   try {
     const parsed = new URL(url);
     return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 const SEVERITY_CLASS = { CRITICAL: 'r-hi', HIGH: 'r-hi', MEDIUM: 'r-mid', LOW: 'r-low' };
@@ -34,26 +32,24 @@ const SEVERITY_LABEL = { CRITICAL: '심각', HIGH: '상', MEDIUM: '중', LOW: '�
 export default function EventReport({ canonical }) {
   if (!canonical) return <div className="na-box">데이터를 불러오는 중입니다...</div>;
 
-  const { meta = {}, events = [], resources = [], collection_status = {}, extensions = {} } = canonical;
+  const { meta = {}, events = [], resources = [], collection_status = {} } = canonical;
   const triggerEvent = events[0] || {};
-  const resource = resources[0]?.resource || {};
+  const resourceEntry = resources[0] || {};
+  const resource = resourceEntry.resource || {};
   const cloudtrailStatus = collection_status.cloudtrail || {};
-  const finding = extensions.securityhub_finding || null;
+
+  // 실제 Worker 구조: resources[0].extensions.security_finding
+  const finding = resourceEntry.extensions?.security_finding || null;
   const isSecurityHub = !!finding;
-  const safeRemediationUrl = toSafeUrl(finding?.remediation?.url);
+  const safeRemediationUrl = toSafeUrl(finding?.remediation_url);
 
   const exposureText =
-    finding?.isPublic != null
-      ? (finding.isPublic ? '있음 (인터넷 전체 노출)' : '없음')
-      : (finding?.description?.includes('0.0.0.0/0') ? '있음 (인터넷 전체 노출)' : '확인 필요');
-  const findingStatus = finding?.status || '확인 필요';
+    finding?.exposure_scope === 'public' ? '있음 (인터넷 전체 노출)' :
+    finding?.exposure_scope === 'internal' ? '없음 (내부망)' : '확인 필요';
 
   const readOnlyText =
-    triggerEvent.read_only == null
-      ? '확인 불가'
-      : triggerEvent.read_only
-        ? '예 (읽기 작업)'
-        : '아니오 (변경 작업)';
+    triggerEvent.read_only == null ? '확인 불가' :
+    triggerEvent.read_only ? '예 (읽기 작업)' : '아니오 (변경 작업)';
 
   return (
     <div className="doc">
@@ -93,20 +89,20 @@ export default function EventReport({ canonical }) {
               <tr>
                 <th>심각도</th>
                 <td>
-                  <span className={SEVERITY_CLASS[finding.severity?.label]}>
-                    <strong>{finding.severity?.label}</strong>
+                  <span className={SEVERITY_CLASS[finding.severity]}>
+                    <strong>{finding.severity}</strong>
                   </span>
-                  {' '}({finding.compliance?.standards_control_arn?.split('/').slice(-1)[0]})
+                  {' '}({finding.control_id})
                 </td>
                 <th>감지 일시</th>
-                <td>{fmtTime(meta.trigger?.event_time)} (KST)</td>
+                <td>{fmtTime(finding.first_observed_at)} (KST)</td>
               </tr>
             ) : (
               <tr>
                 <th>감지 일시</th>
                 <td>{fmtTime(triggerEvent.event_time)}</td>
                 <th>작업자</th>
-                <td style={{ fontSize: '11.5px' }}>{triggerEvent.user_identity?.arn || '-'}</td>
+                <td style={{ fontSize: '11.5px' }}>{triggerEvent.user_identity?.user_name || '-'}</td>
               </tr>
             )}
           </tbody>
@@ -121,10 +117,11 @@ export default function EventReport({ canonical }) {
             {isSecurityHub ? (
               <>
                 <tr><th className="th-label">이벤트 유형</th><td>보안 구성 미준수</td></tr>
-                <tr><th className="th-label">감지 출처</th><td>Amazon SecurityHub — {finding.compliance?.standards_control_arn?.split('/').slice(-1)[0]}</td></tr>
-                <tr><th className="th-label">Finding ID</th><td style={{ fontFamily: 'monospace', fontSize: '11.5px' }}>{finding.id}</td></tr>
+                <tr><th className="th-label">감지 출처</th><td>Amazon SecurityHub — {finding.control_id}</td></tr>
+                <tr><th className="th-label">Finding ID</th><td style={{ fontFamily: 'monospace', fontSize: '11.5px' }}>{finding.finding_id}</td></tr>
                 <tr><th className="th-label">영향 범위</th><td>{finding.description}</td></tr>
-                <tr><th className="th-label">이벤트 주체</th><td>{triggerEvent.user_identity?.arn || 'Amazon SecurityHub (자동 감지)'}</td></tr>
+                <tr><th className="th-label">보안 표준</th><td>{finding.standards?.join(', ') || '-'}</td></tr>
+                <tr><th className="th-label">이벤트 주체</th><td>{triggerEvent.user_identity?.user_name || 'Amazon SecurityHub (자동 감지)'}</td></tr>
               </>
             ) : (
               <>
@@ -132,12 +129,6 @@ export default function EventReport({ canonical }) {
                 <tr><th className="th-label">이벤트 소스</th><td><code>{triggerEvent.event_source}</code></td></tr>
                 <tr><th className="th-label">리전</th><td>{triggerEvent.aws_region}</td></tr>
                 <tr><th className="th-label">읽기 전용</th><td>{readOnlyText}</td></tr>
-                {meta.trigger?.selector?.catalog && (
-                  <tr>
-                    <th className="th-label">감지 규칙</th>
-                    <td>{meta.trigger.selector.catalog.pack_id} / {meta.trigger.selector.catalog.item_id}</td>
-                  </tr>
-                )}
               </>
             )}
           </tbody>
@@ -163,7 +154,7 @@ export default function EventReport({ canonical }) {
                 <tr key={ev.event_id}>
                   <td className="td-time">{fmtTime(ev.event_time)}</td>
                   <td className="td-type">{ev.event_source?.split('.')[0]}</td>
-                  <td>{ev.event_name} — {ev.user_identity?.arn || '-'}</td>
+                  <td>{ev.event_name} — {ev.user_identity?.user_name || '-'}</td>
                 </tr>
               ))}
               {meta.trigger?.received_at && (
@@ -182,22 +173,21 @@ export default function EventReport({ canonical }) {
       {isSecurityHub && (
         <div className="section">
           <SectionTitle>3. 영향 분석</SectionTitle>
-
           <div className="sub-heading">영향 범위</div>
           <table className="tbl-info" style={{ marginBottom: '14px' }}>
             <tbody>
               <tr>
                 <th>영향 리소스</th>
-                <td><code>{resource.resource_id}</code> ({resource.region})</td>
+                <td><code>{finding.resource_display_name || resource.resource_id}</code> ({resource.region})</td>
                 <th>리소스 유형</th>
                 <td>{resource.resource_type}</td>
               </tr>
               <tr>
                 <th>외부 노출</th>
                 <td>{exposureText}</td>
-                <th>현재 상태</th>
-                <td style={{ fontWeight: 600, color: findingStatus === '미조치' ? '#c00' : 'inherit' }}>
-                  {findingStatus}
+                <th>준수 상태</th>
+                <td style={{ fontWeight: 600, color: finding.compliance_status === 'FAILED' ? '#c00' : 'inherit' }}>
+                  {finding.compliance_status}
                 </td>
               </tr>
             </tbody>
@@ -214,10 +204,10 @@ export default function EventReport({ canonical }) {
             </thead>
             <tbody>
               <tr>
-                <td className="td-risk">{resource.resource_type} 노출</td>
+                <td className="td-risk">{resource.resource_type} 미준수</td>
                 <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                  <span className={SEVERITY_CLASS[finding.severity?.label]}>
-                    {SEVERITY_LABEL[finding.severity?.label]}
+                  <span className={SEVERITY_CLASS[finding.severity]}>
+                    {SEVERITY_LABEL[finding.severity]}
                   </span>
                 </td>
                 <td>{finding.description}</td>
@@ -233,34 +223,15 @@ export default function EventReport({ canonical }) {
           <SectionTitle>4. 보안 Finding 상세</SectionTitle>
           <table className="tbl">
             <tbody>
-              <tr><th className="th-label">감지 서비스</th><td>{finding.source}</td></tr>
-              <tr><th className="th-label">Finding 유형</th><td>{finding.title}</td></tr>
-              <tr>
-                <th className="th-label">보안 표준</th>
-                <td>{finding.compliance?.standards_control_arn?.split('/').slice(0, 4).join('/')}</td>
-              </tr>
-              <tr>
-                <th className="th-label">제어 ID</th>
-                <td>
-                  <strong>{finding.compliance?.standards_control_arn?.split('/').slice(-1)[0]}</strong>
-                  {' '}— {finding.title}
-                </td>
-              </tr>
-              <tr>
-                <th className="th-label">심각도</th>
-                <td>
-                  <strong>{finding.severity?.label}</strong> &nbsp;/&nbsp;
-                  Score: {finding.severity?.normalized}
-                </td>
-              </tr>
-              <tr>
-                <th className="th-label">리소스 유형</th>
-                <td><code>{resource.resource_type}</code></td>
-              </tr>
-              <tr>
-                <th className="th-label">레코드 상태</th>
-                <td>{finding.compliance?.status}</td>
-              </tr>
+              <tr><th className="th-label">감지 서비스</th><td>Amazon SecurityHub</td></tr>
+              <tr><th className="th-label">제어 ID</th><td><strong>{finding.control_id}</strong> — {finding.title}</td></tr>
+              <tr><th className="th-label">보안 표준</th><td>{finding.standards?.join(', ') || '-'}</td></tr>
+              <tr><th className="th-label">심각도</th><td><strong>{finding.severity}</strong> &nbsp;/&nbsp; Score: {finding.severity_normalized}</td></tr>
+              <tr><th className="th-label">준수 상태</th><td>{finding.compliance_status}</td></tr>
+              <tr><th className="th-label">리소스 유형</th><td><code>{resource.resource_type}</code></td></tr>
+              <tr><th className="th-label">계정 별칭</th><td>{finding.account_alias || '-'}</td></tr>
+              <tr><th className="th-label">최초 감지</th><td>{fmtTime(finding.first_observed_at)}</td></tr>
+              <tr><th className="th-label">최근 감지</th><td>{fmtTime(finding.last_observed_at)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -273,17 +244,17 @@ export default function EventReport({ canonical }) {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left' }}>리소스 ID</th>
-                  <th style={{ textAlign: 'left' }}>유형</th>
-                  <th style={{ textAlign: 'left' }}>리전</th>
+                  <th>리소스 ID</th>
+                  <th>유형</th>
+                  <th>리전</th>
                   <th style={{ textAlign: 'center' }}>변경 건수</th>
-                  <th style={{ textAlign: 'left' }}>Config 상태</th>
+                  <th>Config 상태</th>
                 </tr>
               </thead>
               <tbody>
                 {resources.map((r, idx) => {
                   const cfg = r.config || {};
-                  const rowKey = r.resource?.resource_id || `${r.resource?.resource_type || 'row'}-${idx}`;
+                  const rowKey = r.resource?.resource_id || `row-${idx}`;
                   return (
                     <tr key={rowKey}>
                       <td><code>{r.resource?.resource_id}</code></td>
@@ -304,8 +275,8 @@ export default function EventReport({ canonical }) {
         </div>
       )}
 
-      {/* 5. 권장 조치 (SecurityHub만) */}
-      {isSecurityHub && finding.remediation && (
+      {/* 5. 권장 조치 */}
+      {isSecurityHub && safeRemediationUrl && (
         <div className="section">
           <SectionTitle>5. 권장 조치</SectionTitle>
           <table className="tbl">
@@ -318,17 +289,10 @@ export default function EventReport({ canonical }) {
             </thead>
             <tbody>
               <tr>
-                <td className="td-step">조치</td>
+                <td className="td-step">참고</td>
                 <td className="td-step">①</td>
-                <td>{finding.remediation.text}</td>
+                <td><a href={safeRemediationUrl} target="_blank" rel="noopener noreferrer">{safeRemediationUrl}</a></td>
               </tr>
-              {safeRemediationUrl && (
-                <tr>
-                  <td className="td-step">참고</td>
-                  <td className="td-step">②</td>
-                  <td><a href={safeRemediationUrl} target="_blank" rel="noopener noreferrer">{safeRemediationUrl}</a></td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
