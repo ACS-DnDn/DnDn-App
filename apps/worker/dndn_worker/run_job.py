@@ -119,8 +119,9 @@ def _role_session_name(run_id: str) -> str:
 def assume_role_session(
     role_arn: str,
     external_id: str,
-    run_id: str,
     base_session: Optional[boto3.Session] = None,
+    *,
+    run_id: Optional[str] = None,
 ) -> boto3.Session:
     """
     Production path: use STS AssumeRole.
@@ -131,9 +132,14 @@ def assume_role_session(
 
     sts_session = base_session or boto3.Session()
     sts = sts_session.client("sts")
+
+    session_name = _role_session_name(
+        run_id or ("run-" + _sha256_bytes(os.urandom(16))[:12])
+    )
+
     resp = sts.assume_role(
         RoleArn=role_arn,
-        RoleSessionName=_role_session_name(run_id),
+        RoleSessionName=session_name,
         ExternalId=external_id,
     )
     c = resp["Credentials"]
