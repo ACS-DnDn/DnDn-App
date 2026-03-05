@@ -13,12 +13,17 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Smoke test CloudTrail lookup_events using assumed session.")
     p.add_argument("--role-arn", required=True, help="Role ARN to assume, or SELF")
     p.add_argument("--external-id", default="dndn-dev", help="ExternalId used in AssumeRole")
+    p.add_argument("--run-id", default="smoke-cloudtrail", help="Run id used for RoleSessionName")
     p.add_argument("--region", default="ap-northeast-2")
     p.add_argument("--hours", type=int, default=24)
     p.add_argument("--max", type=int, default=20)
     args = p.parse_args()
 
-    s = assume_role_session(args.role_arn, args.external_id)
+    s = assume_role_session(
+        role_arn=args.role_arn,
+        external_id=args.external_id,
+        run_id=args.run_id,
+    )
     ct = s.client("cloudtrail", region_name=args.region)
 
     end = datetime.now(timezone.utc)
