@@ -529,7 +529,7 @@ def run_job_from_payload_file(
     def _upload_result_json_only(result_path: Path) -> None:
         bucket = payload["s3"]["bucket"]
         prefix = payload["s3"]["prefix"].rstrip("/")
-        key = f"{prefix}/normalized/{result_path.name}"
+        key = f"{prefix}/normalized/{result_path.name}".lstrip("/")
         storage_session.client("s3").upload_file(
             str(result_path),
             bucket,
