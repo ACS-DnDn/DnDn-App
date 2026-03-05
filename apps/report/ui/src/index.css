@@ -1,9 +1,18 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+/* ── Pretendard 로컬 폰트 ── */
+@font-face { font-family: Pretendard; font-weight: 100; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Thin.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 200; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 300; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Light.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 400; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 500; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Medium.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 600; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 700; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 800; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 900; font-style: normal; font-display: swap; src: url('/fonts/Pretendard-Black.subset.woff2') format('woff2'); }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  font-family: Pretendard, 'Apple SD Gothic Neo', sans-serif;
   font-size: 13px;
   line-height: 1.65;
   color: #1a1a1a;
@@ -19,6 +28,7 @@ body {
   border-radius: 4px;
 }
 
+/* ── 문서 헤더 ── */
 .doc-header {
   display: flex;
   flex-direction: column;
@@ -32,50 +42,93 @@ body {
   justify-content: space-between;
   align-items: center;
 }
-.doc-header-logo { font-size: 20px; font-weight: 900; color: #1f3864; letter-spacing: -0.5px; }
-.doc-header-title { font-size: 19px; font-weight: 800; color: #1f3864; text-align: center; line-height: 1.4; }
+.doc-header-logo { height: 28px; width: auto; display: block; }
+.doc-header-title { font-size: 23px; font-weight: 800; color: #1f3864; text-align: center; line-height: 1.4; }
 .doc-header-meta { text-align: right; font-size: 11px; color: #666; line-height: 1.75; }
 
+/* ── 문서 기본 정보 테이블 ── */
 .tbl-info { width: 100%; border-collapse: collapse; border: 1px solid #bbb; margin-bottom: 22px; }
-.tbl-info th { padding: 7px 11px; background: #f0f0f0; font-size: 11.5px; font-weight: 600; color: #444; border: 1px solid #bbb; white-space: nowrap; vertical-align: middle; }
-.tbl-info td { padding: 7px 11px; border: 1px solid #bbb; color: #1a1a1a; vertical-align: middle; font-size: 12.5px; }
+.tbl-info th { padding: 7px 11px; background: #d4dae6; font-size: 12.5px; font-weight: 600; color: #1f3864; text-align: center; border: 1px solid #bbb; white-space: nowrap; vertical-align: middle; width: 110px; }
+.tbl-info td { padding: 7px 11px; border: 1px solid #bbb; color: #1a1a1a; vertical-align: middle; font-size: 12.5px; text-align: center; }
 .tbl-info .td-main { font-weight: 700; font-size: 13px; }
 
+/* ── 섹션 ── */
 .section { margin-bottom: 20px; }
-.section-title { background: #1f3864; color: #fff; font-size: 12.5px; font-weight: 700; padding: 6px 12px; letter-spacing: 0.3px; }
+.section-title { background: #1f3864; color: #fff; font-size: 12.5px; font-weight: 700; padding: 6px 12px; letter-spacing: 0.3px; margin-bottom: 7px; }
 .sub-title { font-size: 12px; font-weight: 700; color: #333; margin: 14px 0 8px; padding-left: 2px; }
+.sub-heading { background: #edf0f7; color: #1f3864; font-size: 12px; font-weight: 700; padding: 5px 10px; margin: 16px 0 7px; border-left: 3px solid #1f3864; }
 
+/* ── 공통 테이블 ── */
 .tbl { width: 100%; border-collapse: collapse; border: 1px solid #bbb; font-size: 12.5px; }
-.tbl th { padding: 7px 11px; background: #f0f0f0; font-weight: 600; color: #333; border: 1px solid #bbb; text-align: left; vertical-align: middle; white-space: nowrap; }
+.tbl th { padding: 7px 11px; background: #d4dae6; font-weight: 600; color: #1f3864; border: 1px solid #bbb; text-align: center; vertical-align: middle; white-space: nowrap; }
 .tbl td { padding: 7px 11px; border: 1px solid #bbb; color: #1a1a1a; vertical-align: top; line-height: 1.65; }
-.tbl thead th { background: #f0f0f0; font-size: 12px; text-align: center; }
-.tbl tbody tr:nth-child(even) td { background: #fafafa; }
+.tbl tbody tr:nth-child(even) td:not(.td-item):not(.td-step):not(.td-risk) { background: #fafafa; }
 
-.td-item { background: #f5f5f5 !important; font-weight: 600; color: #333; width: 155px; }
+/* ── Before / After ── */
+.td-item { background: #f0f0f0 !important; font-weight: 600; color: #1a1a1a; width: 155px; text-align: center !important; vertical-align: middle !important; }
 .th-before { color: #a00 !important; }
 .th-after  { color: #197340 !important; }
-.td-before { color: #a00; }
-.td-after  { color: #197340; font-weight: 600; }
+.td-before { color: #a00; text-align: center; vertical-align: middle; }
+.td-after  { color: #197340; font-weight: 600; text-align: center; vertical-align: middle; }
 
-.r-hi  { font-weight: 700; color: #c00; }
-.r-mid { font-weight: 700; color: #664400; }
-.r-low { color: #888; }
+/* ── 위험도 ── */
+.r-hi  { font-size: 12.5px; font-weight: 700; color: #c00; }
+.r-mid { font-size: 12.5px; font-weight: 700; color: #555; }
+.r-low { font-size: 12.5px; font-weight: 700; color: #888; }
 
-.td-time { font-family: 'SFMono-Regular', 'Consolas', monospace; font-size: 12px; white-space: nowrap; text-align: center; }
-.td-type { font-weight: 600; color: #333; }
-.td-step { text-align: center; font-weight: 700; color: #1f3864; }
+/* ── 위험도 항목 셀 ── */
+.td-risk { text-align: center; font-weight: 600; color: #1a1a1a; background: #f0f0f0; vertical-align: middle; }
+
+/* ── 타임라인 ── */
+.td-time { font-family: SFMono-Regular, Consolas, monospace; font-size: 12px; white-space: nowrap; text-align: center; vertical-align: middle; }
+.td-type { font-weight: 600; color: #333; vertical-align: middle; text-align: center; }
+
+/* ── 작업 절차 ── */
+.td-step { text-align: center !important; font-weight: 600; color: #1a1a1a; background: #f0f0f0; vertical-align: middle !important; }
 .td-exec { text-align: center; font-size: 12px; }
 
-.th-label { width: 110px; background: #f5f5f5 !important; font-size: 11.5px; color: #555; }
+/* ── 좌측 라벨 ── */
+.th-label { width: 110px; text-align: center !important; }
 
+/* ── NA 박스 ── */
 .na-box { padding: 10px 14px; background: #f9f9f9; border: 1px solid #ddd; border-left: 3px solid #aaa; font-size: 12px; color: #777; }
 
-code { font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace; font-size: 11.5px; background: #f4f4f4; border: 1px solid #ddd; padding: 0 4px; border-radius: 2px; }
+/* ── code ── */
+code { font-family: SFMono-Regular, Consolas, Menlo, monospace; font-size: 11.5px; background: #f4f4f4; border: 1px solid #ddd; padding: 0 4px; border-radius: 2px; }
 
+/* ── 비고 ── */
 .note { font-size: 11.5px; color: #666; margin-top: 6px; line-height: 1.65; }
 
-.doc-footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #bbb; display: flex; justify-content: space-between; font-size: 11px; color: #999; }
+/* ── 문서 푸터 ── */
+.doc-footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #bbb; display: flex; justify-content: flex-end; font-size: 11px; color: #999; }
 
+/* ── 개발용 탭 ── */
 .dev-tabs { max-width: 860px; margin: 24px auto 0; display: flex; gap: 8px; padding: 0 4px; }
-.dev-tab { padding: 6px 16px; font-size: 12px; font-family: 'Pretendard', sans-serif; border: 1px solid #bbb; background: #fff; border-radius: 3px; cursor: pointer; color: #444; }
+.dev-tab { padding: 6px 16px; font-size: 12px; font-family: Pretendard, sans-serif; border: 1px solid #bbb; background: #fff; border-radius: 3px; cursor: pointer; color: #444; }
 .dev-tab.active { background: #1f3864; color: #fff; border-color: #1f3864; }
+
+/* ── KPI 카드 ── */
+.tbl-summary { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+.tbl-summary td { width: 25%; padding: 10px 12px; border: 1px solid #ddd; vertical-align: middle; text-align: center; }
+.s-label { font-size: 12.5px; color: #888; margin-bottom: 4px; }
+.s-value { font-size: 16px; font-weight: 800; color: #1f3864; line-height: 1.2; }
+.s-value.red    { color: #c00; }
+.s-value.orange { color: #c05800; }
+
+/* ── 비용 ── */
+.cost-up   { color: #c00;    font-weight: 600; }
+.cost-down { color: #197340; font-weight: 600; }
+.cost-sum td { background: #f5f5f5 !important; font-weight: 700; }
+
+/* ── 상태 텍스트 ── */
+.st-crit   { color: #c00;    font-weight: 700; }
+.st-high   { color: #c05800; font-weight: 700; }
+.st-med    { color: #9a7000; font-weight: 600; }
+.st-low    { color: #888;    font-weight: 600; }
+.st-ok     { color: #197340; font-weight: 600; }
+.st-warn   { color: #9a7000; font-weight: 600; }
+.st-danger { color: #c00;    font-weight: 700; }
+.st-skip   { color: #888;    font-weight: 600; }
+
+/* ── 인쇄 ── */
+@media print { body { font-size: 11px; } .doc { padding: 0; max-width: 100%; } }
