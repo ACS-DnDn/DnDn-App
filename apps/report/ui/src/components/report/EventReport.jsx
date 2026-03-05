@@ -17,6 +17,16 @@ function fmtDate(iso) {
   return iso.slice(0, 10).replace(/-/g, '.');
 }
 
+function toSafeUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 const SEVERITY_CLASS = { CRITICAL: 'r-hi', HIGH: 'r-hi', MEDIUM: 'r-mid', LOW: 'r-low' };
 const SEVERITY_LABEL = { CRITICAL: '심각', HIGH: '상', MEDIUM: '중', LOW: '하' };
 
@@ -29,6 +39,7 @@ export default function EventReport({ canonical }) {
   const cloudtrailStatus = collection_status.cloudtrail || {};
   const finding = extensions.securityhub_finding || null;
   const isSecurityHub = !!finding;
+  const safeRemediationUrl = toSafeUrl(finding?.remediation?.url);
 
   return (
     <div className="doc">
@@ -294,11 +305,11 @@ export default function EventReport({ canonical }) {
                 <td className="td-step">①</td>
                 <td>{finding.remediation.text}</td>
               </tr>
-              {finding.remediation.url && (
+              {safeRemediationUrl && (
                 <tr>
                   <td className="td-step">참고</td>
                   <td className="td-step">②</td>
-                  <td><a href={finding.remediation.url} target="_blank" rel="noreferrer">{finding.remediation.url}</a></td>
+                  <td><a href={safeRemediationUrl} target="_blank" rel="noopener noreferrer">{safeRemediationUrl}</a></td>
                 </tr>
               )}
             </tbody>
