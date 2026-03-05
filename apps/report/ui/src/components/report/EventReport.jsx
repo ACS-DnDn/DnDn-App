@@ -265,10 +265,11 @@ export default function EventReport({ canonical }) {
                 </tr>
               </thead>
               <tbody>
-                {resources.map((r) => {
+                {resources.map((r, idx) => {
                   const cfg = r.config || {};
+		  const rowKey = r.resource?.resource_id || `${r.resource?.resource_type || 'row'}-${idx}`;
                   return (
-                    <tr key={r.key}>
+                    <tr key={rowKey}>
                       <td><code>{r.resource?.resource_id}</code></td>
                       <td>{r.resource?.resource_type}</td>
                       <td>{r.resource?.region}</td>
@@ -319,7 +320,7 @@ export default function EventReport({ canonical }) {
 
       {/* 푸터 */}
       <div className="doc-footer">
-        <span>EVT-{meta.run_id?.slice(-8)} &nbsp;/&nbsp; {fmtDate(meta.generated_at)}</span>
+        <span>EVT-{meta.run_id?.slice(-8) || 'UNKNOWN'} &nbsp;/&nbsp; {fmtDate(meta.generated_at)}</span>
       </div>
     </div>
   );
