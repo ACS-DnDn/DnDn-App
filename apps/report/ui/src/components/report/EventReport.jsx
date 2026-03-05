@@ -4,6 +4,7 @@ import NASection from '../common/NASection';
 function fmtTime(iso) {
   if (!iso) return '-';
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString('ko-KR', {
     month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -40,6 +41,19 @@ export default function EventReport({ canonical }) {
   const finding = extensions.securityhub_finding || null;
   const isSecurityHub = !!finding;
   const safeRemediationUrl = toSafeUrl(finding?.remediation?.url);
+
+  const exposureText =
+    finding?.isPublic != null
+      ? (finding.isPublic ? '있음 (인터넷 전체 노출)' : '없음')
+      : (finding?.description?.includes('0.0.0.0/0') ? '있음 (인터넷 전체 노출)' : '확인 필요');
+  const findingStatus = finding?.status || '확인 필요';
+
+  const readOnlyText =
+    triggerEvent.read_only == null
+      ? '확인 불가'
+      : triggerEvent.read_only
+        ? '예 (읽기 작업)'
+        : '아니오 (변경 작업)';
 
   return (
     <div className="doc">
@@ -117,7 +131,7 @@ export default function EventReport({ canonical }) {
                 <tr><th className="th-label">이벤트 유형</th><td>{triggerEvent.event_name}</td></tr>
                 <tr><th className="th-label">이벤트 소스</th><td><code>{triggerEvent.event_source}</code></td></tr>
                 <tr><th className="th-label">리전</th><td>{triggerEvent.aws_region}</td></tr>
-                <tr><th className="th-label">읽기 전용</th><td>{triggerEvent.read_only ? '예 (읽기 작업)' : '아니오 (변경 작업)'}</td></tr>
+                <tr><th className="th-label">읽기 전용</th><td>{readOnlyText}</td></tr>
                 {meta.trigger?.selector?.catalog && (
                   <tr>
                     <th className="th-label">감지 규칙</th>
@@ -180,9 +194,11 @@ export default function EventReport({ canonical }) {
               </tr>
               <tr>
                 <th>외부 노출</th>
-                <td>{finding.description?.includes('0.0.0.0/0') ? '있음 (인터넷 전체 노출)' : '확인 필요'}</td>
+                <td>{exposureText}</td>
                 <th>현재 상태</th>
-                <td style={{ fontWeight: 600, color: '#c00' }}>미조치</td>
+                <td style={{ fontWeight: 600, color: findingStatus === '미조치' ? '#c00' : 'inherit' }}>
+                  {findingStatus}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -267,7 +283,7 @@ export default function EventReport({ canonical }) {
               <tbody>
                 {resources.map((r, idx) => {
                   const cfg = r.config || {};
-		  const rowKey = r.resource?.resource_id || `${r.resource?.resource_type || 'row'}-${idx}`;
+                  const rowKey = r.resource?.resource_id || `${r.resource?.resource_type || 'row'}-${idx}`;
                   return (
                     <tr key={rowKey}>
                       <td><code>{r.resource?.resource_id}</code></td>
