@@ -458,16 +458,16 @@ def enrich_resources_with_config(
         if not region or not resource_type or not resource_id:
             g["config"] = {
                 "status": "NA",
-                "na_reason": "NO_DATA",
-                "message": "Resource is missing region/resource_type/resource_id for Config lookup",
+                "na_reason": "UNKNOWN",
+                "message": "Unknown: missing region/resource_type/resource_id for Config lookup",
             }
             continue
 
         if event_time is None:
             g["config"] = {
                 "status": "NA",
-                "na_reason": "NO_DATA",
-                "message": "No event_time available to anchor Config before/after lookup",
+                "na_reason": "UNKNOWN",
+                "message": "Unknown: missing event_time to anchor Config before/after lookup",
             }
             continue
 
