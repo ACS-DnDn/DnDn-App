@@ -255,6 +255,281 @@ def detect_config_enabled(session: boto3.Session, region: str) -> Tuple[bool, st
     return True, "AWS Config recorder detected"
 
 
+def _safe_fs_name(value: str) -> str:
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in value)
+
+
+def _parse_event_time_for_config(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = _parse_dt(value)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _serialize_config_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    serialized: Dict[str, Any] = {
+        "capture_time": _to_kst_iso(item["configurationItemCaptureTime"])
+        if isinstance(item.get("configurationItemCaptureTime"), datetime)
+        else None,
+        "resource_type": item.get("resourceType"),
+        "resource_id": item.get("resourceId"),
+        "resource_name": item.get("resourceName"),
+        "arn": item.get("arn"),
+        "configuration_item_status": item.get("configurationItemStatus"),
+    }
+
+    configuration = item.get("configuration")
+    if isinstance(configuration, str):
+        try:
+            configuration = json.loads(configuration)
+        except Exception:
+            pass
+    serialized["configuration"] = configuration
+
+    supplementary = item.get("supplementaryConfiguration")
+    if isinstance(supplementary, str):
+        try:
+            supplementary = json.loads(supplementary)
+        except Exception:
+            pass
+    if supplementary is not None:
+        serialized["supplementary_configuration"] = supplementary
+
+    for key in ("tags", "relationships", "accountId", "awsRegion", "availabilityZone", "version"):
+        if key in item:
+            serialized[key] = item.get(key)
+
+    return {k: v for k, v in serialized.items() if v is not None}
+
+
+def _get_single_config_history_page(
+    session: boto3.Session,
+    region: str,
+    resource_type: str,
+    resource_id: str,
+    *,
+    earlier_time: Optional[datetime] = None,
+    later_time: Optional[datetime] = None,
+    chronological_order: str = "Reverse",
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    cfg = session.client("config", region_name=region)
+    kwargs: Dict[str, Any] = {
+        "resourceType": resource_type,
+        "resourceId": resource_id,
+        "chronologicalOrder": chronological_order,
+        "limit": limit,
+    }
+    if earlier_time is not None:
+        kwargs["earlierTime"] = earlier_time
+    if later_time is not None:
+        kwargs["laterTime"] = later_time
+    resp = cfg.get_resource_config_history(**kwargs)
+    return resp.get("configurationItems", []) or []
+
+
+def get_config_before_after_best_effort(
+    session: boto3.Session,
+    region: str,
+    resource_type: str,
+    resource_id: str,
+    event_time: datetime,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    before_items = _get_single_config_history_page(
+        session=session,
+        region=region,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        earlier_time=event_time,
+        chronological_order="Reverse",
+        limit=5,
+    )
+    after_items = _get_single_config_history_page(
+        session=session,
+        region=region,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        later_time=event_time,
+        chronological_order="Forward",
+        limit=5,
+    )
+
+    before_raw = before_items[0] if before_items else None
+    after_raw = after_items[0] if after_items else None
+
+    before = _serialize_config_item(before_raw) if before_raw else None
+    after = _serialize_config_item(after_raw) if after_raw else None
+    raw_bundle = {
+        "before_items": [_serialize_config_item(i) for i in before_items],
+        "after_items": [_serialize_config_item(i) for i in after_items],
+    }
+    return before, after, raw_bundle
+
+
+def _write_config_snapshot_artifacts(
+    raw_dir: Path,
+    payload: Dict[str, Any],
+    resource_key: str,
+    before: Optional[Dict[str, Any]],
+    after: Optional[Dict[str, Any]],
+    raw_bundle: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, Optional[str]]:
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    safe_key = _safe_fs_name(resource_key)
+    base_dir = raw_dir / "config" / safe_key
+    _ensure_dir(base_dir)
+
+    uris: Dict[str, Optional[str]] = {
+        "before_s3_uri": None,
+        "after_s3_uri": None,
+        "history_s3_uri": None,
+    }
+
+    history_path = base_dir / "history.json"
+    dump_json(history_path, raw_bundle)
+    uris["history_s3_uri"] = _s3_uri(bucket, f"{prefix}/raw/config/{safe_key}/history.json")
+
+    if before is not None:
+        before_path = base_dir / "before.json"
+        dump_json(before_path, before)
+        uris["before_s3_uri"] = _s3_uri(bucket, f"{prefix}/raw/config/{safe_key}/before.json")
+
+    if after is not None:
+        after_path = base_dir / "after.json"
+        dump_json(after_path, after)
+        uris["after_s3_uri"] = _s3_uri(bucket, f"{prefix}/raw/config/{safe_key}/after.json")
+
+    return uris
+
+
+def enrich_resources_with_config(
+    session: boto3.Session,
+    resources: List[Dict[str, Any]],
+    payload: Dict[str, Any],
+    raw_dir: Path,
+    collection_status: Dict[str, Any],
+) -> None:
+    cfg_status = collection_status.get("config", {})
+
+    if cfg_status.get("status") == "NA":
+        for g in resources:
+            g["config"] = {
+                "status": "NA",
+                "na_reason": cfg_status.get("na_reason", "UNKNOWN"),
+                "message": cfg_status.get("message", "Config not available"),
+            }
+        return
+
+    if cfg_status.get("status") == "FAILED":
+        for g in resources:
+            g["config"] = {
+                "status": "FAILED",
+                "error_code": cfg_status.get("error_code", "CONFIG_DESCRIBE_FAILED"),
+                "message": cfg_status.get("message", "Config stage failed before enrichment"),
+            }
+        return
+
+    if cfg_status.get("status") != "OK":
+        for g in resources:
+            g["config"] = {
+                "status": "NA",
+                "na_reason": "UNKNOWN",
+                "message": "Config stage did not complete successfully",
+            }
+        return
+
+    for g in resources:
+        resource = g.get("resource") or {}
+        region = resource.get("region")
+        resource_type = resource.get("resource_type")
+        resource_id = resource.get("resource_id")
+        event_time = _parse_event_time_for_config((g.get("change_summary") or {}).get("last_event_time"))
+
+        if not region or not resource_type or not resource_id:
+            g["config"] = {
+                "status": "NA",
+                "na_reason": "NO_DATA",
+                "message": "Resource is missing region/resource_type/resource_id for Config lookup",
+            }
+            continue
+
+        if event_time is None:
+            g["config"] = {
+                "status": "NA",
+                "na_reason": "NO_DATA",
+                "message": "No event_time available to anchor Config before/after lookup",
+            }
+            continue
+
+        try:
+            before, after, raw_bundle = get_config_before_after_best_effort(
+                session=session,
+                region=region,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                event_time=event_time,
+            )
+        except ClientError as e:
+            code = _client_error_code(e)
+            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
+                g["config"] = {
+                    "status": "NA",
+                    "na_reason": "PERMISSION_DENIED",
+                    "message": f"{code}: {e}",
+                }
+            else:
+                g["config"] = {
+                    "status": "FAILED",
+                    "error_code": "CONFIG_HISTORY_FAILED",
+                    "message": f"{code}: {e}",
+                }
+            continue
+        except Exception as e:
+            g["config"] = {
+                "status": "FAILED",
+                "error_code": "CONFIG_HISTORY_FAILED",
+                "message": str(e),
+            }
+            continue
+
+        if before is None and after is None:
+            g["config"] = {
+                "status": "NA",
+                "na_reason": "NO_DATA",
+                "message": "No Config history found for this resource around the event time",
+                "collected_at": _to_kst_iso(_now_kst()),
+            }
+            continue
+
+        uris = _write_config_snapshot_artifacts(
+            raw_dir=raw_dir,
+            payload=payload,
+            resource_key=g["key"],
+            before=before,
+            after=after,
+            raw_bundle=raw_bundle,
+        )
+        extensions: Dict[str, Any] = {}
+        if uris.get("history_s3_uri"):
+            extensions["history_s3_uri"] = uris["history_s3_uri"]
+
+        g["config"] = {
+            "status": "OK",
+            "before": before,
+            "after": after,
+            "before_s3_uri": uris.get("before_s3_uri"),
+            "after_s3_uri": uris.get("after_s3_uri"),
+            "collected_at": _to_kst_iso(_now_kst()),
+            "extensions": extensions,
+        }
+
+
 def _extract_user_identity(ct_detail: Dict[str, Any]) -> Dict[str, Any]:
     ui = ct_detail.get("userIdentity") or {}
     out: Dict[str, Any] = {}
@@ -408,13 +683,16 @@ def group_resources(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 }
                 groups[key] = g
 
-            g["events"].append({
+            link = {
                 "event_id": ev["event_id"],
                 "event_time": ev.get("event_time"),
                 "event_name": ev.get("event_name"),
                 "event_source": ev.get("event_source"),
-                "user_arn": (ev.get("user_identity") or {}).get("arn"),
-            })
+            }
+            user_arn = (ev.get("user_identity") or {}).get("arn")
+            if isinstance(user_arn, str) and user_arn.strip():
+                link["user_arn"] = user_arn
+            g["events"].append(link)
 
     # Deduplicate + sort event links for determinism
     for g in groups.values():
@@ -679,14 +957,13 @@ def run_job_from_payload_file(
     events = normalize_cloudtrail_events(raw_events, payload, raw_s3_uris)
     resources = group_resources(events)
 
-    # If Config stage is NA, optionally propagate to each resource group (consistent UX for B)
-    if collection_status["config"]["status"] == "NA":
-        for g in resources:
-            g["config"] = {
-                "status": "NA",
-                "na_reason": collection_status["config"]["na_reason"],
-                "message": "Config not recording",
-            }
+    enrich_resources_with_config(
+        session=session,
+        resources=resources,
+        payload=payload,
+        raw_dir=raw_dir,
+        collection_status=collection_status,
+    )
 
     result = {
         "meta": build_meta(payload, time_range),
