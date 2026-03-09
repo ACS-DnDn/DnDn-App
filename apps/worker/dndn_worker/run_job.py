@@ -32,7 +32,7 @@ def _json_default(o):
     # Cost Explorer 등 붙이면 Decimal 튀어나올 수 있어서 미리 대응
     if isinstance(o, Decimal):
         return float(o)
-    return str(o)
+    return str(o)   
 
 def _now_kst() -> datetime:
     if ZoneInfo is None:

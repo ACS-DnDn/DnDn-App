@@ -1,0 +1,46 @@
+{
+  "type": "EVENT",
+  "run_id": "health-evt-20260309",
+  "account_id": "123456789012",
+  "regions": [
+    "ap-northeast-2"
+  ],
+  "assume_role": {
+    "role_arn": "arn:aws:iam::123456789012:role/DnDnCollectorRole",
+    "external_id": "dndn-prod"
+  },
+  "event_time": "2026-03-09T09:00:00+09:00",
+  "window_minutes": 60,
+  "s3": {
+    "bucket": "dndn-data",
+    "prefix": "tenant_id=tenant-123/account_id=123456789012/type=EVENT/run_id=health-evt-20260309"
+  },
+  "trigger": {
+    "source": "EVENTBRIDGE",
+    "detail_type": "AWS Health Event",
+    "event_id": "arn:aws:health:ap-northeast-2::event/AWS_EKS_PLANNED_LIFECYCLE_EVENT/AWS_EKS_PLANNED_LIFECYCLE_EVENT_123456789012_ABC123",
+    "raw_event_s3_uri": "s3://dndn-data/tenant_id=tenant-123/account_id=123456789012/type=EVENT/run_id=health-evt-20260309/raw/trigger/aws_health_event.json",
+    "logical_source": "AWS_HEALTH",
+    "resources": [
+      "arn:aws:eks:ap-northeast-2:123456789012:cluster/my-eks-cluster"
+    ],
+    "health": {
+      "eventArn": "arn:aws:health:ap-northeast-2::event/AWS_EKS_PLANNED_LIFECYCLE_EVENT/AWS_EKS_PLANNED_LIFECYCLE_EVENT_123456789012_ABC123",
+      "service": "EKS",
+      "eventTypeCode": "AWS_EKS_PLANNED_LIFECYCLE_EVENT",
+      "eventTypeCategory": "scheduledChange",
+      "eventScopeCode": "ACCOUNT_SPECIFIC",
+      "statusCode": "open",
+      "eventRegion": "ap-northeast-2",
+      "affectedEntities": [
+        {
+          "entityValue": "my-eks-cluster",
+          "statusCode": "IMPAIRED"
+        }
+      ],
+      "latestDescription": {
+        "text": "Amazon EKS cluster version lifecycle event for my-eks-cluster."
+      }
+    }
+  }
+}
