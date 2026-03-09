@@ -34,6 +34,7 @@ def _json_default(o):
         return float(o)
     return str(o)
 
+
 def _now_kst() -> datetime:
     if ZoneInfo is None:
         # Fallback: fixed +09:00
@@ -256,7 +257,10 @@ def detect_config_enabled(session: boto3.Session, region: str) -> Tuple[bool, st
 
 
 def _safe_fs_name(value: str) -> str:
-    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in value)
+    base = "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in value)
+    base = base.strip("._-") or "resource"
+    digest = _sha256_bytes(value.encode("utf-8"))[:12]
+    return f"{base}__{digest}"
 
 
 def _parse_event_time_for_config(value: Optional[str]) -> Optional[datetime]:
@@ -483,6 +487,15 @@ def enrich_resources_with_config(
                     "na_reason": "PERMISSION_DENIED",
                     "message": f"{code}: {e}",
                 }
+            elif code in (
+                "NoAvailableConfigurationRecorderException",
+                "ResourceNotDiscoveredException",
+            ):
+                g["config"] = {
+                    "status": "NA",
+                    "na_reason": "SERVICE_DISABLED",
+                    "message": f"{code}: {e}",
+                }
             else:
                 g["config"] = {
                     "status": "FAILED",
@@ -629,7 +642,7 @@ def normalize_cloudtrail_events(
                 resources.append(hint_ref)
 
         norm = {
-            "event_id": e.get("EventId") or hashlib.md5((e.get("EventName","") + event_time_iso).encode()).hexdigest(),
+            "event_id": e.get("EventId") or hashlib.md5((e.get("EventName", "") + event_time_iso).encode()).hexdigest(),
             "event_time": event_time_iso,
             "aws_region": e.get("AwsRegion") or payload["regions"][0],
             "event_source": e.get("EventSource") or "",
