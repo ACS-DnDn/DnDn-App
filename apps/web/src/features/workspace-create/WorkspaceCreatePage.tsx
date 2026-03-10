@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { MOCK_GH } from '@/mocks/data/workspace.mock';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
 import './WorkspaceCreatePage.css';
@@ -29,15 +29,21 @@ export function WorkspaceCreatePage() {
   const [acctId, setAcctId] = useState('');
   const [awsTesting, setAwsTesting] = useState(false);
   const [awsTested, setAwsTested] = useState(false);
+  const [awsError, setAwsError] = useState('');
   const [policyOpen, setPolicyOpen] = useState(false);
 
   // Step 2: GitHub
   const [ghConnected, setGhConnected] = useState(false);
   const [ghConnecting, setGhConnecting] = useState(false);
+  const [ghUsername, setGhUsername] = useState('');
+  const [ghToken, setGhToken] = useState('');
   const [org, setOrg] = useState('');
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('');
   const [path, setPath] = useState('');
+  const [orgList, setOrgList] = useState<{ login: string; avatarUrl: string | null }[]>([]);
+  const [repoList, setRepoList] = useState<{ name: string; private: boolean; defaultBranch: string }[]>([]);
+  const [branchList, setBranchList] = useState<{ name: string; isDefault: boolean }[]>([]);
 
   // Step 3: Profile
   const [alias, setAlias] = useState('');
@@ -74,22 +80,132 @@ export function WorkspaceCreatePage() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
-  // AWS test
-  const testAws = () => {
+  // AWS — CloudFormation 역할 생성 페이지 열기
+  const openCfnLink = async () => {
+    const clean = acctId.replace(/\D/g, '');
+    if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
+    try {
+      const res = await fetch('/api/workspaces/cfn-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acctId: clean }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.open(data.data.url, '_blank');
+      } else {
+        showToast(data.error?.message || 'URL 생성 실패');
+      }
+    } catch {
+      showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
+    }
+  };
+
+  // AWS — 연동 테스트
+  const testAws = async () => {
     const clean = acctId.replace(/\D/g, '');
     if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
     setAwsTesting(true);
-    setTimeout(() => { setAwsTesting(false); setAwsTested(true); }, 1200);
+    try {
+      const res = await fetch('/api/workspaces/test-aws', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acctId: clean }),
+      });
+      const data = await res.json();
+      setAwsTesting(false);
+      if (data.success) {
+        setAwsTested(true);
+        setAwsError('');
+      } else {
+        setAwsError(data.data?.error || '연동 실패 — 스택 생성을 먼저 완료하세요.');
+      }
+    } catch {
+      setAwsTesting(false);
+      setAwsError('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
+    }
   };
 
-  // GitHub connect
-  const connectGH = () => {
+  // GitHub connect — OAuth 팝업 방식
+  const connectGH = async () => {
     setGhConnecting(true);
-    setTimeout(() => { setGhConnecting(false); setGhConnected(true); }, 1500);
+    try {
+      const res = await fetch('/api/github/auth-url');
+      const data = await res.json();
+      if (!data.success) { showToast(data.error?.message || 'GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
+
+      const { authorizeUrl, state } = data.data;
+
+      // 팝업으로 GitHub 인증 페이지 열기
+      const w = 600, h = 700;
+      const left = window.screenX + (window.innerWidth - w) / 2;
+      const top = window.screenY + (window.innerHeight - h) / 2;
+      window.open(authorizeUrl, 'github-oauth', `width=${w},height=${h},left=${left},top=${top}`);
+
+      // 콜백 메시지 수신 대기
+      const handler = async (e: MessageEvent) => {
+        if (e.origin !== window.location.origin || e.data?.type !== 'github-oauth') return;
+        window.removeEventListener('message', handler);
+
+        const { code } = e.data;
+        if (!code) { showToast('GitHub 인증이 취소되었습니다.'); setGhConnecting(false); return; }
+
+        // code → access token 교환
+        const exRes = await fetch('/api/github/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, state }),
+        });
+        const exData = await exRes.json();
+        if (!exData.success) { showToast(exData.error?.message || 'GitHub 토큰 교환 실패'); setGhConnecting(false); return; }
+
+        setGhToken(exData.data.accessToken);
+        setGhUsername(exData.data.username);
+        setGhConnected(true);
+        setGhConnecting(false);
+
+        // 조직 목록 자동 로드
+        const orgRes = await fetch('/api/github/orgs', { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
+        const orgData = await orgRes.json();
+        if (orgData.success) {
+          // 본인 계정도 포함
+          setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data]);
+        }
+      };
+      window.addEventListener('message', handler);
+    } catch {
+      showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
+      setGhConnecting(false);
+    }
   };
 
-  const orgRepos = org ? (MOCK_GH.repos[org] || []) : [];
-  const repoBranches = repo ? (MOCK_GH.branches[repo] || []) : [];
+  // 조직 선택 시 레포 목록 로드
+  const handleOrgChange = async (selectedOrg: string) => {
+    setOrg(selectedOrg);
+    setRepo('');
+    setBranch('');
+    setRepoList([]);
+    setBranchList([]);
+    if (!selectedOrg || !ghToken) return;
+    try {
+      const res = await fetch(`/api/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
+      const data = await res.json();
+      if (data.success) setRepoList(data.data);
+    } catch { /* ignore */ }
+  };
+
+  // 레포 선택 시 브랜치 목록 로드
+  const handleRepoChange = async (selectedRepo: string) => {
+    setRepo(selectedRepo);
+    setBranch('');
+    setBranchList([]);
+    if (!selectedRepo || !org || !ghToken) return;
+    try {
+      const res = await fetch(`/api/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
+      const data = await res.json();
+      if (data.success) setBranchList(data.data);
+    } catch { /* ignore */ }
+  };
 
   // Validation
   const validateStep = (s: number): boolean => {
@@ -181,7 +297,7 @@ export function WorkspaceCreatePage() {
                   )}
                 </div>
                 <div className="seq-action">
-                  <a className="btn-seq" href="#" onClick={(e) => { e.preventDefault(); window.open('https://ap-northeast-2.console.aws.amazon.com/cloudformation/home', '_blank'); }}>역할 생성</a>
+                  <button className="btn-seq" onClick={openCfnLink}>역할 생성</button>
                 </div>
               </div>
               <div className="seq-step" data-n="3">
@@ -190,6 +306,7 @@ export function WorkspaceCreatePage() {
                 <div className="seq-action">
                   {awsTesting && <span className="test-result show" style={{ background: 'var(--bg-alt)', color: 'var(--text-muted)' }}>연동 확인 중...</span>}
                   {awsTested && !awsTesting && <span className="test-result show success">{SVG.check} 연동 성공 — 계정 {cleanAcct}</span>}
+                  {awsError && !awsTesting && !awsTested && <span className="test-result show" style={{ background: 'var(--danger-bg, #fef2f2)', color: 'var(--danger, #dc2626)' }}>연동 실패 — 스택생성 여부를 확인하세요</span>}
                   <button className="btn-seq" onClick={testAws}>테스트</button>
                 </div>
               </div>
@@ -207,7 +324,7 @@ export function WorkspaceCreatePage() {
                 <div className="seq-label">GitHub 계정 연결</div>
                 <div className="seq-desc">GitHub OAuth를 통해 저장소 접근 권한을 부여합니다.</div>
                 <div className="seq-action">
-                  {ghConnected && <span className="gh-status show ok">{SVG.check} 연결 완료</span>}
+                  {ghConnected && <span className="gh-status show ok">{SVG.check} 연결 완료 — {ghUsername}</span>}
                   <button className="btn-seq" onClick={connectGH} disabled={ghConnected || ghConnecting} style={ghConnected ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
                     {ghConnecting ? '연결 중…' : ghConnected ? '연결됨' : '연결'}
                   </button>
@@ -218,17 +335,17 @@ export function WorkspaceCreatePage() {
                 <div className="gh-repo-fields">
                   <div className="field-group">
                     <label className="field-label">조직 / 사용자 <span className="req">*</span></label>
-                    <select className="field-input" value={org} onChange={(e) => { setOrg(e.target.value); setRepo(''); setBranch(''); }} disabled={!ghConnected}>
+                    <select className="field-input" value={org} onChange={(e) => handleOrgChange(e.target.value)} disabled={!ghConnected}>
                       <option value="">선택하세요</option>
-                      {MOCK_GH.orgs.map(o => <option key={o} value={o}>{o}</option>)}
+                      {orgList.map(o => <option key={o.login} value={o.login}>{o.login}</option>)}
                     </select>
                   </div>
                   <div className="field-row">
                     <div className="field-group">
                       <label className="field-label">저장소 <span className="req">*</span></label>
-                      <select className="field-input" value={repo} onChange={(e) => { setRepo(e.target.value); setBranch(''); }} disabled={!org}>
+                      <select className="field-input" value={repo} onChange={(e) => handleRepoChange(e.target.value)} disabled={!org}>
                         <option value="">선택하세요</option>
-                        {orgRepos.map(r => <option key={r} value={r}>{r}</option>)}
+                        {repoList.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
                       </select>
                     </div>
                     <div className="field-group">
@@ -240,7 +357,7 @@ export function WorkspaceCreatePage() {
                     <label className="field-label">브랜치</label>
                     <select className="field-input" value={branch} onChange={(e) => setBranch(e.target.value)} disabled={!repo}>
                       <option value="">선택하세요</option>
-                      {repoBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                      {branchList.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                     </select>
                   </div>
                 </div>
@@ -298,8 +415,7 @@ export function WorkspaceCreatePage() {
           <button className="btn-wiz btn-next" onClick={nextStep}>{step === 2 ? '생성' : '다음'}</button>
         </div>
       </div>
-
-      {toast && <div className={`toast ${toast.type} show`}>{toast.msg}</div>}
+      {toast && createPortal(<div className={`wsc-toast ${toast.type}`}>{toast.msg}</div>, document.body)}
     </div>
   );
 }

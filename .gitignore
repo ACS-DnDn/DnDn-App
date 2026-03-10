@@ -168,6 +168,9 @@ __marimo__/
 # Dependencies
 node_modules/
 
+# Vite
+.vite/
+
 # IDEs and editors
 .vscode/
 .idea/
