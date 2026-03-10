@@ -1,10 +1,14 @@
 /* ── 로그인 페이지 전용 변수 ── */
 .login-container {
+  --line: rgba(0, 0, 0, 0.35);
   --btn-text: #ffffff;
+  --placeholder: #9ba3b2;
   --glow: rgba(34, 139, 230, 0.06);
 }
 :root.dark .login-container {
+  --line: rgba(255, 255, 255, 0.5);
   --btn-text: #0d1620;
+  --placeholder: #e6edf3;
   --glow: rgba(74, 222, 170, 0.055);
 }
 
@@ -38,40 +42,111 @@ body:has(.login-container) {
 }
 
 .logo-wrap {
-  margin-bottom: 64px;
-  animation: fade-up 0.8s cubic-bezier(0.22,1,0.36,1) both;
+  margin-bottom: 80px;
+  animation: fadeUp 0.8s cubic-bezier(0.22,1,0.36,1) both;
 }
 .login-logo-obj {
   height: 170px; width: auto; display: block;
 }
 
+.form {
+  width: 100%;
+  position: relative;
+  animation: fadeUp 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both;
+}
+
+.login-container .field {
+  margin-bottom: 40px;
+  position: relative;
+}
+.login-container .field-input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  background: transparent;
+  border: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 10px 0 12px;
+  line-height: 1;
+  font-family: 'Pretendard', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  outline: none;
+  caret-color: var(--mint);
+  transition: color 0.25s;
+}
+.login-container .field-input:-webkit-autofill,
+.login-container .field-input:-webkit-autofill:hover,
+.login-container .field-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
+.login-container .field-input::placeholder {
+  color: var(--placeholder, var(--text-muted));
+  font-weight: 600;
+  transition: opacity 0.25s;
+}
+.login-container .field-input:focus::placeholder { opacity: 0; }
+
+.login-container .field::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%; height: 1px;
+  background: var(--line, var(--border));
+  transition: background 0.25s;
+}
+.login-container .field::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 0; height: 1px;
+  background: var(--mint);
+  transition: width 0.4s cubic-bezier(0.22,1,0.36,1);
+}
+.login-container .field:focus-within::after { width: 100%; }
+
+.error-msg {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: -28px;
+  text-align: center;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #eb3737;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.3s, transform 0.3s cubic-bezier(0.22,1,0.36,1);
+  pointer-events: none;
+}
+.error-msg.show { opacity: 1; transform: translateY(0); }
+
 .btn-login {
   width: 100%;
-  max-width: 280px;
-  padding: 16px 0;
-  background: transparent;
-  color: var(--text);
-  border: 1.5px solid rgba(128,128,128,0.3);
-  border-radius: 48px;
-  font-family: Pretendard, sans-serif;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.22,1,0.36,1);
-  animation: fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.15s both;
-}
-.btn-login:hover {
+  margin-top: 8px;
+  padding: 17px 0;
   background: var(--mint);
   color: var(--btn-text, #fff);
-  border-color: var(--mint);
-  box-shadow: 0 0 24px rgba(34,139,230,0.35), 0 0 60px rgba(34,139,230,0.15);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Pretendard', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: opacity 0.2s;
 }
-:root.dark .btn-login:hover {
-  box-shadow: 0 0 24px rgba(74,222,170,0.4), 0 0 60px rgba(74,222,170,0.15);
-}
+.btn-login:hover { opacity: 0.88; }
 .btn-login:active { opacity: 0.78; }
-.btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .version {
   position: fixed;
@@ -114,12 +189,8 @@ body:has(.login-container) {
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 :root.dark .mode-toggle .toggle-thumb { transform: translateX(20px); }
-.mode-toggle:focus-visible .toggle-track {
-  outline: 2px solid var(--mint);
-  outline-offset: 2px;
-}
 
-@keyframes fade-up {
+@keyframes fadeUp {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }
 }
