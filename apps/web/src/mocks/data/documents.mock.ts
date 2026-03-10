@@ -1,7 +1,7 @@
 import type { Document, RefDocMeta, DocDataItem, MockDocContent } from '../types/document';
 
 function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 export const ALL_DOCS: Document[] = [
@@ -167,8 +167,8 @@ export const MOCK_DOC_CONTENT: MockDocContent = {
       </div>
       <div class="ref-docs-bar">
         <span class="ref-docs-label">📎 참조 문서</span>
-        <a class="ref-doc-link" onclick="openRefDoc('weekly')">${_svgDoc} 주간 보고서 (02.17~02.23)</a>
-        <a class="ref-doc-link" onclick="openRefDoc('eks')">${_svgDoc} EKS 노드 추가 계획서</a>
+        <a class="ref-doc-link" data-ref="weekly">${_svgDoc} 주간 보고서 (02.17~02.23)</a>
+        <a class="ref-doc-link" data-ref="eks">${_svgDoc} EKS 노드 추가 계획서</a>
       </div>
       <div class="doc-section">
         <div class="doc-section-title">개요</div>

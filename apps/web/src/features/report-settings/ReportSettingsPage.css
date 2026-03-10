@@ -1,5 +1,5 @@
 /* ── ReportSettingsPage ── */
-.rpt-page { padding: 28px 32px 40px; animation: fadeUp .3s ease both; }
+.rpt-page { padding: 28px 32px 40px; animation: fade-up .3s ease both; }
 .rpt-page .page-inner { width: 860px; max-width: 100%; margin: 0 auto; }
 
 /* ── 섹션 전환 ── */
@@ -7,13 +7,13 @@
 .rpt-section.active { display: block; }
 
 /* ── 카드 ── */
-.rpt-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; animation: fadeUp .3s ease both; max-width: 100%; }
+.rpt-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; animation: fade-up .3s ease both; max-width: 100%; }
 .rpt-card-header { padding: 20px 26px; border-bottom: 1px solid var(--border); }
 .rpt-card-title { font-size: 17px; font-weight: 700; color: var(--text); }
 .rpt-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
 .rpt-card-header-row { display: flex; align-items: center; justify-content: space-between; }
 .card-sub { display: flex; align-items: center; justify-content: space-between; padding: 16px 26px; font-size: 14px; font-weight: 700; color: var(--text); background: var(--bg-alt); border-top: 2px solid var(--border); border-bottom: 1px solid var(--border); }
-.btn-add { padding: 5px 14px; border: 1.5px solid var(--mint); border-radius: 7px; background: transparent; color: var(--mint); font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; }
+.btn-add { padding: 5px 14px; border: 1.5px solid var(--mint); border-radius: 7px; background: transparent; color: var(--mint); font-size: 12px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; }
 .btn-add:hover { background: var(--mint); color: #fff; }
 
 /* ── 폼 ── */
@@ -23,20 +23,20 @@
 .fg-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
 .fg-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
 .fg-row-grid .fg { margin-bottom: 0; }
-.fi-title { width: 100%; box-sizing: border-box; padding: 6px 0; border: none; border-bottom: 2px solid var(--border-med); border-radius: 0; background: transparent; color: var(--text); font-size: 18px; font-weight: 500; font-family: 'Pretendard', sans-serif; outline: none; transition: border-color .15s; }
+.fi-title { width: 100%; box-sizing: border-box; padding: 6px 0; border: none; border-bottom: 2px solid var(--border-med); border-radius: 0; background: transparent; color: var(--text); font-size: 18px; font-weight: 500; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
 .fi-title::placeholder { color: var(--text-muted); font-weight: 400; opacity: .65; }
 .fi-title:focus { border-bottom-color: var(--mint); }
-.fi-dt { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: 'Pretendard', sans-serif; outline: none; transition: border-color .15s; }
+.fi-dt { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
 .fi-dt:focus { border-color: var(--mint); }
 .card-form .btn-gen { width: 100%; padding: 11px 18px; font-size: 14px; }
-.fi { padding: 9px 12px; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: 'Pretendard', sans-serif; outline: none; transition: border-color .15s; }
+.fi { padding: 9px 12px; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
 .fi:focus { border-color: var(--mint); }
 
 /* ── 버튼 ── */
-.btn-gen { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 18px; border: 1.5px solid transparent; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: opacity .15s; white-space: nowrap; }
+.btn-gen { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 18px; border: 1.5px solid transparent; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: opacity .15s; white-space: nowrap; }
 .btn-gen:hover { opacity: .85; }
 .btn-gen svg { width: 14px; height: 14px; }
-.btn-save { padding: 9px 22px; border: none; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: opacity .15s; }
+.btn-save { padding: 9px 22px; border: none; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: opacity .15s; }
 .btn-save:hover { opacity: .85; }
 
 /* ── 토글 스위치 ── */
@@ -48,7 +48,7 @@
   margin: -1px;
   padding: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -81,7 +81,7 @@
 .rpt-modal-dim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 800; display: none; align-items: center; justify-content: center; }
 .rpt-modal-dim.show { display: flex; }
 :root.dark .rpt-modal-dim { background: rgba(0,0,0,.55); }
-.rpt-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; width: 360px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.18); animation: fadeUp .2s ease both; }
+.rpt-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; width: 360px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.18); animation: fade-up .2s ease both; }
 .rpt-modal-head { padding: 22px 26px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .rpt-modal-title { font-size: 16px; font-weight: 700; color: var(--text); }
 .rpt-modal-close { width: 32px; height: 32px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .12s; }
@@ -104,11 +104,11 @@
 .mf-timing .fi-day { width: 56px; flex: none; text-align: center; }
 .mf-timing-text { font-size: 13px; color: var(--text-sub); white-space: nowrap; flex-shrink: 0; }
 .preset-group { display: flex; gap: 6px; }
-.preset-btn { flex: 1; padding: 7px 0; border: 1.5px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; text-align: center; }
+.preset-btn { flex: 1; padding: 7px 0; border: 1.5px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; text-align: center; }
 .preset-btn:hover { border-color: var(--mint); color: var(--mint); }
 .preset-btn.active { border-color: var(--mint); background: var(--mint); color: #fff; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 26px; border-top: 1px solid var(--border); }
-.btn-cancel { padding: 9px 20px; border: 1.5px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; }
+.btn-cancel { padding: 9px 20px; border: 1.5px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; }
 .btn-cancel:hover { background: var(--bg-alt); }
 
 /* ── 이벤트 카테고리 ── */
@@ -131,7 +131,7 @@
 .ei-desc { padding: 0 26px 12px 52px; font-size: 12px; line-height: 1.6; color: var(--text-muted); display: none; }
 .ei.open .ei-desc { display: block; }
 .ei-desc strong { color: var(--text-sub); font-weight: 600; }
-.ei-desc code { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg-alt); color: var(--text-sub); font-family: 'Pretendard', monospace; }
+.ei-desc code { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg-alt); color: var(--text-sub); font-family: Pretendard, monospace; }
 .ei-sub { padding: 9px 26px; font-size: 12px; font-weight: 700; color: var(--text-sub); background: var(--bg-alt); border-top: 1px solid var(--border); }
 
 /* ── 토스트 ── */
@@ -139,4 +139,11 @@
 .rpt-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 :root.dark .rpt-toast { background: rgba(74,222,170,.12); border-color: rgba(74,222,170,.25); }
 
-@keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+.sch-btn:focus-visible,
+.rpt-modal-close:focus-visible,
+.ei-head:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+@keyframes fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }

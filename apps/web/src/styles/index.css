@@ -1,21 +1,21 @@
 @import './variables.css';
 
 /* ── Pretendard 폰트 ── */
-@font-face { font-family: 'Pretendard'; font-weight: 100; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Thin.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Light.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Regular.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Medium.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-SemiBold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Bold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 800; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
-@font-face { font-family: 'Pretendard'; font-weight: 900; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Black.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 100; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Thin.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 200; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 300; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Light.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 400; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Regular.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 500; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Medium.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 600; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-SemiBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 700; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Bold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 800; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 900; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Black.subset.woff2') format('woff2'); }
 
 /* ── 글로벌 리셋 ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { overflow-y: scroll; }
 body {
-  font-family: 'Pretendard', sans-serif;
+  font-family: Pretendard, sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;

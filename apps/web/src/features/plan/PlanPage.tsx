@@ -114,7 +114,7 @@ export function PlanPage() {
   useEffect(() => {
     const refDocId = searchParams.get('refDocId');
     if (!refDocId) return;
-    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId));
+    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId, 10));
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;
@@ -253,16 +253,16 @@ export function PlanPage() {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
     if (!html) return;
     localStorage.setItem(`doc-${docId}`, html);
-    const now = new Date();
+    const timestamp = new Date();
     setLastSaved(
-      `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+      `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
     );
   }
 
-  function scheduleAutoSave() {
+  const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(doAutoSave, 2000);
-  }
+  }, []);
 
   async function saveDoc() {
     if (docState !== 'ready') { alert('저장할 계획서가 없습니다.'); return; }
@@ -297,7 +297,7 @@ export function PlanPage() {
   }
 
   function runValidation() {
-    validationTimersRef.current.forEach(t => clearTimeout(t));
+    validationTimersRef.current.forEach((t) => { clearTimeout(t); });
     validationTimersRef.current = [];
 
     setTfStatus('generating');
@@ -362,13 +362,13 @@ export function PlanPage() {
       if (docTimerRef.current) clearTimeout(docTimerRef.current);
       if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
       if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-      validationTimersRef.current.forEach(t => clearTimeout(t));
+      validationTimersRef.current.forEach((t) => { clearTimeout(t); });
       const iframeDoc = iframeRef.current?.contentDocument;
       if (iframeDoc) {
         iframeDoc.removeEventListener('input', scheduleAutoSave);
       }
     };
-  }, []);
+  }, [scheduleAutoSave]);
 
   /* ══════════════════════════════
      Pagination helper
@@ -509,7 +509,7 @@ export function PlanPage() {
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2"/></svg>
             작업 대상
           </div>
-          <textarea className="nl-target" rows={2} value={nlTarget} onChange={e => setNlTarget(e.target.value)} />
+          <textarea className="nl-target" rows={2} value={nlTarget} onChange={e => setNlTarget(e.target.value)} aria-label="작업 대상" />
         </div>
 
         {/* 작업 내용 */}
@@ -518,7 +518,7 @@ export function PlanPage() {
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 4h12M2 7h8M2 10h10M2 13h6"/></svg>
             작업 내용
           </div>
-          <textarea className="nl-textarea" rows={4} value={nlInput} onChange={e => setNlInput(e.target.value)} />
+          <textarea className="nl-textarea" rows={4} value={nlInput} onChange={e => setNlInput(e.target.value)} aria-label="작업 내용" />
           <button className="btn-generate" disabled={docState === 'loading'} onClick={generateDoc}>문서 작성</button>
         </div>
       </aside>

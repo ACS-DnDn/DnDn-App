@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import './MyPage.css';
 
@@ -26,11 +26,22 @@ export function MyPage() {
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (avatarUrl) URL.revokeObjectURL(avatarUrl);
     const url = URL.createObjectURL(file);
     setAvatarUrl(url);
   };
 
+  useEffect(() => {
+    return () => { if (avatarUrl) URL.revokeObjectURL(avatarUrl); };
+  }, [avatarUrl]);
+
   const email = session.name.replace(' ', '.').toLowerCase() + '@cslee.io';
+
+  const sessionExpiry = (() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 8);
+    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  })();
 
   return (
     <div className="mypage-page">
@@ -88,7 +99,7 @@ export function MyPage() {
           </div>
           <div className="security-item">
             <span className="security-label">세션 만료</span>
-            <span className="security-value">2026.03.09 18:00</span>
+            <span className="security-value">{sessionExpiry}</span>
           </div>
           <div className="security-item">
             <span className="security-label">인증 방식</span>
@@ -130,6 +141,8 @@ export function MyPage() {
                   <button
                     className={`notif-toggle-track${slackNotifOn ? ' on' : ''}`}
                     onClick={() => setSlackNotifOn(!slackNotifOn)}
+                    role="switch"
+                    aria-checked={slackNotifOn}
                     aria-label="Slack 알림 토글"
                   >
                     <div className="notif-toggle-thumb" />

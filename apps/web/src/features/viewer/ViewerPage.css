@@ -162,7 +162,7 @@
 .tf-modal-close { width: 28px; height: 28px; border-radius: 7px; border: 1px solid rgba(255,255,255,.1); background: transparent; cursor: pointer; color: rgba(255,255,255,.4); font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all .12s; }
 .tf-modal-close:hover { background: rgba(255,255,255,.08); color: rgba(255,255,255,.8); }
 .tf-modal-tabs { display: flex; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,.07); gap: 0; }
-.tf-tab { padding: 10px 14px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.28); cursor: pointer; border-bottom: 2px solid transparent; transition: all .12s; white-space: nowrap; }
+.tf-tab { padding: 10px 14px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.28); cursor: pointer; border-bottom: 2px solid transparent; border-top: none; border-left: none; border-right: none; transition: all .12s; white-space: nowrap; background: none; font-family: inherit; }
 .tf-tab:hover { color: rgba(255,255,255,.55); }
 .tf-tab.active { color: #74c0fc; border-bottom-color: #74c0fc; }
 .tf-modal-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; max-height: 60vh; }

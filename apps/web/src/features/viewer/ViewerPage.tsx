@@ -128,17 +128,6 @@ export function ViewerPage() {
   const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
   const doc = useMemo(() => (Number.isInteger(docId) ? getDocumentById(docId) : undefined), [docId]);
 
-  if (!doc) {
-    return <Navigate to="/documents" replace />;
-  }
-
-  const docContent = getDocContent();
-  const refDocs = getRefDocs();
-  const tmpl = docContent[doc.type] ?? docContent['계획서']!;
-
-  const isReport = doc.type !== '계획서';
-  const viewMode = doc.action === 'approve' ? 'approver' : 'completed';
-
   /* 패널 탭 */
   const [panelTab, setPanelTab] = useState<'refs' | 'attach'>('refs');
   const [attachChecked, setAttachChecked] = useState<boolean[]>(ATTACHMENTS.map(() => false));
@@ -153,6 +142,17 @@ export function ViewerPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+
+  if (!doc) {
+    return <Navigate to="/documents" replace />;
+  }
+
+  const docContent = getDocContent();
+  const refDocs = getRefDocs();
+  const tmpl = docContent[doc.type] ?? docContent['계획서']!;
+
+  const isReport = doc.type !== '계획서';
+  const viewMode = doc.action === 'approve' ? 'approver' : 'completed';
 
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
@@ -210,14 +210,14 @@ export function ViewerPage() {
           </div>
           <div className={`panel-tab-content${panelTab === 'refs' ? ' active' : ''}`}>
             <div className="sidebar-refs">
-              <div className="sidebar-ref-item" onClick={() => openRefDoc('weekly')}>
+              <div className="sidebar-ref-item" onClick={() => openRefDoc('weekly')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRefDoc('weekly'); } }}>
                 <div className="sidebar-ref-no">DOC-2026-001</div>
                 <div className="sidebar-ref-row">
                   <span className="sidebar-ref-name">주간 보고서 (02.17~02.23)</span>
                   <span className="sidebar-ref-date">2026.02.23</span>
                 </div>
               </div>
-              <div className="sidebar-ref-item" onClick={() => openRefDoc('eks')}>
+              <div className="sidebar-ref-item" onClick={() => openRefDoc('eks')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRefDoc('eks'); } }}>
                 <div className="sidebar-ref-no">DOC-2026-004</div>
                 <div className="sidebar-ref-row">
                   <span className="sidebar-ref-name">EKS 노드 추가 계획서</span>
@@ -326,8 +326,8 @@ export function ViewerPage() {
             <button className="tf-modal-close" onClick={() => setTfModalOpen(false)}>&times;</button>
           </div>
           <div className="tf-modal-tabs">
-            <div className={`tf-tab${tfTab === 'code' ? ' active' : ''}`} onClick={() => setTfTab('code')}>코드</div>
-            <div className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</div>
+            <button type="button" className={`tf-tab${tfTab === 'code' ? ' active' : ''}`} onClick={() => setTfTab('code')}>코드</button>
+            <button type="button" className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</button>
           </div>
           <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_CODE_HTML }} />
           <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_HTML }} />
