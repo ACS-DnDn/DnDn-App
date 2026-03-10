@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>작업계획서</title>
+  <style>
+    /* 욬 Pretendard 로컈 폰트 욬 */
+    @font-face { font-family: 'Pretendard'; font-weight: 100; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Thin.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('fonts/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Light.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Regular.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Medium.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('fonts/Pretendard-SemiBold.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Bold.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 800; font-style: normal; font-display: swap; src: url('fonts/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
+    @font-face { font-family: 'Pretendard'; font-weight: 900; font-style: normal; font-display: swap; src: url('fonts/Pretendard-Black.subset.woff2') format('woff2'); }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #1a1a1a;
+      background: #fff;
+    }
+
+    .doc {
+      background: #fff;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 36px 44px 52px;
+    }
+
+    /* ── 문서 헤더 ── */
+    .doc-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid #1f3864;
+      margin-bottom: 20px;
+    }
+    .doc-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .doc-header img { height: 28px; width: auto; display: block; }
+    .doc-header-title {
+      font-size: 23px;
+      font-weight: 800;
+      color: #1f3864;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .doc-header-meta {
+      text-align: right;
+      font-size: 11px;
+      color: #666;
+      line-height: 1.75;
+    }
+
+    /* ── 문서 기본 정보 ── */
+    .tbl-info {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #bbb;
+      margin-bottom: 22px;
+    }
+    .tbl-info th {
+      padding: 7px 11px;
+      background: #d4dae6;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #1f3864;
+      text-align: center;
+      border: 1px solid #bbb;
+      white-space: nowrap;
+      vertical-align: middle;
+      width: 110px;
+    }
+    .tbl-info td {
+      padding: 7px 11px;
+      border: 1px solid #bbb;
+      color: #1a1a1a;
+      vertical-align: middle;
+      font-size: 12.5px;
+      text-align: center;
+    }
+    .tbl-info .td-main { font-weight: 700; font-size: 13px; }
+
+    /* ── 섹션 ── */
+    .section { margin-bottom: 20px; }
+    .section-title {
+      background: #1f3864;
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 6px 12px;
+      letter-spacing: 0.3px;
+      margin-bottom: 7px;
+    }
+
+    /* ── 공통 테이블 ── */
+    .tbl {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #bbb;
+      font-size: 12.5px;
+    }
+    .tbl th {
+      padding: 7px 11px;
+      background: #d4dae6;
+      font-weight: 600;
+      color: #1f3864;
+      border: 1px solid #bbb;
+      text-align: center;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .tbl td {
+      padding: 7px 11px;
+      border: 1px solid #bbb;
+      color: #1a1a1a;
+      vertical-align: top;
+      line-height: 1.65;
+    }
+    .tbl tbody tr:nth-child(even) td:not(.td-item):not(.td-step) { background: #fafafa; }
+
+    /* ── Before / After ── */
+    .tbl .td-item { background: #f0f0f0; font-weight: 600; color: #1a1a1a; width: 155px; text-align: center; vertical-align: middle; }
+    .tbl th.th-before { color: #a00; }
+    .tbl th.th-after  { color: #197340; }
+    .tbl .td-before { color: #a00; text-align: center; vertical-align: middle; }
+    .tbl .td-after  { color: #197340; font-weight: 600; text-align: center; vertical-align: middle; }
+
+    /* ── 위험도 ── */
+    .r-hi  { font-size: 12.5px; font-weight: 700; color: #c00; }
+    .r-mid { font-size: 12.5px; font-weight: 700; color: #555; }
+    .r-low { font-size: 12.5px; font-weight: 700; color: #888; }
+
+    /* ── 작업 절차 ── */
+    .tbl .td-step { text-align: center; font-weight: 600; color: #1a1a1a; background: #f0f0f0; vertical-align: middle; }
+    .td-exec { text-align: center; font-size: 12px; }
+
+    /* ── 좌측 라벨 th ── */
+    .th-label { width: 110px; }
+    .tbl th.th-label { text-align: center; }
+
+    /* ── 위험도 분석 항목 셀 ── */
+    .td-risk {
+      text-align: center;
+      font-weight: 600;
+      color: #1a1a1a;
+      background: #f0f0f0;
+      vertical-align: middle;
+    }
+
+    /* ── code ── */
+    code {
+      font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace;
+      font-size: 11.5px;
+      background: #f4f4f4;
+      border: 1px solid #ddd;
+      padding: 0 4px;
+      border-radius: 2px;
+    }
+
+    /* ── 비고 ── */
+    .note {
+      font-size: 11.5px;
+      color: #666;
+      margin-top: 6px;
+      line-height: 1.65;
+    }
+
+    /* ── 문서 푸터 ── */
+    .doc-footer {
+      margin-top: 28px;
+      padding-top: 8px;
+      border-top: 1px solid #bbb;
+      display: flex;
+      justify-content: flex-end;
+      font-size: 11px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- ── 헤더 ── -->
+  <div class="doc-header">
+    <div class="doc-header-top">
+      <img src="logo.png" alt="CSLEE.">
+      <div class="doc-header-meta">
+        문서번호: DOC-2026-03-002<br>
+        작성일: 2026.03.01
+      </div>
+    </div>
+    <div class="doc-header-title">prod-api-alb WAF WebACL 생성 및 연결</div>
+  </div>
+
+  <!-- ── 문서 기본 정보 ── -->
+  <div class="section">
+    <div class="section-title">Overview</div>
+  <table class="tbl-info" style="margin-bottom:0;">
+    <tr>
+      <th>조치 배경</th>
+      <td colspan="3">SecurityHub WAF.1 Finding (HIGH) 감지 — prod-api-alb에 WAF 미연결로 외부 웹 공격 노출 상태</td>
+    </tr>
+    <tr>
+      <th>작업 내용</th>
+      <td colspan="3">prod-api-alb에 WAFv2 WebACL 신규 생성 및 연결 (Count → Block 모드, Terraform)</td>
+    </tr>
+    <tr>
+      <th>근거 문서</th>
+      <td>이벤트 보고서 DOC-2026-03-001</td>
+      <th>우선순위</th>
+      <td><strong>High</strong></td>
+    </tr>
+    <tr>
+      <th>대상 리소스</th>
+      <td><code>prod-api-alb</code>, <code>aws_wafv2_web_acl</code> (신규 생성)</td>
+      <th>AWS 계정</th>
+      <td>123456789012 (dndn-prod)</td>
+    </tr>
+    <tr>
+      <th>작업 예정일</th>
+      <td>결재 완료 후 즉시 — 무중단 작업 (다운타임 없음)</td>
+      <th>담당자</th>
+      <td>devops@dndn</td>
+    </tr>
+  </table>
+  </div>
+
+  <!-- ── 1. 작업 내용 ── -->
+  <div class="section">
+    <div class="section-title">1. 작업 내용</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:64px">구분</th>
+          <th style="width:110px">항목</th>
+          <th>내용</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-step">목적</td>
+          <td class="td-exec">작업 목적</td>
+          <td style="text-align:center">WAF 미연결로 인한 외부 웹 공격 노출 해소 — WAF.1 Finding 해결 및 컴플라이언스 복구</td>
+        </tr>
+        <tr>
+          <td class="td-step" rowspan="3">범위</td>
+          <td class="td-exec">신규 생성</td>
+          <td style="text-align:center">WAFv2 WebACL 생성</td>
+        </tr>
+        <tr>
+          <td class="td-exec">룰셋 적용</td>
+          <td style="text-align:center">AWSManagedRulesCommonRuleSet + IP Reputation</td>
+        </tr>
+        <tr>
+          <td class="td-exec">연결 대상</td>
+          <td style="text-align:center"><code>prod-api-alb</code></td>
+        </tr>
+        <tr>
+          <td class="td-step" rowspan="2">방법</td>
+          <td class="td-exec">실행</td>
+          <td style="text-align:center">Terraform IaC 적용</td>
+        </tr>
+        <tr>
+          <td class="td-exec">운영 전략</td>
+          <td style="text-align:center">Count 모드 선 운영 후 오탐 없을 시 Block 모드 전환</td>
+        </tr>
+        <tr>
+          <td class="td-step">일정</td>
+          <td class="td-exec">예상 소요</td>
+          <td style="text-align:center">약 1~2시간 (Count 모드 모니터링 30분 포함)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 2. 작업 절차 ── -->
+  <div class="section">
+    <div class="section-title">2. 작업 절차</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:44px">단계</th>
+          <th style="width:115px;">작업</th>
+          <th>내용</th>
+          <th style="width:78px">실행</th>
+          <th style="width:58px">담당</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-step">①</td>
+          <td class="td-exec">사전 확인</td>
+          <td>CloudWatch ALB 트래픽 및 헬스체크 정상 확인, 비정상 요청 여부 사전 점검</td>
+          <td class="td-exec">수동</td>
+          <td class="td-exec">devops</td>
+        </tr>
+        <tr>
+          <td class="td-step">②</td>
+          <td class="td-exec">WAF 생성</td>
+          <td><code>aws_wafv2_web_acl</code> 생성 — 초기 Count 모드 적용, 오탐 여부 확인</td>
+          <td class="td-exec">Terraform</td>
+          <td class="td-exec">자동</td>
+        </tr>
+        <tr>
+          <td class="td-step">③</td>
+          <td class="td-exec">ALB 연결</td>
+          <td><code>aws_wafv2_web_acl_association</code>으로 prod-api-alb에 WAF WebACL 연결</td>
+          <td class="td-exec">Terraform</td>
+          <td class="td-exec">자동</td>
+        </tr>
+        <tr>
+          <td class="td-step">④</td>
+          <td class="td-exec">Count 모니터링</td>
+          <td>30분간 WAF 샘플링 로그 확인 — 정상 트래픽 차단 여부 및 공격 탐지 패턴 확인</td>
+          <td class="td-exec">수동</td>
+          <td class="td-exec">devops</td>
+        </tr>
+        <tr>
+          <td class="td-step">⑤</td>
+          <td class="td-exec">Block 전환</td>
+          <td>오탐 없음 확인 후 <code>override_action: none</code> (Block 모드)으로 전환</td>
+          <td class="td-exec">Terraform</td>
+          <td class="td-exec">자동</td>
+        </tr>
+        <tr>
+          <td class="td-step">⑥</td>
+          <td class="td-exec">사후 모니터링</td>
+          <td>24시간 CloudWatch WAF 지표 추이 확인 (BlockedRequests / AllowedRequests)</td>
+          <td class="td-exec">수동</td>
+          <td class="td-exec">devops</td>
+        </tr>
+        <tr>
+          <td class="td-step">⑦</td>
+          <td class="td-exec">Finding 확인</td>
+          <td>SecurityHub WAF.1 Finding 상태 PASSED 전환 확인 (최대 24시간 소요)</td>
+          <td class="td-exec">수동</td>
+          <td class="td-exec">devops</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 3. 변경 Before / After ── -->
+  <div class="section">
+    <div class="section-title">3. 변경 Before / After</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:155px;">항목</th>
+          <th class="th-before" style="width:40%">Before (현재 상태)</th>
+          <th class="th-after">After (적용 후)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-item">WAF 연결</td>
+          <td class="td-before">미연결 — WAF 없음</td>
+          <td class="td-after">WAF WebACL (prod-api-waf) 연결</td>
+        </tr>
+        <tr>
+          <td class="td-item">웹 공격 차단</td>
+          <td class="td-before">미적용</td>
+          <td class="td-after">AWSManagedRulesCommonRuleSet + IP Reputation 적용</td>
+        </tr>
+        <tr>
+          <td class="td-item">WAF 로그</td>
+          <td class="td-before">없음</td>
+          <td class="td-after">CloudWatch Metrics + 샘플링 활성화</td>
+        </tr>
+        <tr>
+          <td class="td-item">월 비용</td>
+          <td class="td-before">WAF 비용 없음</td>
+          <td class="td-after">+약 $25/월 (WebACL 기본 + 요청 과금)</td>
+        </tr>
+        <tr>
+          <td class="td-item">다운타임</td>
+          <td class="td-before">—</td>
+          <td class="td-after">없음</td>
+        </tr>
+        <tr>
+          <td class="td-item">SecurityHub 상태</td>
+          <td class="td-before">WAF.1 FAILED</td>
+          <td class="td-after">WAF.1 PASSED</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 4. 위험도 분석 ── -->
+  <div class="section">
+    <div class="section-title">4. 위험도 분석</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:185px">위험 항목</th>
+          <th style="width:55px">수준</th>
+          <th>분석</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-risk">서비스 중단</td>
+          <td style="text-align:center; vertical-align:middle"><span class="r-low">하</span></td>
+          <td>WAF WebACL 연결은 무중단 — ALB 재시작 불필요, 트래픽 영향 없음</td>
+        </tr>
+        <tr>
+          <td class="td-risk">오탐 차단 (False Positive)</td>
+          <td style="text-align:center; vertical-align:middle"><span class="r-mid">중</span></td>
+          <td>관리형 룰셋 초기 적용 시 정상 트래픽 차단 가능 — Count 모드 선 적용 후 Block 전환 권장</td>
+        </tr>
+        <tr>
+          <td class="td-risk">비용 증가</td>
+          <td style="text-align:center; vertical-align:middle"><span class="r-low">하</span></td>
+          <td>월 ~$25 추가 — 현재 트래픽 기준 산정, 예산 범위 내</td>
+        </tr>
+        <tr>
+          <td class="td-risk">롤백 가능성</td>
+          <td style="text-align:center; vertical-align:middle"><span class="r-low">하</span></td>
+          <td>Count 모드 전환 또는 WebACL 연결 해제로 즉시 원복 가능</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 5. 롤백 계획 ── -->
+  <div class="section">
+    <div class="section-title">5. 롤백 계획</div>
+    <table class="tbl">
+      <tr>
+        <th class="th-label">롤백 트리거</th>
+        <td>WAF 적용 후 정상 트래픽 차단율 5% 초과 또는 서비스 응답 이상 감지 시</td>
+      </tr>
+      <tr>
+        <th class="th-label">롤백 방법</th>
+        <td>
+          1단계: WAF 룰 Count 모드 전환 (즉시, Terraform <code>override_action { count {} }</code> 재적용)<br>
+          2단계: 오탐 원인 분석 후 룰 제외 처리 또는 WebACL 연결 해제
+        </td>
+      </tr>
+      <tr>
+        <th class="th-label">예상 시간</th>
+        <td>Count 모드 전환: 약 2~3분 &nbsp;/&nbsp; WebACL 연결 해제: 약 1분</td>
+      </tr>
+      <tr>
+        <th class="th-label">담당자</th>
+        <td>devops@dndn &nbsp;&nbsp;긴급 연락처: 010-XXXX-XXXX</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ── 문서 푸터 ── -->
+  <div class="doc-footer">
+    <span>DOC-2026-03-002 &nbsp;/&nbsp; 2026.03.01</span>
+  </div>
+
+</div>
+</body>
+</html>

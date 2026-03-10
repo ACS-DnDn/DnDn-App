@@ -1,0 +1,52 @@
+@import './variables.css';
+
+/* ── Pretendard 폰트 ── */
+@font-face { font-family: 'Pretendard'; font-weight: 100; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Thin.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraLight.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Light.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Regular.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Medium.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-SemiBold.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Bold.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-ExtraBold.subset.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 900; font-style: normal; font-display: swap; src: url('../assets/fonts/woff2/Pretendard-Black.subset.woff2') format('woff2'); }
+
+/* ── 글로벌 리셋 ── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { overflow-y: scroll; }
+body {
+  font-family: 'Pretendard', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+a { text-decoration: none; color: inherit; }
+
+/* ── 네비 로고 CSS 오버라이드 ── */
+.nav-logo .logo-bg     { fill: var(--logo-bg); stroke: var(--logo-bg); }
+.nav-logo .logo-D      { fill: var(--logo-D);  stroke: var(--logo-D);  }
+.nav-logo .logo-n      { fill: var(--logo-n);  stroke: var(--logo-n);  }
+.nav-logo .logo-cursor { fill: var(--logo-cursor); }
+
+/* ── 테마 토글 버튼 ── */
+.theme-btn {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding: 0;
+}
+.theme-btn:hover {
+  background: var(--mint-soft);
+  color: var(--mint);
+  border-color: var(--mint-border);
+}
+.theme-btn .icon-sun  { display: none; }
+.theme-btn .icon-moon { display: block; }
+:root.dark .theme-btn .icon-sun  { display: block; }
+:root.dark .theme-btn .icon-moon { display: none; }

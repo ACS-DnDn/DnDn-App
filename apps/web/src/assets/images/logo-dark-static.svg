@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" id="dark-static" width="215.4375" height="100" viewBox="0 0 215.4375 100">
-        <text class="fg1" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#4ADEAA" stroke="#4ADEAA" stroke-width="3" x="0">D</text>
-        <text class="fg2" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#ffffff" stroke="#ffffff" stroke-width="3" x="43.609375">n</text>
-        <text class="fg3" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#4ADEAA" stroke="#4ADEAA" stroke-width="3" x="87.21875">D</text>
-        <text class="fg4" y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#ffffff" stroke="#ffffff" stroke-width="3" x="130.828125">n</text>
-        <rect id="cursor-dark-static" rx="1" fill="#4ADEAA" opacity="1" x="194.4375" y="16.390625" width="11" height="97.4375"/>
-      </svg>
