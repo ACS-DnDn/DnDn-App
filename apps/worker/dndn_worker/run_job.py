@@ -450,6 +450,8 @@ def enrich_resources_with_config(
         resource_type = resource.get("resource_type")
         resource_id = resource.get("resource_id")
         event_time = _parse_event_time_for_config((g.get("change_summary") or {}).get("last_event_time"))
+        if event_time is None:
+            event_time = _parse_event_time_for_config(payload.get("event_time"))
 
         if not region or not resource_type or not resource_id:
             g["config"] = {
@@ -726,7 +728,7 @@ def _extract_aws_health_resource_refs(payload: Dict[str, Any]) -> List[Dict[str,
     dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for ref in refs:
         key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
-        dedup[key] = ref
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
     return list(dedup.values())
 
 
@@ -743,8 +745,21 @@ def _extract_trigger_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, An
     dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for ref in refs:
         key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
-        dedup[key] = ref
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
     return list(dedup.values())
+
+
+def _merge_resource_ref(existing: Optional[Dict[str, Any]], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    if existing is None:
+        return dict(incoming)
+    merged = dict(existing)
+    merged["resource_type"] = existing.get("resource_type") or incoming.get("resource_type")
+    merged["resource_id"] = existing.get("resource_id") or incoming.get("resource_id")
+    merged["region"] = existing.get("region") or incoming.get("region")
+    for field in ("arn", "account_id"):
+        if not merged.get(field) and incoming.get(field):
+            merged[field] = incoming[field]
+    return merged
 
 
 def _resource_group_from_ref(ref: Dict[str, Any]) -> Dict[str, Any]:
@@ -773,8 +788,29 @@ def merge_resource_groups_with_trigger_refs(
 ) -> List[Dict[str, Any]]:
     groups: Dict[str, Dict[str, Any]] = {g["key"]: g for g in resources}
     for ref in extra_refs:
-        group = _resource_group_from_ref(ref)
-        groups.setdefault(group["key"], group)
+        incoming_group = _resource_group_from_ref(ref)
+        existing_group = groups.get(incoming_group["key"])
+        if existing_group is None:
+            groups[incoming_group["key"]] = incoming_group
+            continue
+        existing_group["resource"] = _merge_resource_ref(existing_group.get("resource"), incoming_group["resource"])
+        if not isinstance(existing_group.get("events"), list):
+            existing_group["events"] = []
+        existing_group["events"].extend(incoming_group.get("events") or [])
+        uniq = {}
+        for el in existing_group["events"]:
+            if isinstance(el, dict) and el.get("event_id"):
+                uniq[el["event_id"]] = el
+        existing_group["events"] = list(uniq.values())
+        existing_group["events"].sort(key=lambda x: (x.get("event_time", ""), x.get("event_id", "")))
+        if existing_group["events"]:
+            first = existing_group["events"][0]["event_time"]
+            last = existing_group["events"][-1]["event_time"]
+            existing_group["change_summary"] = {
+                "event_count": len(existing_group["events"]),
+                "first_event_time": first,
+                "last_event_time": last,
+            }
     out = list(groups.values())
     out.sort(key=lambda x: x["key"])
     return out
@@ -823,11 +859,13 @@ def _build_aws_health_extensions(payload: Dict[str, Any], resource_refs: List[Di
     elif isinstance(latest, str):
         latest_description = latest
 
+    status_code_norm = status_code.strip().lower()
     terraform_candidate = (
         scope == "ACCOUNT_SPECIFIC"
         and category in {"scheduledChange", "accountNotification"}
         and service in AWS_HEALTH_TERRAFORM_SERVICES
         and len(resource_refs) > 0
+        and status_code_norm not in {"", "closed", "resolved"}
     )
 
     aws_health = {
