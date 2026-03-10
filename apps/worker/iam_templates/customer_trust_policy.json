@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowDnDnWorkerAssumeRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{{DNDN_PRINCIPAL_ARN}}"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "{{EXTERNAL_ID}}"
+        }
+      }
+    }
+  ]
+}
