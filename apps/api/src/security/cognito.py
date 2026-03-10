@@ -90,6 +90,7 @@ def login(username: str, password: str) -> LoginResult:
         )
     except ClientError as e:
         _handle_error(e)
+        raise  # unreachable — _handle_error always raises
 
     auth = resp["AuthenticationResult"]
     return LoginResult(
@@ -111,6 +112,7 @@ def refresh_token(refresh: str) -> RefreshResult:
         )
     except ClientError as e:
         _handle_error(e)
+        raise  # unreachable
 
     auth = resp["AuthenticationResult"]
     return RefreshResult(
@@ -124,10 +126,11 @@ def logout(access_token: str) -> bool:
     """Cognito Global Sign-Out. 모든 토큰 무효화."""
     try:
         _client().global_sign_out(AccessToken=access_token)
-        return True
     except ClientError as e:
         _handle_error(e)
-    return False
+    else:
+        return True
+    return False  # unreachable — _handle_error always raises
 
 
 # ── 비밀번호 재설정 요청 ──────────────────────────────────
@@ -140,6 +143,7 @@ def forgot_password(email: str) -> ForgotPasswordResult:
         )
     except ClientError as e:
         _handle_error(e)
+        raise  # unreachable
 
     dest = resp["CodeDeliveryDetails"]["Destination"]
     return ForgotPasswordResult(destination=dest)
@@ -155,10 +159,11 @@ def confirm_reset_password(email: str, code: str, new_password: str) -> bool:
             ConfirmationCode=code,
             Password=new_password,
         )
-        return True
     except ClientError as e:
         _handle_error(e)
-    return False
+    else:
+        return True
+    return False  # unreachable — _handle_error always raises
 
 
 # ── JWT 검증 (보호 엔드포인트용) ──────────────────────────
@@ -177,6 +182,7 @@ def get_user(access_token: str) -> dict[str, Any]:
         resp = _client().get_user(AccessToken=access_token)
     except ClientError as e:
         _handle_error(e)
+        raise  # unreachable
 
     attrs: dict[str, Any] = {"username": resp["Username"]}
     for attr in resp.get("UserAttributes", []):

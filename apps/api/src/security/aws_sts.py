@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import boto3
 from botocore.exceptions import ClientError
@@ -111,7 +111,13 @@ def test_assume_role(acct_id: str) -> AssumeRoleResult:
             role_arn=role_arn,
         )
     except ClientError as e:
-        error_msg = e.response["Error"].get("Message", "AssumeRole 실패")
+        error_code = e.response["Error"].get("Code", "")
+        if error_code == "AccessDenied":
+            error_msg = "연동 역할에 접근할 수 없습니다. 스택 생성을 확인하세요."
+        elif error_code == "MalformedPolicyDocument":
+            error_msg = "역할 정책 구성에 문제가 있습니다."
+        else:
+            error_msg = "AWS 계정 연동에 실패했습니다. 잠시 후 다시 시도하세요."
         return AssumeRoleResult(
             success=False,
             acct_id=clean,

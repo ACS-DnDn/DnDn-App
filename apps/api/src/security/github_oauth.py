@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import requests
 
@@ -18,7 +18,7 @@ import requests
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv(
-    "GITHUB_REDIRECT_URI", "http://localhost:8000/api/github/callback"
+    "GITHUB_REDIRECT_URI", "http://localhost:5173/auth/github/callback"
 )
 
 _GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
@@ -116,7 +116,7 @@ def exchange_code(code: str, state: str) -> CallbackResult:
     """
     resp = requests.post(
         _GITHUB_TOKEN_URL,
-        json={
+        data={
             "client_id": GITHUB_CLIENT_ID,
             "client_secret": GITHUB_CLIENT_SECRET,
             "code": code,
@@ -125,14 +125,20 @@ def exchange_code(code: str, state: str) -> CallbackResult:
         headers={"Accept": "application/json"},
         timeout=10,
     )
-    data = resp.json()
+
+    try:
+        data = resp.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        raise GitHubError(502, "BAD_GATEWAY", "GitHub 토큰 응답을 파싱할 수 없습니다.")
 
     if "error" in data:
         raise GitHubError(
             400, "BAD_REQUEST", data.get("error_description", data["error"])
         )
 
-    access_token = data["access_token"]
+    access_token = data.get("access_token")
+    if not access_token:
+        raise GitHubError(502, "BAD_GATEWAY", "GitHub 토큰 응답에 access_token이 없습니다.")
 
     # 사용자 정보 조회
     user_resp = requests.get(
@@ -167,14 +173,28 @@ def get_orgs(token: str) -> list[OrgItem]:
 
 
 # ── 4. 레포지토리 목록 조회 ───────────────────────────────
-def get_repos(token: str, org: str) -> list[RepoItem]:
-    """선택한 조직의 레포지토리 목록."""
+def get_repos(token: str, owner: str) -> list[RepoItem]:
+    """선택한 조직 또는 사용자의 레포지토리 목록.
+
+    조직인 경우 /orgs/{owner}/repos, 개인 계정인 경우 /users/{owner}/repos 로 시도.
+    """
+    # 먼저 조직으로 시도
     resp = requests.get(
-        f"{_GITHUB_API}/orgs/{org}/repos",
+        f"{_GITHUB_API}/orgs/{owner}/repos",
         headers=_gh_headers(token),
         params={"type": "all", "sort": "updated", "per_page": 100},
         timeout=10,
     )
+
+    # 404면 개인 계정으로 재시도
+    if resp.status_code == 404:
+        resp = requests.get(
+            f"{_GITHUB_API}/users/{owner}/repos",
+            headers=_gh_headers(token),
+            params={"type": "owner", "sort": "updated", "per_page": 100},
+            timeout=10,
+        )
+
     _check_response(resp)
 
     return [
@@ -188,11 +208,11 @@ def get_repos(token: str, org: str) -> list[RepoItem]:
 
 
 # ── 5. 브랜치 목록 조회 ───────────────────────────────────
-def get_branches(token: str, org: str, repo: str) -> list[BranchItem]:
+def get_branches(token: str, owner: str, repo: str) -> list[BranchItem]:
     """선택한 레포지토리의 브랜치 목록."""
     # 기본 브랜치명 확인
     repo_resp = requests.get(
-        f"{_GITHUB_API}/repos/{org}/{repo}",
+        f"{_GITHUB_API}/repos/{owner}/{repo}",
         headers=_gh_headers(token),
         timeout=10,
     )
@@ -201,7 +221,7 @@ def get_branches(token: str, org: str, repo: str) -> list[BranchItem]:
 
     # 브랜치 목록 조회
     resp = requests.get(
-        f"{_GITHUB_API}/repos/{org}/{repo}/branches",
+        f"{_GITHUB_API}/repos/{owner}/{repo}/branches",
         headers=_gh_headers(token),
         params={"per_page": 100},
         timeout=10,

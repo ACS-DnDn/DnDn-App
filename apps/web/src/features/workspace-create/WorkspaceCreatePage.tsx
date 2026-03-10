@@ -105,6 +105,8 @@ export function WorkspaceCreatePage() {
   const testAws = async () => {
     const clean = acctId.replace(/\D/g, '');
     if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
+    setAwsTested(false);
+    setAwsError('');
     setAwsTesting(true);
     try {
       const res = await fetch('/api/workspaces/test-aws', {
@@ -140,15 +142,30 @@ export function WorkspaceCreatePage() {
       const w = 600, h = 700;
       const left = window.screenX + (window.innerWidth - w) / 2;
       const top = window.screenY + (window.innerHeight - h) / 2;
-      window.open(authorizeUrl, 'github-oauth', `width=${w},height=${h},left=${left},top=${top}`);
+      const popup = window.open(authorizeUrl, 'github-oauth', `width=${w},height=${h},left=${left},top=${top}`);
+      if (!popup) {
+        showToast('팝업이 차단되었습니다. 팝업 차단을 해제해 주세요.');
+        setGhConnecting(false);
+        return;
+      }
+
+      // 팝업이 사용자에 의해 닫힌 경우 감지
+      const popupCheck = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(popupCheck);
+          setGhConnecting(false);
+        }
+      }, 1000);
 
       // 콜백 메시지 수신 대기
       const handler = async (e: MessageEvent) => {
         if (e.origin !== window.location.origin || e.data?.type !== 'github-oauth') return;
         window.removeEventListener('message', handler);
+        clearInterval(popupCheck);
 
-        const { code } = e.data;
-        if (!code) { showToast('GitHub 인증이 취소되었습니다.'); setGhConnecting(false); return; }
+        const { code, state: returnedState, error } = e.data;
+        if (error) { showToast(e.data.errorDescription || 'GitHub 인증이 거부되었습니다.'); setGhConnecting(false); return; }
+        if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); setGhConnecting(false); return; }
 
         // code → access token 교환
         const exRes = await fetch('/api/github/exchange', {
@@ -203,7 +220,11 @@ export function WorkspaceCreatePage() {
     try {
       const res = await fetch(`/api/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
       const data = await res.json();
-      if (data.success) setBranchList(data.data);
+      if (data.success) {
+        setBranchList(data.data);
+        const defaultBr = (data.data as { name: string; isDefault: boolean }[]).find((b) => b.isDefault);
+        if (defaultBr) setBranch(defaultBr.name);
+      }
     } catch { /* ignore */ }
   };
 
@@ -415,7 +436,7 @@ export function WorkspaceCreatePage() {
           <button className="btn-wiz btn-next" onClick={nextStep}>{step === 2 ? '생성' : '다음'}</button>
         </div>
       </div>
-      {toast && createPortal(<div className={`wsc-toast ${toast.type}`}>{toast.msg}</div>, document.body)}
+      {toast && createPortal(<div className={`wsc-toast ${toast.type}`} role={toast.type === 'warn' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>, document.body)}
     </div>
   );
 }

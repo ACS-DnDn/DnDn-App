@@ -16,6 +16,7 @@ export function LoginPage() {
     const email = emailRef.current?.value.trim() ?? '';
     const pw = pwRef.current?.value ?? '';
     if (!email) { setError('이메일을 입력해 주세요.'); emailRef.current?.focus(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('올바른 이메일 형식을 입력해 주세요.'); emailRef.current?.focus(); return; }
     if (!pw) { setError('비밀번호를 입력해 주세요.'); pwRef.current?.focus(); return; }
     // TODO: Cognito Custom UI 연동
     setError('');
@@ -35,7 +36,7 @@ export function LoginPage() {
           <AnimatedLogo variant={isDark ? 'dark' : 'light'} className="login-logo-obj" />
         </div>
 
-        <form className="form" onSubmit={handleLogin}>
+        <form className="form" onSubmit={handleLogin} noValidate>
           <div className="field">
             <input className="field-input" ref={emailRef} type="email" placeholder="이메일" autoComplete="email" />
           </div>

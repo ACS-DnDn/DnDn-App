@@ -72,11 +72,11 @@
 
 /* 패널 탭 */
 .panel-tabs { display: flex; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--border); }
-.panel-tab { font-size: 11.5px; font-weight: 700; color: var(--text-muted); cursor: pointer; padding: 10px 0 8px; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; margin-right: 14px; transition: all .12s; background: none; font-family: 'Pretendard', sans-serif; }
+.panel-tab { font-size: 11.5px; font-weight: 700; color: var(--text-muted); cursor: pointer; padding: 10px 0 8px; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; margin-right: 14px; transition: all .12s; background: none; font-family: Pretendard, sans-serif; }
 .panel-tab:last-child { margin-right: 0; }
 .panel-tab:hover { color: var(--text-sub); }
 .panel-tab.active { color: var(--mint); border-bottom-color: var(--mint); }
-.panel-tab-content { display: none; padding: 8px 14px; overflow-y: auto; }
+.panel-tab-content { display: none; padding: 8px 14px; height: 136px; min-height: 0; overflow-y: auto; }
 .panel-tab-content.active { display: block; }
 
 /* 결재선 구분 헤더 */
