@@ -726,7 +726,7 @@ def _extract_aws_health_resource_refs(payload: Dict[str, Any]) -> List[Dict[str,
     dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for ref in refs:
         key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
-        dedup[key] = ref
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
     return list(dedup.values())
 
 
@@ -743,8 +743,19 @@ def _extract_trigger_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, An
     dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for ref in refs:
         key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
-        dedup[key] = ref
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
     return list(dedup.values())
+
+
+def _merge_resource_ref(existing: Optional[Dict[str, Any]], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    if existing is None:
+        return dict(incoming)
+
+    merged = dict(existing)
+    for field in ("resource_type", "resource_id", "region", "arn", "account_id"):
+        if not merged.get(field) and incoming.get(field):
+            merged[field] = incoming[field]
+    return merged
 
 
 def _resource_group_from_ref(ref: Dict[str, Any]) -> Dict[str, Any]:
@@ -773,8 +784,12 @@ def merge_resource_groups_with_trigger_refs(
 ) -> List[Dict[str, Any]]:
     groups: Dict[str, Dict[str, Any]] = {g["key"]: g for g in resources}
     for ref in extra_refs:
-        group = _resource_group_from_ref(ref)
-        groups.setdefault(group["key"], group)
+        incoming_group = _resource_group_from_ref(ref)
+        existing_group = groups.get(incoming_group["key"])
+        if existing_group is None:
+            groups[incoming_group["key"]] = incoming_group
+            continue
+        existing_group["resource"] = _merge_resource_ref(existing_group.get("resource"), incoming_group["resource"])
     out = list(groups.values())
     out.sort(key=lambda x: x["key"])
     return out
@@ -954,6 +969,8 @@ def build_weekly_advisor_extensions(
                 collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
             else:
                 collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_ADDRESSES_FAILED", f"{code}: {e}")
+        except Exception as e:
+            collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_ADDRESSES_UNEXPECTED", str(e))
 
         # EBS: unattached volumes
         try:
@@ -984,6 +1001,8 @@ def build_weekly_advisor_extensions(
                 collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
             else:
                 collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_VOLUMES_FAILED", f"{code}: {e}")
+        except Exception as e:
+            collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_VOLUMES_UNEXPECTED", str(e))
 
         # RDS: backup / MultiAZ
         try:
@@ -1029,6 +1048,8 @@ def build_weekly_advisor_extensions(
                 collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
             else:
                 collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_failed("RDS_DESCRIBE_DB_INSTANCES_FAILED", f"{code}: {e}")
+        except Exception as e:
+            collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_failed("RDS_DESCRIBE_DB_INSTANCES_UNEXPECTED", str(e))
 
     severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     checks.sort(key=lambda c: (severity_order.get(c.get("severity", "LOW"), 9), c.get("category", ""), c.get("check_id", "")))
