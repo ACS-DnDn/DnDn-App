@@ -1009,7 +1009,7 @@ def build_weekly_advisor_extensions(
                     "title": "미연결 EBS 볼륨",
                     "summary": "어떤 EC2 인스턴스에도 연결되지 않은 EBS 볼륨입니다.",
                     "resources": [
-                        _resource_ref("AWS::EC2::Volume", vol_id, region, account_id, arn=v.get("Arn"))
+                        _resource_ref("AWS::EC2::Volume", vol_id, region, account_id)
                     ],
                     "recommendation": "사용하지 않으면 삭제하거나 필요한 인스턴스에 연결하세요.",
                     "evidence": {"raw_s3_uri": uri},
