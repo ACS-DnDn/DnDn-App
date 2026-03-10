@@ -18,8 +18,8 @@ def main() -> None:
     p.add_argument("--out-dir", default="out/iam_rendered", help="Directory to write rendered JSON files")
     args = p.parse_args()
 
-    repo_root = Path(".")
-    tmpl_dir = repo_root / "apps" / "worker" / "iam_templates"
+    worker_dir = Path(__file__).resolve().parents[1]
+    tmpl_dir = worker_dir / "iam_templates"
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

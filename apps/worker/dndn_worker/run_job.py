@@ -11,7 +11,7 @@ from decimal import Decimal
 from dndn_worker.s3_uploader import upload_tree_to_s3
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from jsonschema import Draft202012Validator
 
 try:
@@ -800,20 +800,58 @@ def _build_securityhub_extensions(payload: Dict[str, Any]) -> Dict[str, Any]:
     finding = trig.get("finding") or {}
     if not isinstance(finding, dict):
         return {}
+    sev = finding.get("Severity")
+    if isinstance(sev, dict):
+        sev_obj = {
+            "label": sev.get("Label"),
+            "normalized": sev.get("Normalized"),
+        }
+    else:
+        sev_obj = {"label": sev} if sev else None
+    if isinstance(sev_obj, dict):
+        sev_obj = {k: v for k, v in sev_obj.items() if v is not None}
+
+    comp = finding.get("Compliance")
+    compliance = None
+    if isinstance(comp, dict):
+        compliance = {
+            "status": comp.get("Status"),
+            "standards_control_arn": comp.get("RelatedRequirements", [None])[0]
+            if isinstance(comp.get("RelatedRequirements"), list)
+            and comp.get("RelatedRequirements")
+            else comp.get("StandardsControlArn"),
+        }
+        compliance = {k: v for k, v in compliance.items() if v is not None}
+
+    rem = finding.get("Remediation")
+    remediation = None
+    if isinstance(rem, dict):
+        rec = rem.get("Recommendation")
+        if isinstance(rec, dict):
+            remediation = {
+                "text": rec.get("Text"),
+                "url": rec.get("Url"),
+            }
+            remediation = {k: v for k, v in remediation.items() if v is not None}
+
     out: Dict[str, Any] = {
         "securityhub_finding": {
+            "id": finding.get("Id") or trig.get("finding_arn"),
             "title": finding.get("Title"),
-            "severity": ((finding.get("Severity") or {}).get("Label") if isinstance(finding.get("Severity"), dict) else None),
+            "description": finding.get("Description"),
+            "severity": sev_obj,
+            "compliance": compliance,
+            "remediation": remediation,
+            "resources": finding.get("Resources"),
+            "source": "SecurityHub",
             "generator_id": finding.get("GeneratorId"),
             "resource_count": len(finding.get("Resources") or []),
             "workflow_state": finding.get("WorkflowState"),
             "record_state": finding.get("RecordState"),
         }
     }
-    remediation = (((finding.get("Remediation") or {}).get("Recommendation") or {}).get("Text")
-                   if isinstance(finding.get("Remediation"), dict) else None)
-    if remediation:
-        out["securityhub_finding"]["remediation_text"] = remediation
+    if remediation and remediation.get("text"):
+        out["securityhub_finding"]["remediation_text"] = remediation["text"]
     out["securityhub_finding"] = {k: v for k, v in out["securityhub_finding"].items() if v is not None}
     return out
 
@@ -1449,10 +1487,11 @@ def run_job_from_payload_file(
             base_session=storage_session,
         )
         collection_status["assume_role"] = _stage_ok()
-    except ClientError as e:
+    except (ClientError, BotoCoreError) as e:
+        code = _client_error_code(e) if isinstance(e, ClientError) else e.__class__.__name__
         collection_status["assume_role"] = _stage_failed(
             "ASSUME_ROLE_FAILED",
-            f"{_client_error_code(e)}: {e}",
+            f"{code}: {e}",
             retryable=False,
         )
         result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
@@ -1489,13 +1528,20 @@ def run_job_from_payload_file(
             max_events=max_cloudtrail_events,
         )
         collection_status["cloudtrail"] = _stage_ok()
-    except ClientError as e:
-        code = _client_error_code(e)
-        # Treat access issues as NA(PERMISSION_DENIED) (typical for customer accounts)
-        if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
-            collection_status["cloudtrail"] = _stage_na("PERMISSION_DENIED", f"{code}: {e}")
+    except (ClientError, BotoCoreError) as e:
+        if isinstance(e, ClientError):
+            code = _client_error_code(e)
+            # Treat access issues as NA(PERMISSION_DENIED) (typical for customer accounts)
+            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
+                collection_status["cloudtrail"] = _stage_na("PERMISSION_DENIED", f"{code}: {e}")
+            else:
+                collection_status["cloudtrail"] = _stage_failed("CLOUDTRAIL_LOOKUP_FAILED", f"{code}: {e}", retryable=True)
         else:
-            collection_status["cloudtrail"] = _stage_failed("CLOUDTRAIL_LOOKUP_FAILED", f"{code}: {e}", retryable=True)
+            collection_status["cloudtrail"] = _stage_failed(
+                "CLOUDTRAIL_LOOKUP_FAILED",
+                f"{e.__class__.__name__}: {e}",
+                retryable=True,
+            )
 
     # 3-1) Store raw CloudTrail (local)
     _ensure_dir(raw_dir / "cloudtrail")
@@ -1523,12 +1569,19 @@ def run_job_from_payload_file(
             collection_status["config"] = _stage_ok()
         else:
             collection_status["config"] = _stage_na("SERVICE_DISABLED", msg)
-    except ClientError as e:
-        code = _client_error_code(e)
-        if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
-            collection_status["config"] = _stage_na("PERMISSION_DENIED", f"{code}: {e}")
+    except (ClientError, BotoCoreError) as e:
+        if isinstance(e, ClientError):
+            code = _client_error_code(e)
+            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
+                collection_status["config"] = _stage_na("PERMISSION_DENIED", f"{code}: {e}")
+            else:
+                collection_status["config"] = _stage_failed("CONFIG_DESCRIBE_FAILED", f"{code}: {e}", retryable=True)
         else:
-            collection_status["config"] = _stage_failed("CONFIG_DESCRIBE_FAILED", f"{code}: {e}", retryable=True)
+            collection_status["config"] = _stage_failed(
+                "CONFIG_DESCRIBE_FAILED",
+                f"{e.__class__.__name__}: {e}",
+                retryable=True,
+            )
 
     # 5) Normalize
     events = normalize_cloudtrail_events(raw_events, payload, raw_s3_uris)
