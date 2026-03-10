@@ -1,0 +1,104 @@
+/* ── DocumentsPage ── */
+.documents-page { display: flex; flex-direction: column; min-width: 960px; }
+
+/* 페이지 헤더 */
+.page-header { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 14px 28px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.page-header-title { font-size: 15px; font-weight: 700; color: var(--text); }
+
+/* 컨트롤 바 */
+.control-bar { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 10px 28px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ctrl-sep { width: 1px; height: 20px; background: var(--border-med); flex-shrink: 0; margin: 0 4px; }
+
+/* 검색 */
+.search-wrap { display: flex; align-items: center; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg-card); min-width: 220px; max-width: 380px; transition: border-color .15s; overflow: hidden; }
+.search-wrap:focus-within { border-color: var(--mint-border); }
+.search-field-wrap { position: relative; display: flex; align-items: center; flex-shrink: 0; }
+.search-field-select { appearance: none; border: none; border-right: 1px solid var(--border-med); background: transparent; padding: 8px 22px 8px 12px; font-size: 12.5px; font-family: 'Pretendard', sans-serif; color: var(--text-sub); font-weight: 600; cursor: pointer; outline: none; white-space: nowrap; }
+.search-field-wrap > svg { position: absolute; right: 7px; width: 10px; height: 10px; color: var(--text-muted); pointer-events: none; }
+.search-icon { width: 14px; height: 14px; color: var(--text-muted); flex-shrink: 0; margin: 0 7px 0 10px; }
+.search-input { flex: 1; border: none; background: transparent; padding: 8px 8px 8px 0; font-size: 13px; font-family: 'Pretendard', sans-serif; color: var(--text); outline: none; }
+.search-input::placeholder { color: var(--text-muted); }
+.btn-search { border: 1px solid var(--mint-border); border-radius: 8px; background: var(--bg-card); padding: 7px 16px; font-size: 12.5px; font-weight: 600; color: var(--mint); cursor: pointer; transition: background .15s, border-color .15s, color .15s; white-space: nowrap; font-family: 'Pretendard', sans-serif; flex-shrink: 0; }
+.btn-search:hover { background: var(--mint); border-color: var(--mint); color: #fff; }
+
+/* 날짜 피커 */
+.date-picker-wrap { position: relative; display: flex; align-items: center; gap: 5px; }
+.date-display-field { display: flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid var(--border-med); border-radius: 7px; font-size: 12px; font-family: 'Pretendard', sans-serif; color: var(--text-muted); background: var(--bg-card); cursor: pointer; white-space: nowrap; width: 96px; flex-shrink: 0; transition: border-color .15s, color .15s; user-select: none; }
+.date-display-field:hover { border-color: var(--mint-border); }
+.date-display-field.has-value { color: var(--text-sub); }
+.date-display-field.picking { border-color: var(--mint); color: var(--mint); }
+.cal-field-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: .5; }
+.date-display-field:hover .cal-field-icon,
+.date-display-field.has-value .cal-field-icon,
+.date-display-field.picking .cal-field-icon { opacity: 1; }
+.date-range-sep { font-size: 11.5px; color: var(--text-muted); }
+.btn-clear-icon { width: 26px; height: 26px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); border-radius: 6px; padding: 0; transition: all .15s; flex-shrink: 0; }
+.btn-clear-icon:hover { color: var(--red); background: var(--red-soft); }
+
+/* 달력 팝업 */
+.cal-popup { position: absolute; top: calc(100% + 8px); left: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.13); padding: 14px 12px; z-index: 500; width: 252px; }
+.cal-popup-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-nav-btn { width: 28px; height: 28px; border: 1px solid var(--border-med); border-radius: 7px; background: transparent; cursor: pointer; font-size: 16px; color: var(--text-sub); display: flex; align-items: center; justify-content: center; transition: all .15s; padding: 0; line-height: 1; }
+.cal-nav-btn:hover { border-color: var(--mint-border); color: var(--mint); }
+.cal-month-label { font-size: 13px; font-weight: 700; color: var(--text); }
+.cal-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.cal-dow-row span { text-align: center; font-size: 10.5px; font-weight: 600; color: var(--text-muted); padding: 3px 0; }
+.cal-popup-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.cal-day { height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 12.5px; cursor: pointer; color: var(--text); transition: background .1s, color .1s; user-select: none; }
+.cal-day:not(.cal-day-empty):hover { background: var(--mint-soft); color: var(--mint); }
+.cal-day-empty { opacity: 0; cursor: default; pointer-events: none; }
+.cal-day-today:not(.cal-day-start):not(.cal-day-end) { font-weight: 700; color: var(--mint); box-shadow: inset 0 0 0 1.5px var(--mint); }
+.cal-day-start, .cal-day-end { background: var(--mint) !important; color: #fff !important; font-weight: 700; }
+.cal-day-range { background: rgba(34,139,230,0.1) !important; color: var(--mint) !important; }
+
+/* 테이블 영역 */
+.table-wrap { padding: 14px 28px 0; background: var(--bg-card); border-radius: 0; border: 1px solid var(--border); margin: 14px 28px 14px; }
+.table-wrap::-webkit-scrollbar { width: 4px; }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--border-med); border-radius: 2px; }
+
+/* 테이블 */
+.documents-page .doc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.documents-page .doc-table thead tr { border-bottom: 2px solid var(--border-med); }
+.documents-page .doc-table th { padding: 6px 14px; text-align: center; font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; user-select: none; background: transparent; border: none; }
+.documents-page .doc-table tbody tr { border: none; cursor: pointer; transition: background .12s; }
+.documents-page .doc-table tbody tr:hover { background: var(--mint-soft); }
+.documents-page .doc-table td { height: 44px; padding: 0 14px; font-size: 12.5px; font-weight: 600; color: var(--text); vertical-align: middle; text-align: center; border: none; }
+
+/* 헤더 내 필터 */
+.th-filter { appearance: none; border: none; background: transparent; font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: 'Pretendard', sans-serif; cursor: pointer; outline: none; text-align: center; text-align-last: center; padding: 4px 0 4px 4px; width: auto; }
+.th-filter:focus { color: var(--mint); }
+.th-filter-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; width: auto; gap: 2px; }
+.th-filter-wrap svg { width: 10px; height: 10px; color: var(--text-muted); pointer-events: none; flex-shrink: 0; }
+
+/* 체크박스 */
+.td-check { width: 44px; padding: 0 8px; text-align: center; vertical-align: middle; }
+.row-check { width: 15px; height: 15px; cursor: pointer; accent-color: var(--mint); flex-shrink: 0; }
+
+/* 읽음 상태 */
+.documents-page .doc-table tbody tr.doc-read td { font-weight: 400; }
+.documents-page .doc-table tbody tr.doc-read .doc-title { font-weight: 400; }
+
+/* 읽음 액션 버튼 */
+.btn-read-action { border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg-card); padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: all .15s; white-space: nowrap; font-family: 'Pretendard', sans-serif; flex-shrink: 0; }
+.btn-read-action:hover:not(:disabled) { border-color: var(--mint-border); color: var(--mint); }
+.btn-read-action:disabled { opacity: .3; cursor: not-allowed; }
+
+/* 문서명 셀 */
+.doc-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-docnum { font-size: 11.5px; color: var(--text-muted); font-weight: 400; white-space: nowrap; letter-spacing: 0.3px; }
+.td-author { font-size: 12px; color: var(--text-sub); white-space: nowrap; }
+.td-date { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.td-type { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+
+/* 빈 상태 */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 40px; color: var(--text-muted); gap: 10px; }
+.empty-state-icon { font-size: 40px; opacity: .3; margin-bottom: 4px; }
+.empty-state-title { font-size: 14px; font-weight: 700; color: var(--text-sub); }
+
+/* 페이지네이션 */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 8px 0 12px; }
+.page-btn { min-width: 34px; height: 34px; border: none; background: transparent; font-size: 14px; font-weight: 500; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color .12s; font-family: 'Pretendard', sans-serif; padding: 0 8px; border-radius: 6px; }
+.page-btn:hover:not(:disabled) { color: var(--mint); }
+.page-btn.active { font-weight: 700; color: var(--mint); }
+.page-btn:disabled { opacity: .3; cursor: not-allowed; }
+.page-btn.page-nav { font-size: 16px; }
