@@ -32,8 +32,7 @@ def _json_default(o):
     # Cost Explorer 등 붙이면 Decimal 튀어나올 수 있어서 미리 대응
     if isinstance(o, Decimal):
         return float(o)
-    return str(o)
-
+    return str(o)   
 
 def _now_kst() -> datetime:
     if ZoneInfo is None:
@@ -257,10 +256,7 @@ def detect_config_enabled(session: boto3.Session, region: str) -> Tuple[bool, st
 
 
 def _safe_fs_name(value: str) -> str:
-    base = "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in value)
-    base = base.strip("._-") or "resource"
-    digest = _sha256_bytes(value.encode("utf-8"))[:12]
-    return f"{base}__{digest}"
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in value)
 
 
 def _parse_event_time_for_config(value: Optional[str]) -> Optional[datetime]:
@@ -454,20 +450,22 @@ def enrich_resources_with_config(
         resource_type = resource.get("resource_type")
         resource_id = resource.get("resource_id")
         event_time = _parse_event_time_for_config((g.get("change_summary") or {}).get("last_event_time"))
+        if event_time is None:
+            event_time = _parse_event_time_for_config(payload.get("event_time"))
 
         if not region or not resource_type or not resource_id:
             g["config"] = {
                 "status": "NA",
-                "na_reason": "UNKNOWN",
-                "message": "Unknown: missing region/resource_type/resource_id for Config lookup",
+                "na_reason": "NO_DATA",
+                "message": "Resource is missing region/resource_type/resource_id for Config lookup",
             }
             continue
 
         if event_time is None:
             g["config"] = {
                 "status": "NA",
-                "na_reason": "UNKNOWN",
-                "message": "Unknown: missing event_time to anchor Config before/after lookup",
+                "na_reason": "NO_DATA",
+                "message": "No event_time available to anchor Config before/after lookup",
             }
             continue
 
@@ -485,15 +483,6 @@ def enrich_resources_with_config(
                 g["config"] = {
                     "status": "NA",
                     "na_reason": "PERMISSION_DENIED",
-                    "message": f"{code}: {e}",
-                }
-            elif code in (
-                "NoAvailableConfigurationRecorderException",
-                "ResourceNotDiscoveredException",
-            ):
-                g["config"] = {
-                    "status": "NA",
-                    "na_reason": "SERVICE_DISABLED",
                     "message": f"{code}: {e}",
                 }
             else:
@@ -541,6 +530,385 @@ def enrich_resources_with_config(
             "collected_at": _to_kst_iso(_now_kst()),
             "extensions": extensions,
         }
+
+
+
+AWS_HEALTH_TERRAFORM_SERVICES = {
+    "EC2",
+    "EKS",
+    "RDS",
+    "ELASTICLOADBALANCING",
+    "ELB",
+    "AUTOSCALING",
+    "AUTO_SCALING",
+    "DYNAMODB",
+}
+
+
+def _transport_source_for_meta(trigger_source: Any) -> str:
+    value = str(trigger_source or "EVENTBRIDGE").upper()
+    allowed = {"EVENTBRIDGE", "SQS", "CRONJOB", "MANUAL", "API", "SCHEDULER"}
+    return value if value in allowed else "EVENTBRIDGE"
+
+
+def _event_origin_kind(payload: Dict[str, Any]) -> str:
+    trig = payload.get("trigger") or {}
+    explicit = trig.get("logical_source") or trig.get("origin_kind") or trig.get("upstream_source")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().upper()
+
+    detail_type = str(trig.get("detail_type") or "")
+    if detail_type == "AWS Health Event":
+        return "AWS_HEALTH"
+    if detail_type == "Security Hub Findings - Imported" or trig.get("finding") or trig.get("finding_arn"):
+        return "SECURITYHUB"
+    if str(trig.get("source") or "").upper() == "MANUAL":
+        return "MANUAL"
+    return "UNKNOWN"
+
+
+def _extract_arn_resource_info(arn: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    try:
+        parts = arn.split(":", 5)
+        if len(parts) < 6 or parts[0] != "arn":
+            return None, None, None
+        service = parts[2]
+        region = parts[3] or None
+        resource = parts[5]
+
+        if service == "ec2":
+            if resource.startswith("instance/"):
+                return "AWS::EC2::Instance", resource.split("/", 1)[1], region
+            if resource.startswith("security-group/"):
+                return "AWS::EC2::SecurityGroup", resource.split("/", 1)[1], region
+            if resource.startswith("volume/"):
+                return "AWS::EC2::Volume", resource.split("/", 1)[1], region
+            if resource.startswith("network-interface/"):
+                return "AWS::EC2::NetworkInterface", resource.split("/", 1)[1], region
+        if service == "s3":
+            return "AWS::S3::Bucket", resource, region
+        if service == "rds":
+            if resource.startswith("db:"):
+                return "AWS::RDS::DBInstance", resource.split(":", 1)[1], region
+        if service == "eks":
+            if resource.startswith("cluster/"):
+                return "AWS::EKS::Cluster", resource.split("/", 1)[1], region
+            if resource.startswith("nodegroup/"):
+                return "AWS::EKS::Nodegroup", resource.split("/", 1)[1], region
+        if service == "elasticloadbalancing":
+            return "AWS::ElasticLoadBalancingV2::LoadBalancer", resource, region
+    except Exception:
+        pass
+    return None, None, None
+
+
+def _service_hint_upper(detail: Dict[str, Any]) -> str:
+    service = str(detail.get("service") or "").upper()
+    if service:
+        return service
+    event_type_code = str(detail.get("eventTypeCode") or "")
+    if event_type_code.startswith("AWS_"):
+        parts = event_type_code.split("_")
+        if len(parts) >= 2:
+            return parts[1].upper()
+    return ""
+
+
+def _infer_resource_from_identifier(identifier: str, region: str, service_hint: str = "") -> Optional[Dict[str, Any]]:
+    if not identifier:
+        return None
+    if identifier.startswith("arn:"):
+        r_type, r_id, r_region = _extract_arn_resource_info(identifier)
+        if r_type and r_id:
+            ref = {"resource_type": r_type, "resource_id": r_id}
+            if region or r_region:
+                ref["region"] = r_region or region
+            ref["arn"] = identifier
+            return ref
+
+    service_hint = service_hint.upper()
+    known_prefixes = {
+        "i-": "AWS::EC2::Instance",
+        "sg-": "AWS::EC2::SecurityGroup",
+        "vol-": "AWS::EC2::Volume",
+        "eni-": "AWS::EC2::NetworkInterface",
+        "snap-": "AWS::EC2::Snapshot",
+        "eipalloc-": "AWS::EC2::EIP",
+        "subnet-": "AWS::EC2::Subnet",
+        "vpc-": "AWS::EC2::VPC",
+        "igw-": "AWS::EC2::InternetGateway",
+        "rtb-": "AWS::EC2::RouteTable",
+    }
+    for prefix, r_type in known_prefixes.items():
+        if identifier.startswith(prefix):
+            return {"resource_type": r_type, "resource_id": identifier, "region": region}
+
+    if service_hint == "EKS":
+        return {"resource_type": "AWS::EKS::Cluster", "resource_id": identifier, "region": region}
+    if service_hint == "RDS":
+        return {"resource_type": "AWS::RDS::DBInstance", "resource_id": identifier, "region": region}
+    if service_hint in {"ELASTICLOADBALANCING", "ELB"}:
+        return {"resource_type": "AWS::ElasticLoadBalancingV2::LoadBalancer", "resource_id": identifier, "region": region}
+
+    return None
+
+
+def _extract_hint_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    hint_res = (payload.get("hint") or {}).get("resource")
+    if not isinstance(hint_res, dict):
+        return []
+    if not hint_res.get("resource_type") or not hint_res.get("resource_id"):
+        return []
+    ref = {
+        "resource_type": hint_res["resource_type"],
+        "resource_id": hint_res["resource_id"],
+        "account_id": payload.get("account_id"),
+        "region": hint_res.get("region") or (payload.get("regions") or [""])[0],
+    }
+    if hint_res.get("arn"):
+        ref["arn"] = hint_res["arn"]
+    return [ref]
+
+
+def _extract_securityhub_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    trig = payload.get("trigger") or {}
+    finding = trig.get("finding") or {}
+    if not isinstance(finding, dict):
+        return []
+    refs: List[Dict[str, Any]] = []
+    for r in finding.get("Resources", []) or []:
+        if not isinstance(r, dict):
+            continue
+        identifier = r.get("Id") or ""
+        region = r.get("Region") or (payload.get("regions") or [""])[0]
+        ref = None
+        if identifier.startswith("arn:"):
+            r_type, r_id, r_region = _extract_arn_resource_info(identifier)
+            if r_type and r_id:
+                ref = {"resource_type": r_type, "resource_id": r_id, "region": r_region or region, "arn": identifier}
+        if ref is None and r.get("Type"):
+            ref = {
+                "resource_type": str(r.get("Type")),
+                "resource_id": identifier or str(r.get("Type")),
+                "region": region,
+            }
+            if identifier.startswith("arn:"):
+                ref["arn"] = identifier
+        if ref:
+            ref["account_id"] = payload.get("account_id")
+            refs.append(ref)
+    return refs
+
+
+def _extract_aws_health_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    trig = payload.get("trigger") or {}
+    health = trig.get("health") or trig.get("detail") or {}
+    if not isinstance(health, dict):
+        return []
+    region = health.get("eventRegion") or (payload.get("regions") or [""])[0]
+    service_hint = _service_hint_upper(health)
+    refs: List[Dict[str, Any]] = []
+
+    for arn in trig.get("resources", []) or []:
+        if isinstance(arn, str) and arn:
+            ref = _infer_resource_from_identifier(arn, region=region, service_hint=service_hint)
+            if ref:
+                ref["account_id"] = payload.get("account_id")
+                refs.append(ref)
+
+    for ent in health.get("affectedEntities", []) or []:
+        if not isinstance(ent, dict):
+            continue
+        identifier = ent.get("entityValue") or ent.get("entityArn") or ""
+        ref = _infer_resource_from_identifier(identifier, region=region, service_hint=service_hint)
+        if ref:
+            ref["account_id"] = payload.get("account_id")
+            refs.append(ref)
+
+    dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for ref in refs:
+        key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
+    return list(dedup.values())
+
+
+def _extract_trigger_resource_refs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    refs: List[Dict[str, Any]] = []
+    refs.extend(_extract_hint_resource_refs(payload))
+
+    kind = _event_origin_kind(payload)
+    if kind == "SECURITYHUB":
+        refs.extend(_extract_securityhub_resource_refs(payload))
+    elif kind == "AWS_HEALTH":
+        refs.extend(_extract_aws_health_resource_refs(payload))
+
+    dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for ref in refs:
+        key = (str(ref.get("region") or ""), str(ref["resource_type"]), str(ref["resource_id"]))
+        dedup[key] = _merge_resource_ref(dedup.get(key), ref)
+    return list(dedup.values())
+
+
+def _merge_resource_ref(existing: Optional[Dict[str, Any]], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    if existing is None:
+        return dict(incoming)
+    merged = dict(existing)
+    merged["resource_type"] = existing.get("resource_type") or incoming.get("resource_type")
+    merged["resource_id"] = existing.get("resource_id") or incoming.get("resource_id")
+    merged["region"] = existing.get("region") or incoming.get("region")
+    for field in ("arn", "account_id"):
+        if not merged.get(field) and incoming.get(field):
+            merged[field] = incoming[field]
+    return merged
+
+
+def _resource_group_from_ref(ref: Dict[str, Any]) -> Dict[str, Any]:
+    region = ref.get("region") or ""
+    key = f"{region}:{ref['resource_type']}:{ref['resource_id']}"
+    resource_ref = {
+        "resource_type": ref["resource_type"],
+        "resource_id": ref["resource_id"],
+    }
+    if ref.get("arn"):
+        resource_ref["arn"] = ref["arn"]
+    if ref.get("account_id"):
+        resource_ref["account_id"] = ref["account_id"]
+    if region:
+        resource_ref["region"] = region
+    return {
+        "key": key,
+        "resource": resource_ref,
+        "events": [],
+    }
+
+
+def merge_resource_groups_with_trigger_refs(
+    resources: List[Dict[str, Any]],
+    extra_refs: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    groups: Dict[str, Dict[str, Any]] = {g["key"]: g for g in resources}
+    for ref in extra_refs:
+        incoming_group = _resource_group_from_ref(ref)
+        existing_group = groups.get(incoming_group["key"])
+        if existing_group is None:
+            groups[incoming_group["key"]] = incoming_group
+            continue
+        existing_group["resource"] = _merge_resource_ref(existing_group.get("resource"), incoming_group["resource"])
+        if not isinstance(existing_group.get("events"), list):
+            existing_group["events"] = []
+        existing_group["events"].extend(incoming_group.get("events") or [])
+        uniq = {}
+        for el in existing_group["events"]:
+            if isinstance(el, dict) and el.get("event_id"):
+                uniq[el["event_id"]] = el
+        existing_group["events"] = list(uniq.values())
+        existing_group["events"].sort(key=lambda x: (x.get("event_time", ""), x.get("event_id", "")))
+        if existing_group["events"]:
+            first = existing_group["events"][0]["event_time"]
+            last = existing_group["events"][-1]["event_time"]
+            existing_group["change_summary"] = {
+                "event_count": len(existing_group["events"]),
+                "first_event_time": first,
+                "last_event_time": last,
+            }
+    out = list(groups.values())
+    out.sort(key=lambda x: x["key"])
+    return out
+
+
+def _build_securityhub_extensions(payload: Dict[str, Any]) -> Dict[str, Any]:
+    trig = payload.get("trigger") or {}
+    finding = trig.get("finding") or {}
+    if not isinstance(finding, dict):
+        return {}
+    out: Dict[str, Any] = {
+        "securityhub_finding": {
+            "title": finding.get("Title"),
+            "severity": ((finding.get("Severity") or {}).get("Label") if isinstance(finding.get("Severity"), dict) else None),
+            "generator_id": finding.get("GeneratorId"),
+            "resource_count": len(finding.get("Resources") or []),
+            "workflow_state": finding.get("WorkflowState"),
+            "record_state": finding.get("RecordState"),
+        }
+    }
+    remediation = (((finding.get("Remediation") or {}).get("Recommendation") or {}).get("Text")
+                   if isinstance(finding.get("Remediation"), dict) else None)
+    if remediation:
+        out["securityhub_finding"]["remediation_text"] = remediation
+    out["securityhub_finding"] = {k: v for k, v in out["securityhub_finding"].items() if v is not None}
+    return out
+
+
+def _build_aws_health_extensions(payload: Dict[str, Any], resource_refs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    trig = payload.get("trigger") or {}
+    health = trig.get("health") or trig.get("detail") or {}
+    if not isinstance(health, dict):
+        return {}
+
+    service = _service_hint_upper(health)
+    event_type_code = str(health.get("eventTypeCode") or "")
+    category = str(health.get("eventTypeCategory") or "")
+    scope = str(health.get("eventScopeCode") or "")
+    status_code = str(health.get("statusCode") or "")
+    event_region = str(health.get("eventRegion") or (payload.get("regions") or [""])[0])
+    affected_entities = health.get("affectedEntities") or []
+    latest_description = None
+    latest = health.get("latestDescription")
+    if isinstance(latest, dict):
+        latest_description = latest.get("text") or latest.get("latestDescription")
+    elif isinstance(latest, str):
+        latest_description = latest
+
+    status_code_norm = status_code.strip().lower()
+    terraform_candidate = (
+        scope == "ACCOUNT_SPECIFIC"
+        and category in {"scheduledChange", "accountNotification"}
+        and service in AWS_HEALTH_TERRAFORM_SERVICES
+        and len(resource_refs) > 0
+        and status_code_norm not in {"", "closed", "resolved"}
+    )
+
+    aws_health = {
+        "event_arn": health.get("eventArn") or trig.get("event_id"),
+        "service": service or None,
+        "event_type_code": event_type_code or None,
+        "event_type_category": category or None,
+        "event_scope_code": scope or None,
+        "status_code": status_code or None,
+        "event_region": event_region or None,
+        "affected_entity_count": len(affected_entities),
+        "latest_description": latest_description,
+    }
+    aws_health = {k: v for k, v in aws_health.items() if v not in (None, "")}
+
+    reason_parts = []
+    if scope:
+        reason_parts.append(scope)
+    if category:
+        reason_parts.append(category)
+    if service:
+        reason_parts.append(service)
+    if resource_refs:
+        reason_parts.append(f"resources={len(resource_refs)}")
+
+    return {
+        "aws_health": aws_health,
+        "actionability": {
+            "terraform_candidate": terraform_candidate,
+            "reason": " / ".join(reason_parts) if reason_parts else "AWS_HEALTH",
+            "auto_apply_allowed": False,
+        },
+    }
+
+
+def build_event_source_extensions(payload: Dict[str, Any], resource_refs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    kind = _event_origin_kind(payload)
+    ext: Dict[str, Any] = {"event_origin": {"kind": kind}}
+    if kind == "SECURITYHUB":
+        ext.update(_build_securityhub_extensions(payload))
+    elif kind == "AWS_HEALTH":
+        ext.update(_build_aws_health_extensions(payload, resource_refs))
+    return ext
 
 
 def _extract_user_identity(ct_detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -642,7 +1010,7 @@ def normalize_cloudtrail_events(
                 resources.append(hint_ref)
 
         norm = {
-            "event_id": e.get("EventId") or hashlib.md5((e.get("EventName", "") + event_time_iso).encode()).hexdigest(),
+            "event_id": e.get("EventId") or hashlib.md5((e.get("EventName","") + event_time_iso).encode()).hexdigest(),
             "event_time": event_time_iso,
             "aws_region": e.get("AwsRegion") or payload["regions"][0],
             "event_source": e.get("EventSource") or "",
@@ -756,12 +1124,23 @@ def build_meta(payload: Dict[str, Any], time_range: Dict[str, Any]) -> Dict[str,
     if payload["type"] == "EVENT":
         trig_in = payload.get("trigger") or {}
         # Minimal trigger fields required by schema: source, received_at
+        health = trig_in.get("health") or trig_in.get("detail") or {}
+        trigger_event_id = (
+            trig_in.get("event_id")
+            or trig_in.get("finding_arn")
+            or (health.get("eventArn") if isinstance(health, dict) else None)
+        )
+        detail_type = trig_in.get("detail_type")
+        if not detail_type and "finding_arn" in trig_in:
+            detail_type = "Security Hub Findings - Imported"
+        if not detail_type and isinstance(health, dict) and health.get("eventTypeCode"):
+            detail_type = "AWS Health Event"
         meta["trigger"] = {
-            "source": str(trig_in.get("source", "EVENTBRIDGE")),
+            "source": _transport_source_for_meta(trig_in.get("source", "EVENTBRIDGE")),
             "received_at": _to_kst_iso(_now_kst()),
-            "event_id": trig_in.get("event_id") or trig_in.get("finding_arn"),
+            "event_id": trigger_event_id,
             "event_time": payload.get("event_time"),
-            "detail_type": trig_in.get("detail_type") or ("Security Hub Findings - Imported" if "finding_arn" in trig_in else None),
+            "detail_type": detail_type,
             "raw_event_s3_uri": trig_in.get("raw_event_s3_uri"),
             "selector": trig_in.get("selector"),
         }
@@ -970,6 +1349,9 @@ def run_job_from_payload_file(
     events = normalize_cloudtrail_events(raw_events, payload, raw_s3_uris)
     resources = group_resources(events)
 
+    trigger_resource_refs = _extract_trigger_resource_refs(payload)
+    resources = merge_resource_groups_with_trigger_refs(resources, trigger_resource_refs)
+
     enrich_resources_with_config(
         session=session,
         resources=resources,
@@ -983,7 +1365,7 @@ def run_job_from_payload_file(
         "collection_status": collection_status,
         "events": events,
         "resources": resources,
-        "extensions": {},
+        "extensions": build_event_source_extensions(payload, trigger_resource_refs),
     }
 
     # 6) Schema validate + save
