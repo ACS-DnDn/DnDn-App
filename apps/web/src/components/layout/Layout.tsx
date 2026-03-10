@@ -11,10 +11,10 @@ function CrumbLink({ to, children }: { to: string; children: React.ReactNode }) 
 
 function buildBreadcrumb(pathname: string, search: string): React.ReactNode {
   const sp = new URLSearchParams(search);
-  const home = <CrumbLink to="/dashboard">홈</CrumbLink>;
+  const home = <CrumbLink to="/dashboard"><svg className="crumb-home-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 10l8-6 8 6"/><path d="M4.5 9v7a1 1 0 001 1h3.5v-4h2v4h3.5a1 1 0 001-1V9"/></svg></CrumbLink>;
   const sep = <span className="sep">›</span>;
 
-  if (pathname === '/dashboard' || pathname === '/') return home;
+  if (pathname === '/dashboard' || pathname === '/') return null;
 
   if (pathname.startsWith('/viewer')) {
     return <>{home}{sep}<CrumbLink to="/documents">문서 보관함</CrumbLink>{sep}<span className="crumb-cur">문서 열람</span></>;

@@ -57,18 +57,21 @@ body:has(.login-container) {
   animation: fadeUp 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both;
 }
 
-.field {
+.login-container .field {
   margin-bottom: 40px;
   position: relative;
 }
-.field-input {
+.login-container .field-input {
   display: block;
   width: 100%;
   height: 44px;
   background: transparent;
   border: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   appearance: none;
   box-shadow: none;
+  border-radius: 0;
   padding: 10px 0 12px;
   line-height: 1;
   font-family: 'Pretendard', sans-serif;
@@ -79,16 +82,23 @@ body:has(.login-container) {
   caret-color: var(--mint);
   transition: color 0.25s;
 }
+.login-container .field-input:-webkit-autofill,
+.login-container .field-input:-webkit-autofill:hover,
+.login-container .field-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none; }
-.field-input::placeholder {
+.login-container .field-input::placeholder {
   color: var(--placeholder, var(--text-muted));
   font-weight: 600;
   transition: opacity 0.25s;
 }
-.field-input:focus::placeholder { opacity: 0; }
+.login-container .field-input:focus::placeholder { opacity: 0; }
 
-.field::before {
+.login-container .field::before {
   content: '';
   position: absolute;
   bottom: 0; left: 0;
@@ -96,7 +106,7 @@ input[type="password"]::-ms-clear { display: none; }
   background: var(--line, var(--border));
   transition: background 0.25s;
 }
-.field::after {
+.login-container .field::after {
   content: '';
   position: absolute;
   bottom: 0; left: 0;
@@ -104,7 +114,7 @@ input[type="password"]::-ms-clear { display: none; }
   background: var(--mint);
   transition: width 0.4s cubic-bezier(0.22,1,0.36,1);
 }
-.field:focus-within::after { width: 100%; }
+.login-container .field:focus-within::after { width: 100%; }
 
 .error-msg {
   position: absolute;
@@ -145,14 +155,17 @@ input[type="password"]::-ms-clear { display: none; }
   animation: fadeUp 0.8s cubic-bezier(0.22,1,0.36,1) 0.18s both;
 }
 .link {
+  font-family: 'Pretendard', sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: var(--link, var(--text-sub));
   cursor: pointer;
   transition: color 0.2s;
   text-decoration: none;
+  border: none;
   border-bottom: 1px solid transparent;
-  padding-bottom: 1px;
+  background: transparent;
+  padding: 0 0 1px;
 }
 .link:hover { color: var(--text); border-bottom-color: var(--line, var(--border)); }
 

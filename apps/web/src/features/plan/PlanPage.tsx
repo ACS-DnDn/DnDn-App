@@ -440,9 +440,14 @@ export function PlanPage() {
     <>
       {/* ── Plan 전용 topnav (사이드바 없음) ── */}
       <header className="topnav">
-        <AnimatedLogo variant={isDark ? 'dark' : 'light'} className="nav-logo-obj" />
+        <a className="nav-logo-link" href="/dashboard" onClick={(e) => { e.preventDefault(); navigate('/dashboard'); }}>
+          <AnimatedLogo variant={isDark ? 'dark' : 'light'} className="nav-logo-obj" />
+        </a>
         <div className="nav-title">
-          홈<span className="sep">›</span><span className="crumb-cur">작업계획서 작성</span>
+          <a className="crumb-link" href="/dashboard" onClick={(e) => { e.preventDefault(); navigate('/dashboard'); }}>
+            <svg className="crumb-home-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 10l8-6 8 6"/><path d="M4.5 9v7a1 1 0 001 1h3.5v-4h2v4h3.5a1 1 0 001-1V9"/></svg>
+          </a>
+          <span className="sep">›</span><span className="crumb-cur">작업계획서 작성</span>
         </div>
         <div className="topnav-right">
           {ws && <span className="ws-label">{ws.alias} <span className="ws-acct">({ws.acctId})</span></span>}
