@@ -902,6 +902,23 @@ def _advisor_stage_failed(code: str, message: str) -> Dict[str, Any]:
     return {"status": "FAILED", "error_code": code, "message": message}
 
 
+def _advisor_na_from_client_error(e: ClientError) -> Optional[Tuple[str, str]]:
+    code = _client_error_code(e)
+    if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
+        return ("PERMISSION_DENIED", f"{code}: {e}")
+
+    msg = str(e).lower()
+    if code in ("OptInRequired",):
+        return ("REGION_DISABLED", f"{code}: {e}")
+    if "region is not enabled" in msg or "not opted-in" in msg or "opted in" in msg:
+        return ("REGION_DISABLED", f"{code}: {e}")
+    if code in ("SubscriptionRequiredException",):
+        return ("SERVICE_DISABLED", f"{code}: {e}")
+    if "service is not enabled" in msg or "service has not been enabled" in msg or "not subscribed to this service" in msg:
+        return ("SERVICE_DISABLED", f"{code}: {e}")
+    return None
+
+
 def _write_advisor_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
     advisor_dir = raw_dir / "advisor"
     _ensure_dir(advisor_dir)
@@ -964,10 +981,12 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            code = _client_error_code(e)
-            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
-                collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
+            na = _advisor_na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_na(na_reason, message)
             else:
+                code = _client_error_code(e)
                 collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_ADDRESSES_FAILED", f"{code}: {e}")
         except Exception as e:
             collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_ADDRESSES_UNEXPECTED", str(e))
@@ -996,10 +1015,12 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            code = _client_error_code(e)
-            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
-                collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
+            na = _advisor_na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_na(na_reason, message)
             else:
+                code = _client_error_code(e)
                 collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_VOLUMES_FAILED", f"{code}: {e}")
         except Exception as e:
             collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_failed("EC2_DESCRIBE_VOLUMES_UNEXPECTED", str(e))
@@ -1043,10 +1064,12 @@ def build_weekly_advisor_extensions(
                         "evidence": {"raw_s3_uri": uri},
                     })
         except ClientError as e:
-            code = _client_error_code(e)
-            if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
-                collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_na("PERMISSION_DENIED", f"{code}: {e}")
+            na = _advisor_na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_na(na_reason, message)
             else:
+                code = _client_error_code(e)
                 collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_failed("RDS_DESCRIBE_DB_INSTANCES_FAILED", f"{code}: {e}")
         except Exception as e:
             collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_failed("RDS_DESCRIBE_DB_INSTANCES_UNEXPECTED", str(e))
