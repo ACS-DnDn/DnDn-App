@@ -62,6 +62,10 @@ export function WorkspacePage() {
     return () => document.removeEventListener('click', handler);
   }, []);
 
+  useEffect(() => {
+    return () => { clearTimeout(toastTimer.current); };
+  }, []);
+
   const showToast = useCallback((msg: string, type: 'ok' | 'warn' = 'warn') => {
     setToast({ msg, type });
     clearTimeout(toastTimer.current);

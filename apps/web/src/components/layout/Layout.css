@@ -24,9 +24,11 @@
   height: 35px; width: auto; display: block; flex-shrink: 0;
 }
 .nav-title {
-  margin-left: 100px;
+  margin-left: 20px;
   font-size: 14px; font-weight: 600; color: var(--text-sub);
-  letter-spacing: 0.3px; white-space: nowrap; flex-shrink: 0;
+  letter-spacing: 0.3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
 }
 .nav-title .sep { font-weight: 400; opacity: 0.45; margin: 0 6px; }
 .nav-title .crumb-cur { color: var(--text); }
@@ -50,6 +52,7 @@
   top: var(--nav-h); left: 0;
   width: var(--sidebar-w);
   height: calc(100vh - var(--nav-h));
+  height: calc(100dvh - var(--nav-h));
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;

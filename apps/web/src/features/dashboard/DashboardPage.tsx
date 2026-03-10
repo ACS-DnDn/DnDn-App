@@ -88,7 +88,7 @@ export function DashboardPage() {
               처리할 문서
               <span className="count-pill">{data.pendingDocs.length}</span>
             </div>
-            <a className="table-link" onClick={() => navigate('/pending')}>전체 보기 →</a>
+            <button type="button" className="table-link" onClick={() => navigate('/pending')}>전체 보기 →</button>
           </div>
           <table className="doc-table">
             <colgroup>
@@ -136,7 +136,7 @@ export function DashboardPage() {
               새로운 문서
               <span className="count-pill">{allDocs.length}</span>
             </div>
-            <a className="table-link" onClick={() => navigate('/documents')}>전체 보기 →</a>
+            <button type="button" className="table-link" onClick={() => navigate('/documents')}>전체 보기 →</button>
           </div>
           <table className="doc-table">
             <colgroup>

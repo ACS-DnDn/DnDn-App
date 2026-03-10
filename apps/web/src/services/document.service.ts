@@ -12,7 +12,9 @@ export function getDocumentById(id: number): Document | undefined {
 }
 
 export function getRefDocs(): Record<string, RefDocMeta> {
-  return structuredClone(REF_DOCS);
+  return Object.fromEntries(
+    Object.entries(REF_DOCS).map(([k, v]) => [k, { ...v, meta: v.meta.map(m => [...m]) }])
+  ) as Record<string, RefDocMeta>;
 }
 
 export function getDocData(): DocDataItem[] {
@@ -20,5 +22,7 @@ export function getDocData(): DocDataItem[] {
 }
 
 export function getDocContent(): MockDocContent {
-  return structuredClone(MOCK_DOC_CONTENT);
+  return Object.fromEntries(
+    Object.entries(MOCK_DOC_CONTENT).map(([k, v]) => [k, { ...v }])
+  ) as MockDocContent;
 }

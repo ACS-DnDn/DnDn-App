@@ -8,7 +8,7 @@
   background: var(--bg-alt);
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
-  animation: fadeUp 0.25s ease both;
+  animation: fade-up 0.25s ease both;
 }
 .hero-title { font-size: 26px; font-weight: 800; color: var(--text); }
 .hero-actions { display: flex; gap: 10px; margin-top: 24px; }
@@ -28,19 +28,23 @@
   border: 1.5px solid var(--mint); background: var(--mint);
   color: #fff; font-size: 13px; font-weight: 600;
   cursor: pointer; text-decoration: none;
-  font-family: 'Pretendard', sans-serif; transition: all 0.15s;
+  font-family: Pretendard, sans-serif; transition: all 0.15s;
 }
 .hero-btn:hover { filter: brightness(0.9); }
 .hero-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
 
 /* ── 테이블 카드 ── */
-.table-stack { display: flex; flex-direction: column; gap: 16px; animation: fadeUp 0.3s 0.07s ease both; }
+.table-stack { display: flex; flex-direction: column; gap: 16px; animation: fade-up 0.3s 0.07s ease both; }
 .table-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .table-card-header { padding: 14px 24px 12px; display: flex; align-items: center; justify-content: space-between; }
 .table-card-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .count-pill { background: var(--mint-soft); color: var(--mint); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
 .table-link { font-size: 12px; font-weight: 600; color: var(--mint); text-decoration: none; cursor: pointer; }
 .table-link:hover { text-decoration: underline; }
+button.table-link {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-family: inherit; font-size: inherit; color: inherit;
+}
 
 .doc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .doc-table thead tr { border-bottom: 2px solid var(--border-med); }
@@ -69,7 +73,7 @@
 .badge-done     { background: var(--green-soft);  color: var(--green);  }
 .badge-rejected { background: var(--red-soft);    color: var(--red);    }
 
-@keyframes digitSlide { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.digit.changed { animation: digitSlide 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes digit-slide { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.digit.changed { animation: digit-slide 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
 
-@keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }

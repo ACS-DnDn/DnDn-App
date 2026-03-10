@@ -23,6 +23,7 @@ export function WorkspaceCreatePage() {
   const [step, setStep] = useState(0);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const navTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Step 1: AWS
   const [acctId, setAcctId] = useState('');
@@ -58,6 +59,13 @@ export function WorkspaceCreatePage() {
     }
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(toastTimer.current);
+      clearTimeout(navTimerRef.current);
+    };
   }, []);
 
   const showToast = (msg: string, type = 'warn') => {
@@ -117,7 +125,7 @@ export function WorkspaceCreatePage() {
       memo: memo.trim(), icon: selectedIcon,
     };
     showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
-    setTimeout(() => navigate('/workspace'), 1000);
+    navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
   };
 
   const cleanAcct = acctId.replace(/\D/g, '');
@@ -158,7 +166,7 @@ export function WorkspaceCreatePage() {
                 <div className="seq-label">DnDn 연동 역할 배포</div>
                 <div className="seq-desc">AWS 콘솔에 로그인한 상태에서 역할 생성 버튼을 클릭하세요.<br />IAM 리소스 생성 승인 체크 후 스택 생성까지 약 1~2분 소요됩니다.</div>
                 <div className="policy-wrap">
-                  <div className={`policy-toggle${policyOpen ? ' open' : ''}`} onClick={() => setPolicyOpen(p => !p)}>
+                  <div className={`policy-toggle${policyOpen ? ' open' : ''}`} onClick={() => setPolicyOpen(p => !p)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPolicyOpen(p => !p); } }}>
                     <svg className="policy-toggle-arr" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 4l4 4-4 4" /></svg>
                     필요 권한 확인
                   </div>
