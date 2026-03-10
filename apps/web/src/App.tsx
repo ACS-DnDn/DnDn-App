@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Layout } from '@/components/layout/Layout';
 import { LoginPage } from '@/features/login/LoginPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
@@ -14,6 +15,24 @@ import { ViewerPage } from '@/features/viewer/ViewerPage';
 import { PlanPage } from '@/features/plan/PlanPage';
 import { GitHubCallbackPage } from '@/features/auth/GitHubCallbackPage';
 
+function ProtectedRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <p>인증 확인 중...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
+}
+
 export function App() {
   return (
     <ThemeProvider>
@@ -22,18 +41,22 @@ export function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
-            <Route path="/plan" element={<PlanPage />} />
-            <Route element={<Layout />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/report-settings" element={<ReportSettingsPage />} />
-              <Route path="/pending" element={<PendingPage />} />
-              <Route path="/documents" element={<DocumentsPage />} />
-              <Route path="/viewer/:id" element={<ViewerPage />} />
-              <Route path="/workspace" element={<WorkspacePage />} />
-              <Route path="/workspace/create" element={<WorkspaceCreatePage />} />
-              <Route path="/mypage" element={<MyPage />} />
+
+            <Route element={<ProtectedRoute />}>
+              <Route path="/plan" element={<PlanPage />} />
+              <Route element={<Layout />}>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/report-settings" element={<ReportSettingsPage />} />
+                <Route path="/pending" element={<PendingPage />} />
+                <Route path="/documents" element={<DocumentsPage />} />
+                <Route path="/viewer/:id" element={<ViewerPage />} />
+                <Route path="/workspace" element={<WorkspacePage />} />
+                <Route path="/workspace/create" element={<WorkspaceCreatePage />} />
+                <Route path="/mypage" element={<MyPage />} />
+              </Route>
             </Route>
+
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
