@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { getWorkspaces } from '@/services/workspace.service';
@@ -8,14 +8,14 @@ import type { Workspace, IconKey } from '@/mocks/types/workspace';
 import type { OpaCategory, OpaItem, OpaSeverity } from '@/mocks/types/report';
 import './WorkspacePage.css';
 
-const OPA_ICONS: Record<string, string> = {
-  '네트워크 보안':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5l5.5 2.5v4c0 3-2.2 5.5-5.5 6.5-3.3-1-5.5-3.5-5.5-6.5V4z"/></svg>',
-  'IAM 보안':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="7" width="8" height="7" rx="1"/><path d="M6 7V5a2 2 0 014 0v2"/></svg>',
-  '스토리지 보안':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4l6-2 6 2v8l-6 2-6-2z"/><path d="M2 4l6 2 6-2M8 6v8"/></svg>',
-  '컴퓨팅 제어':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 8h6M5 10h4"/></svg>',
-  '로깅 / 모니터링':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12l4-4 3 3 5-6"/><path d="M10 5h4v4"/></svg>',
-  '비용 관리':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v8M6 6h3.5a1.5 1.5 0 010 3H6.5h3a1.5 1.5 0 010 3H6"/></svg>',
-  '가용성':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.7 2 6 2s6-.9 6-2V4"/><path d="M2 8v4c0 1.1 2.7 2 6 2s6-.9 6-2V8"/></svg>',
+const OPA_ICONS: Record<string, ReactNode> = {
+  '네트워크 보안': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5l5.5 2.5v4c0 3-2.2 5.5-5.5 6.5-3.3-1-5.5-3.5-5.5-6.5V4z"/></svg>,
+  'IAM 보안': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="7" width="8" height="7" rx="1"/><path d="M6 7V5a2 2 0 014 0v2"/></svg>,
+  '스토리지 보안': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4l6-2 6 2v8l-6 2-6-2z"/><path d="M2 4l6 2 6-2M8 6v8"/></svg>,
+  '컴퓨팅 제어': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 8h6M5 10h4"/></svg>,
+  '로깅 / 모니터링': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 12l4-4 3 3 5-6"/><path d="M10 5h4v4"/></svg>,
+  '비용 관리': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v8M6 6h3.5a1.5 1.5 0 010 3H6.5h3a1.5 1.5 0 010 3H6"/></svg>,
+  '가용성': <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.7 2 6 2s6-.9 6-2V4"/><path d="M2 8v4c0 1.1 2.7 2 6 2s6-.9 6-2V8"/></svg>,
 };
 
 export function WorkspacePage() {
@@ -25,7 +25,6 @@ export function WorkspacePage() {
 
   const sectionParam = searchParams.get('section');
   const section = sectionParam === 'opa' ? 'opa' : 'general';
-  const connected = searchParams.get('connected') !== null;
   const [account, setAccount] = useState<Workspace | null>(null);
 
   // 모달
@@ -46,13 +45,13 @@ export function WorkspacePage() {
 
   useEffect(() => {
     const ws = getWorkspaces();
-    if (connected && ws.length > 0) setAccount({ ...ws[0]! });
+    if (ws.length > 0) setAccount({ ...ws[0]! });
     const settings = getReportSettings();
     setOpaData(JSON.parse(JSON.stringify(settings.opa)));
     // 기본으로 모든 아이템 접힘
     const allKeys = settings.opa.flatMap(g => g.items.map(i => i.key));
     setClosedItems(new Set(allKeys));
-  }, [connected]);
+  }, []);
 
   // 아이콘 피커 외부 클릭
   useEffect(() => {
@@ -159,7 +158,7 @@ export function WorkspacePage() {
                 {/* 프로필 카드 */}
                 <div className="info-card profile-card">
                   <div className="profile-section">
-                    <div className="ws-icon" dangerouslySetInnerHTML={{ __html: WS_ICONS[account.icon] || WS_ICONS.rocket }} />
+                    <div className="ws-icon">{WS_ICONS[account.icon] || WS_ICONS.rocket}</div>
                     <div className="banner-info">
                       <div className="banner-name-row">{account.alias}</div>
                     </div>
@@ -204,14 +203,14 @@ export function WorkspacePage() {
                 <div className="opa-title">인프라 정책</div>
                 <div className="opa-desc">생성된 Terraform 코드를 정적 분석하여 자동 검증합니다</div>
               </div>
-              <button className="btn-save-opa" onClick={() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok')}>설정 저장</button>
+              <button className="btn-save-opa" onClick={() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok')} disabled={session.auth !== 'leader'}>설정 저장</button>
             </div>
             <div className="eg-list">
               {opaData.map(g => (
                 <div key={g.category} className="eg">
                   <div className="eg-head">
                     <div className="eg-name">
-                      <span dangerouslySetInnerHTML={{ __html: OPA_ICONS[g.category] || '' }} />
+                      <span>{OPA_ICONS[g.category]}</span>
                       {g.category}
                     </div>
                   </div>
@@ -221,6 +220,7 @@ export function WorkspacePage() {
                         key={item.key}
                         item={item}
                         shut={closedItems.has(item.key)}
+                        readOnly={session.auth !== 'leader'}
                         onToggleShut={() => setClosedItems(prev => {
                           const next = new Set(prev);
                           next.has(item.key) ? next.delete(item.key) : next.add(item.key);
@@ -255,7 +255,7 @@ export function WorkspacePage() {
             <div className="modal-body">
               <div className="modal-profile">
                 <div className="modal-icon-area" ref={iconAreaRef}>
-                  <div className="modal-icon-preview" dangerouslySetInnerHTML={{ __html: WS_ICONS[selectedIcon] }} />
+                  <div className="modal-icon-preview">{WS_ICONS[selectedIcon]}</div>
                   <button className="modal-icon-btn" onClick={() => setIconPickerOpen(p => !p)} title="아이콘 변경">
                     <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2.5l2 2L5 11H3V9l6.5-6.5z" /></svg>
                   </button>
@@ -263,8 +263,9 @@ export function WorkspacePage() {
                     <div className="modal-icon-picker open">
                       {ICON_KEYS.map(k => (
                         <div key={k} className={`icon-opt${k === selectedIcon ? ' selected' : ''}`}
-                          onClick={() => { setSelectedIcon(k); setIconPickerOpen(false); }}
-                          dangerouslySetInnerHTML={{ __html: WS_ICONS[k] }} />
+                          onClick={() => { setSelectedIcon(k); setIconPickerOpen(false); }}>
+                          {WS_ICONS[k]}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -297,6 +298,7 @@ export function WorkspacePage() {
 interface PolicyItemProps {
   item: OpaItem;
   shut: boolean;
+  readOnly?: boolean;
   onToggleShut: () => void;
   onToggleSwitch: () => void;
   onSetSeverity: (sev: OpaSeverity) => void;
@@ -306,7 +308,7 @@ interface PolicyItemProps {
   onToggleSvc: (svc: string) => void;
 }
 
-function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, onDelTag, onAddTag, onUpdateParam, onToggleSvc }: PolicyItemProps) {
+function PolicyItem({ item, shut, readOnly, onToggleShut, onToggleSwitch, onSetSeverity, onDelTag, onAddTag, onUpdateParam, onToggleSvc }: PolicyItemProps) {
   const [addingField, setAddingField] = useState<'params' | 'exceptions' | null>(null);
   const [inputVal, setInputVal] = useState('');
 
@@ -324,7 +326,7 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
         <div className="ei-right">
           <span className={`sev sev-${item.severity}`}>{item.severity === 'block' ? 'BLOCK' : 'WARN'}</span>
           <label className="sw" onClick={(e) => e.stopPropagation()}>
-            <input type="checkbox" checked={item.on} onChange={onToggleSwitch} />
+            <input type="checkbox" checked={item.on} onChange={onToggleSwitch} disabled={readOnly} />
             <div className="tr" /><div className="kn" />
           </label>
           <svg className="ei-arr" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
@@ -336,8 +338,8 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
           <div className="ei-field">
             <span className="ei-field-label">심각도</span>
             <div className="sev-group">
-              <button className={`sev-btn${item.severity === 'block' ? ' active-block' : ''}`} onClick={() => onSetSeverity('block')}>BLOCK</button>
-              <button className={`sev-btn${item.severity === 'warn' ? ' active-warn' : ''}`} onClick={() => onSetSeverity('warn')}>WARN</button>
+              <button className={`sev-btn${item.severity === 'block' ? ' active-block' : ''}`} onClick={() => onSetSeverity('block')} disabled={readOnly}>BLOCK</button>
+              <button className={`sev-btn${item.severity === 'warn' ? ' active-warn' : ''}`} onClick={() => onSetSeverity('warn')} disabled={readOnly}>WARN</button>
             </div>
           </div>
 
@@ -347,15 +349,15 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
               <span className="ei-field-label">{item.params.label}</span>
               <div className="tag-list">
                 {item.params.values.map((v, i) => (
-                  <span key={`${v}-${i}`} className="tag">{v}<button className="tag-x" onClick={() => onDelTag('params', i)}>&times;</button></span>
+                  <span key={`${v}-${i}`} className="tag">{v}<button className="tag-x" onClick={() => onDelTag('params', i)} disabled={readOnly}>&times;</button></span>
                 ))}
-                {addingField === 'params' ? (
+                {!readOnly && (addingField === 'params' ? (
                   <input className="tag-input" autoFocus value={inputVal} onChange={(e) => setInputVal(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmAdd('params'); } if (e.key === 'Escape') { setAddingField(null); setInputVal(''); } }}
                     onBlur={() => confirmAdd('params')} placeholder="입력 후 Enter" />
                 ) : (
                   <button className="tag-add" onClick={() => setAddingField('params')}>+ 추가</button>
-                )}
+                ))}
               </div>
             </div>
           )}
@@ -364,7 +366,7 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
             <div className="ei-field">
               <span className="ei-field-label">{item.params.label}</span>
               <div>
-                <input type="number" className="num-input" value={item.params.value} min={1} onChange={(e) => onUpdateParam(+e.target.value)} />
+                <input type="number" className="num-input" value={item.params.value} min={1} onChange={(e) => onUpdateParam(+e.target.value)} disabled={readOnly} />
                 <span className="num-unit">{item.params.unit || ''}</span>
               </div>
             </div>
@@ -376,7 +378,7 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
               <div className="svc-checks">
                 {item.params.options.map(svc => (
                   <label key={svc} className="svc-check">
-                    <input type="checkbox" checked={item.params!.type === 'services' && (item.params as { values: string[] }).values.includes(svc)} onChange={() => onToggleSvc(svc)} />
+                    <input type="checkbox" checked={item.params!.type === 'services' && (item.params as { values: string[] }).values.includes(svc)} onChange={() => onToggleSvc(svc)} disabled={readOnly} />
                     {svc}
                   </label>
                 ))}
@@ -389,15 +391,15 @@ function PolicyItem({ item, shut, onToggleShut, onToggleSwitch, onSetSeverity, o
             <span className="ei-field-label">예외 리소스</span>
             <div className="tag-list">
               {item.exceptions.map((v, i) => (
-                <span key={`${v}-${i}`} className="tag">{v}<button className="tag-x" onClick={() => onDelTag('exceptions', i)}>&times;</button></span>
+                <span key={`${v}-${i}`} className="tag">{v}<button className="tag-x" onClick={() => onDelTag('exceptions', i)} disabled={readOnly}>&times;</button></span>
               ))}
-              {addingField === 'exceptions' ? (
+              {!readOnly && (addingField === 'exceptions' ? (
                 <input className="tag-input" autoFocus value={inputVal} onChange={(e) => setInputVal(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmAdd('exceptions'); } if (e.key === 'Escape') { setAddingField(null); setInputVal(''); } }}
                   onBlur={() => confirmAdd('exceptions')} placeholder="입력 후 Enter" />
               ) : (
                 <button className="tag-add" onClick={() => setAddingField('exceptions')}>+ 추가</button>
-              )}
+              ))}
             </div>
           </div>
         </div>

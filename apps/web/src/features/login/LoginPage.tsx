@@ -40,7 +40,7 @@ export function LoginPage() {
 
   return (
     <>
-      <button className="mode-toggle" onClick={toggle}>
+      <button type="button" className="mode-toggle" onClick={toggle} aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}>
         <div className="toggle-track"><div className="toggle-thumb" /></div>
       </button>
 
@@ -63,7 +63,7 @@ export function LoginPage() {
         </form>
 
         <div className="footer">
-          <a className="link" onClick={openPwReset}>비밀번호를 잊으셨나요?</a>
+          <button type="button" className="link" onClick={openPwReset}>비밀번호를 잊으셨나요?</button>
         </div>
       </div>
 

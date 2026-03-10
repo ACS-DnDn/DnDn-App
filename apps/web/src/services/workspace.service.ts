@@ -3,13 +3,14 @@ import { wsAccounts, MOCK_GH } from '@/mocks';
 
 
 export function getWorkspaces(): Workspace[] {
-  return wsAccounts;
+  return wsAccounts.map((ws) => ({ ...ws }));
 }
 
 export function getWorkspaceById(id: string): Workspace | undefined {
-  return wsAccounts.find((ws) => ws.id === id);
+  const ws = wsAccounts.find((ws) => ws.id === id);
+  return ws ? { ...ws } : undefined;
 }
 
 export function getGitHubData(): GitHubMock {
-  return MOCK_GH;
+  return structuredClone(MOCK_GH);
 }

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getRefDocs, getDocContent } from '@/services/document.service';
 import './ViewerPage.css';
 
@@ -123,10 +123,15 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const docId = parseInt(id ?? '0');
+  const docId = Number(id);
   // mock: localStorage에 저장된 문서가 있으면 /mock/ URL 사용, 나중에 API 연동 시 S3 URL로 대체
   const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
-  const doc = useMemo(() => getDocumentById(docId) ?? getDocumentById(1)!, [docId]);
+  const doc = useMemo(() => (Number.isInteger(docId) ? getDocumentById(docId) : undefined), [docId]);
+
+  if (!doc) {
+    return <Navigate to="/documents" replace />;
+  }
+
   const docContent = getDocContent();
   const refDocs = getRefDocs();
   const tmpl = docContent[doc.type] ?? docContent['계획서']!;
@@ -200,8 +205,8 @@ export function ViewerPage() {
         {/* 탭: 참조 문서 / 첨부 파일 */}
         <div className="sidebar-section">
           <div className="panel-tabs">
-            <div className={`panel-tab${panelTab === 'refs' ? ' active' : ''}`} onClick={() => setPanelTab('refs')}>참조 문서</div>
-            <div className={`panel-tab${panelTab === 'attach' ? ' active' : ''}`} onClick={() => setPanelTab('attach')}>첨부 파일</div>
+            <button type="button" className={`panel-tab${panelTab === 'refs' ? ' active' : ''}`} onClick={() => setPanelTab('refs')}>참조 문서</button>
+            <button type="button" className={`panel-tab${panelTab === 'attach' ? ' active' : ''}`} onClick={() => setPanelTab('attach')}>첨부 파일</button>
           </div>
           <div className={`panel-tab-content${panelTab === 'refs' ? ' active' : ''}`}>
             <div className="sidebar-refs">

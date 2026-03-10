@@ -1,5 +1,5 @@
 /* ── 레이아웃 ── */
-.dashboard-page { padding: 28px 70px; min-width: 960px; }
+.dashboard-page { padding: 28px clamp(20px, 4vw, 70px); min-width: 0; box-sizing: border-box; }
 
 /* ── 히어로 ── */
 .hero-section {

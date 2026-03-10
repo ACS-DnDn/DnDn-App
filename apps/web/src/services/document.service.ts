@@ -3,21 +3,22 @@ import { ALL_DOCS, REF_DOCS, docData, MOCK_DOC_CONTENT } from '@/mocks';
 
 
 export function getDocuments(): Document[] {
-  return ALL_DOCS;
+  return ALL_DOCS.map((d) => ({ ...d }));
 }
 
 export function getDocumentById(id: number): Document | undefined {
-  return ALL_DOCS.find((d) => d.id === id);
+  const doc = ALL_DOCS.find((d) => d.id === id);
+  return doc ? { ...doc } : undefined;
 }
 
 export function getRefDocs(): Record<string, RefDocMeta> {
-  return REF_DOCS;
+  return structuredClone(REF_DOCS);
 }
 
 export function getDocData(): DocDataItem[] {
-  return docData;
+  return docData.map((d) => ({ ...d }));
 }
 
 export function getDocContent(): MockDocContent {
-  return MOCK_DOC_CONTENT;
+  return structuredClone(MOCK_DOC_CONTENT);
 }

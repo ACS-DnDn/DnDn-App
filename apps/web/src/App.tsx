@@ -32,6 +32,7 @@ export function App() {
               <Route path="/workspace/create" element={<WorkspaceCreatePage />} />
               <Route path="/mypage" element={<MyPage />} />
             </Route>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

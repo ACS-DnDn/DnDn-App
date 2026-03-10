@@ -160,14 +160,15 @@ export function MyPage() {
               <div className="channel-picker">
                 <div className="channel-picker-title">알림을 받을 채널을 선택하세요</div>
                 {CHANNELS.map((ch) => (
-                  <div
+                  <button
+                    type="button"
                     key={ch.id}
                     className={`channel-option${selectedChannel === ch.id ? ' selected' : ''}`}
                     onClick={() => { setSelectedChannel(ch.id); setPickerOpen(false); }}
                   >
                     <div className="channel-radio"><div className="channel-radio-dot" /></div>
                     <div className="channel-option-name">{ch.name} <span>{ch.desc}</span></div>
-                  </div>
+                  </button>
                 ))}
                 <div className="channel-picker-actions">
                   <button className="btn-outline" style={{ fontSize: 12, padding: '6px 14px' }} onClick={() => setPickerOpen(false)}>취소</button>

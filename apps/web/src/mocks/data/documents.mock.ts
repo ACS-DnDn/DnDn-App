@@ -1,5 +1,9 @@
 import type { Document, RefDocMeta, DocDataItem, MockDocContent } from '../types/document';
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export const ALL_DOCS: Document[] = [
   // 처리할 문서 (결재 필요 or 반려)
   { id: 1,  name: 'EKS 노드그룹 인스턴스 타입 변경 계획서', author: '이서연', date: '2026-02-24 14:22', type: '계획서',       status: 'progress', action: 'approve',  icon: '📝', workspace: 'Production' },
@@ -154,12 +158,12 @@ export const MOCK_DOC_CONTENT: MockDocContent = {
   '계획서': {
     hasTerraform: true,
     render: (doc) => `
-      <h1 class="doc-title">${doc.name}</h1>
+      <h1 class="doc-title">${escapeHtml(doc.name)}</h1>
       <div class="doc-meta-row">
         <div class="doc-meta-item">📅 <strong>작업일</strong> 2026.03.05</div>
-        <div class="doc-meta-item">👤 <strong>작성자</strong> ${doc.author}</div>
+        <div class="doc-meta-item">👤 <strong>작성자</strong> ${escapeHtml(doc.author)}</div>
         <div class="doc-meta-item">🏷 <strong>유형</strong> 계획서</div>
-        <div class="doc-meta-item">🕐 <strong>작성일시</strong> ${doc.date.slice(0, 10).replace(/-/g, '.')}</div>
+        <div class="doc-meta-item">🕐 <strong>작성일시</strong> ${escapeHtml(doc.date.slice(0, 10).replace(/-/g, '.'))}</div>
       </div>
       <div class="ref-docs-bar">
         <span class="ref-docs-label">📎 참조 문서</span>
@@ -205,10 +209,10 @@ export const MOCK_DOC_CONTENT: MockDocContent = {
   '이벤트보고서': {
     hasTerraform: false,
     render: (doc) => `
-      <h1 class="doc-title">${doc.name}</h1>
+      <h1 class="doc-title">${escapeHtml(doc.name)}</h1>
       <div class="doc-meta-row">
-        <div class="doc-meta-item">📅 <strong>감지일시</strong> ${doc.date.slice(0, 10).replace(/-/g, '.')}</div>
-        <div class="doc-meta-item">👤 <strong>담당자</strong> ${doc.author}</div>
+        <div class="doc-meta-item">📅 <strong>감지일시</strong> ${escapeHtml(doc.date.slice(0, 10).replace(/-/g, '.'))}</div>
+        <div class="doc-meta-item">👤 <strong>담당자</strong> ${escapeHtml(doc.author)}</div>
         <div class="doc-meta-item">🏷 <strong>유형</strong> 이벤트 보고서</div>
         <div class="doc-meta-item">⚠️ <strong>심각도</strong> 높음</div>
       </div>
@@ -221,7 +225,7 @@ export const MOCK_DOC_CONTENT: MockDocContent = {
             <tr><td style="font-weight:600">심각도</td><td>높음 (Score: 7.6)</td></tr>
             <tr><td style="font-weight:600">대상 리소스</td><td>IAM 사용자 svc-api-dev</td></tr>
             <tr><td style="font-weight:600">소스 IP</td><td>185.220.101.47 (악성 IP 목록 등재)</td></tr>
-            <tr><td style="font-weight:600">감지 시각</td><td>${doc.date}</td></tr>
+            <tr><td style="font-weight:600">감지 시각</td><td>${escapeHtml(doc.date)}</td></tr>
           </tbody>
         </table>
       </div>
@@ -255,7 +259,7 @@ export const MOCK_DOC_CONTENT: MockDocContent = {
   '주간보고서': {
     hasTerraform: false,
     render: (doc) => `
-      <h1 class="doc-title">${doc.name}</h1>
+      <h1 class="doc-title">${escapeHtml(doc.name)}</h1>
       <div class="doc-meta-row">
         <div class="doc-meta-item">📅 <strong>기간</strong> 2026.02.17 ~ 02.23</div>
         <div class="doc-meta-item">👤 <strong>생성</strong> 시스템 자동</div>

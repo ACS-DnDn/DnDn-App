@@ -54,14 +54,14 @@ export function DashboardPage() {
         <div>
           <div className="hero-title">{greet}, {session.name}님</div>
           <div className="hero-actions">
-            <a className="hero-btn" onClick={() => navigate('/report-settings')}>
+            <button type="button" className="hero-btn" onClick={() => navigate('/report-settings')}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 2" /></svg>
               보고서 생성
-            </a>
-            <a className="hero-btn" onClick={() => navigate('/plan')}>
+            </button>
+            <button type="button" className="hero-btn" onClick={() => navigate('/plan')}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6l-4-4z" /><path d="M9 2v4h4" /></svg>
               작업계획서 작성
-            </a>
+            </button>
           </div>
         </div>
         <div className="hero-right">
@@ -111,7 +111,7 @@ export function DashboardPage() {
               {data.pendingDocs.map((d) => {
                 const s = statusMap[d.status];
                 return (
-                  <tr key={d.docNum} onClick={() => navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={d.docNum} onClick={() => navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                     <td className="td-num">{d.docNum}</td>
                     <td>
                       <div className="doc-title-row">
@@ -157,7 +157,7 @@ export function DashboardPage() {
             </thead>
             <tbody>
               {recentDocs.map((d) => (
-                <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                   <td className="td-num">DnDn-{String(d.id).padStart(4, '0')}</td>
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{d.type}</td>

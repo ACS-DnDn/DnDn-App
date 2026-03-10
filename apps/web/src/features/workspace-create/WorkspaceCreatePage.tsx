@@ -48,7 +48,7 @@ export function WorkspaceCreatePage() {
   useEffect(() => {
     if (session.auth !== 'leader') {
       showToast('접근 권한이 없습니다.', 'warn');
-      setTimeout(() => navigate('/workspace'), 1200);
+      navigate('/workspace');
     }
   }, [session.auth, navigate]);
 
@@ -117,11 +117,13 @@ export function WorkspaceCreatePage() {
       memo: memo.trim(), icon: selectedIcon,
     };
     showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
-    setTimeout(() => navigate('/workspace?connected=1'), 1000);
+    setTimeout(() => navigate('/workspace'), 1000);
   };
 
   const cleanAcct = acctId.replace(/\D/g, '');
   const repoDisplay = [org, repo, path].filter(Boolean).join('/');
+
+  if (session.auth !== 'leader') return null;
 
   return (
     <div className="wsc-page">
@@ -149,7 +151,7 @@ export function WorkspaceCreatePage() {
               <div className="seq-step" data-n="1">
                 <div className="seq-label">AWS 계정 ID</div>
                 <div className="seq-action">
-                  <input className="field-input" type="text" maxLength={12} value={acctId} onChange={(e) => setAcctId(e.target.value)} style={{ width: 160, textAlign: 'center', letterSpacing: '1.5px' }} />
+                  <input className="field-input" type="text" maxLength={12} value={acctId} onChange={(e) => { setAcctId(e.target.value); setAwsTested(false); }} style={{ width: 160, textAlign: 'center', letterSpacing: '1.5px' }} />
                 </div>
               </div>
               <div className="seq-step" data-n="2">
@@ -179,7 +181,7 @@ export function WorkspaceCreatePage() {
                 <div className="seq-desc">스택 생성이 완료되면 테스트 버튼으로 연결 상태를 확인합니다.</div>
                 <div className="seq-action">
                   {awsTesting && <span className="test-result show" style={{ background: 'var(--bg-alt)', color: 'var(--text-muted)' }}>연동 확인 중...</span>}
-                  {awsTested && !awsTesting && <span className="test-result show success" dangerouslySetInnerHTML={{ __html: `${SVG.check} 연동 성공 — 계정 ${cleanAcct}` }} />}
+                  {awsTested && !awsTesting && <span className="test-result show success">{SVG.check} 연동 성공 — 계정 {cleanAcct}</span>}
                   <button className="btn-seq" onClick={testAws}>테스트</button>
                 </div>
               </div>
@@ -197,7 +199,7 @@ export function WorkspaceCreatePage() {
                 <div className="seq-label">GitHub 계정 연결</div>
                 <div className="seq-desc">GitHub OAuth를 통해 저장소 접근 권한을 부여합니다.</div>
                 <div className="seq-action">
-                  {ghConnected && <span className="gh-status show ok" dangerouslySetInnerHTML={{ __html: `${SVG.check} 연결 완료` }} />}
+                  {ghConnected && <span className="gh-status show ok">{SVG.check} 연결 완료</span>}
                   <button className="btn-seq" onClick={connectGH} disabled={ghConnected || ghConnecting} style={ghConnected ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
                     {ghConnecting ? '연결 중…' : ghConnected ? '연결됨' : '연결'}
                   </button>
@@ -245,14 +247,15 @@ export function WorkspaceCreatePage() {
             <div className="step-section-title">워크스페이스 기본정보</div>
             <div className="profile-header">
               <div className="profile-icon-area" ref={iconAreaRef}>
-                <div className="profile-icon-preview" dangerouslySetInnerHTML={{ __html: WS_ICONS[selectedIcon] }} />
+                <div className="profile-icon-preview">{WS_ICONS[selectedIcon]}</div>
                 <button className="profile-icon-btn" onClick={() => setIconPickerOpen(p => !p)}>변경</button>
                 {iconPickerOpen && (
                   <div className="profile-icon-picker open">
                     {ICON_KEYS.map(k => (
                       <div key={k} className={`icon-opt${k === selectedIcon ? ' selected' : ''}`}
-                        onClick={() => { setSelectedIcon(k); setIconPickerOpen(false); }}
-                        dangerouslySetInnerHTML={{ __html: WS_ICONS[k] }} />
+                        onClick={() => { setSelectedIcon(k); setIconPickerOpen(false); }}>
+                        {WS_ICONS[k]}
+                      </div>
                     ))}
                   </div>
                 )}

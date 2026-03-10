@@ -3,5 +3,5 @@ import { reportSettings } from '@/mocks';
 
 
 export function getReportSettings(): ReportSettings {
-  return reportSettings;
+  return structuredClone(reportSettings);
 }

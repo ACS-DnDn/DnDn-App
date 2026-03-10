@@ -3,5 +3,5 @@ import { dashboardData } from '@/mocks';
 
 
 export function getDashboard(): DashboardData {
-  return dashboardData;
+  return structuredClone(dashboardData);
 }

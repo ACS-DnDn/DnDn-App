@@ -91,6 +91,7 @@ export function PlanPage() {
   const [tfStatusText, setTfStatusText] = useState('대기 중');
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const tfTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const validationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const logPanelRef = useRef<HTMLDivElement>(null);
 
   /* ── approver popup state ── */
@@ -296,33 +297,39 @@ export function PlanPage() {
   }
 
   function runValidation() {
+    validationTimersRef.current.forEach(t => clearTimeout(t));
+    validationTimersRef.current = [];
+
     setTfStatus('generating');
     setTfStatusText('보안 검증 중');
     addLog('보안 검증 중...', 'run', 0);
     addLog('보안 검증 중...', 'run', 1);
 
-    setTimeout(() => {
+    const t1 = setTimeout(() => {
       addLog('보안 검증 통과', 'ok', 0);
       addLog('보안 검증 통과', 'ok', 1);
       setTfStatusText('비용 분석 중');
       addLog('비용 분석 중...', 'run', 0);
       addLog('비용 분석 중...', 'run', 1);
 
-      setTimeout(() => {
+      const t2 = setTimeout(() => {
         addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 0);
         addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 1);
         setTfStatusText('정책 검증 중');
         addLog('정책 검증 중...', 'run', 0);
         addLog('정책 검증 중...', 'run', 1);
 
-        setTimeout(() => {
+        const t3 = setTimeout(() => {
           addLog('정책 검증 통과', 'ok', 0);
           addLog('정책 검증 통과', 'ok', 1);
           setTfStatus('ok');
           setTfStatusText('검증 완료');
         }, 900);
+        validationTimersRef.current.push(t3);
       }, 900);
+      validationTimersRef.current.push(t2);
     }, 900);
+    validationTimersRef.current.push(t1);
   }
 
   function revalidate() {
@@ -355,6 +362,11 @@ export function PlanPage() {
       if (docTimerRef.current) clearTimeout(docTimerRef.current);
       if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
       if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+      validationTimersRef.current.forEach(t => clearTimeout(t));
+      const iframeDoc = iframeRef.current?.contentDocument;
+      if (iframeDoc) {
+        iframeDoc.removeEventListener('input', scheduleAutoSave);
+      }
     };
   }, []);
 
