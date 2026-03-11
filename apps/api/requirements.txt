@@ -1,2 +1,14 @@
 boto3>=1.34
 requests>=2.31
+
+# --- Web Framework & Server ---
+fastapi
+uvicorn[standard]
+pydantic
+
+# --- Database (ORM & Driver) ---
+sqlalchemy
+pymysql
+
+# --- Authentication (AWS Cognito JWT) ---
+python-jose[cryptography]
