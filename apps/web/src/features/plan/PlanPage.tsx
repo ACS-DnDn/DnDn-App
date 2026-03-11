@@ -232,8 +232,8 @@ export function PlanPage() {
       if (prev.some(r => r.no === d.no)) return prev;
       return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
-    const canonical = DOC_CANONICAL_DATA[d.no];
-    if (canonical) setRefDocCanonical(canonical);
+    const canonical = DOC_CANONICAL_DATA[d.no] ?? null;
+    setRefDocCanonical(canonical);
     setDocPopupOpen(false);
   }
 
@@ -455,6 +455,7 @@ ${risks.length ? `  <div class="section">
         name: f.name ?? f.filename ?? 'main.tf',
         code: f.code ?? f.content ?? '',
       }));
+      if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
       const checkov = json.data.checkov ?? {};
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));

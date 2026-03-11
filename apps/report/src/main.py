@@ -4,10 +4,13 @@ from pydantic import BaseModel
 from typing import Any
 import os
 import asyncio
+import logging
 from functools import partial
 
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DnDn Report API")
 
@@ -20,7 +23,7 @@ app.add_middleware(
 )
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "ChanHyeok-Jeon/terraform-class")
+GITHUB_REPO = os.getenv("GITHUB_REPO")
 
 
 class CanonicalRequest(BaseModel):
@@ -48,7 +51,8 @@ async def event_report(req: CanonicalRequest):
         result = await asyncio.to_thread(generate_event_report, req.canonical)
         return {"ok": True, "data": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("event_report 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 # ── Health 이벤트 보고서 ───────────────────────────────────
@@ -58,7 +62,8 @@ async def health_event_report(req: HealthEventRequest):
         result = await asyncio.to_thread(generate_health_event_report, req.raw)
         return {"ok": True, "data": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("health_event_report 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 # ── 주간 보고서 ────────────────────────────────────────────
@@ -68,7 +73,8 @@ async def weekly_report(req: CanonicalRequest):
         result = await asyncio.to_thread(generate_weekly_report, req.canonical)
         return {"ok": True, "data": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("weekly_report 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 # ── 작업계획서 (문서 기반) ──────────────────────────────────
@@ -78,20 +84,24 @@ async def work_plan(req: DocBasedWorkPlanRequest):
         result = await asyncio.to_thread(generate_work_plan, req.source_doc)
         return {"ok": True, "data": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("work_plan 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 # ── 테라폼 코드 생성 ───────────────────────────────────────
 @app.post("/api/terraform/generate")
 async def terraform_generate(req: TerraformRequest):
+    repo = req.repo_name or GITHUB_REPO
+    if not repo:
+        raise HTTPException(status_code=400, detail="GITHUB_REPO 환경변수가 설정되지 않았습니다.")
     try:
-        repo = req.repo_name or GITHUB_REPO
         token = req.github_token or GITHUB_TOKEN
         fn = partial(generate_terraform_code, req.workplan, repo, token)
         result = await asyncio.to_thread(fn)
         return {"ok": True, "data": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("terraform_generate 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 @app.get("/health")
