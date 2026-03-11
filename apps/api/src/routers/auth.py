@@ -1,18 +1,36 @@
-# apps/api/routers/auth.py
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from jose import jwt
+from typing import Union
 import urllib.request
 import json
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User
 from apps.api.src.schemas.users import UserMeResponse
-from apps.api.src.schemas.common import SuccessResponse  # ⭐️ 공통 응답 스키마 임포트
+from apps.api.src.schemas.common import SuccessResponse
+from apps.api.src.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    ChallengeResponse,
+    ChallengeRequest,
+    RefreshRequest,
+    RefreshResponse,
+)
+from apps.api.src.security.cognito import (
+    login,
+    respond_new_password,
+    refresh_token,
+    logout,
+    LoginResult,
+    ChallengeResult,
+    CognitoError,
+)
 
-router = APIRouter(tags=["Auth"])
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 # -------------------------------------------------------------------
 # ⚙️ AWS Cognito 설정
@@ -21,10 +39,8 @@ COGNITO_REGION = "ap-northeast-2"
 COGNITO_USER_POOL_ID = "ap-northeast-2_AqyobCjs4"
 COGNITO_APP_CLIENT_ID = "2ihan310ih4tg1qk71t7fsvdu"
 
-# AWS에서 제공하는 우리 유저 풀의 공개키(JWKS) 주소
 JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
 
-# 매번 다운받지 않도록 메모리에 캐싱
 jwks_cache = None
 
 
@@ -37,15 +53,19 @@ def get_jwks():
 
 
 # -------------------------------------------------------------------
-# 🛡️ Cognito 토큰 검증 로직 (핵심 의존성)
+# 🛡️ Cognito JWT 검증 + DB 유저 조회 (다른 라우터의 공통 의존성)
 # -------------------------------------------------------------------
-security = HTTPBearer()
+security_scheme = HTTPBearer()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Security(security),
+    credentials: HTTPAuthorizationCredentials = Security(security_scheme),
     db: Session = Depends(get_db),
 ):
+    """
+    JWT를 JWKS로 검증한 뒤 DB User 객체를 반환한다.
+    dashboard, documents, org, report_settings 등에서 의존한다.
+    """
     token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,7 +74,6 @@ async def get_current_user(
     )
 
     try:
-        # 1. 토큰 해독 및 AWS 공개키(JWKS)로 서명 검증
         payload = jwt.decode(
             token,
             get_jwks(),
@@ -63,7 +82,6 @@ async def get_current_user(
             options={"verify_aud": False},
         )
 
-        # 2. 토큰에서 유저의 고유 ID(sub)와 정보 추출
         cognito_user_id = payload.get("sub")
         email = payload.get("email")
         username = payload.get("cognito:username", "알수없는유저")
@@ -75,10 +93,8 @@ async def get_current_user(
         print(f"Token Verification Error: {e}")
         raise credentials_exception
 
-    # 3. 우리 DB에 이 유저가 있는지 확인
     user = db.query(User).filter(User.id == cognito_user_id).first()
 
-    # 최초 로그인 시 DB 자동 등록
     if user is None:
         user = User(
             id=cognito_user_id,
@@ -94,26 +110,117 @@ async def get_current_user(
 
 
 # -------------------------------------------------------------------
-# 🚀 API 엔드포인트
+# 헤더에서 Bearer 토큰 추출 (Cognito SDK 호출용)
 # -------------------------------------------------------------------
-# ⭐️ response_model을 SuccessResponse[UserMeResponse]로 감싸주기
+def _extract_access_token(
+    credentials: HTTPAuthorizationCredentials = Security(security_scheme),
+) -> str:
+    return credentials.credentials
+
+
+# -------------------------------------------------------------------
+# 1. 로그인 (POST /auth/login)
+# -------------------------------------------------------------------
+@router.post(
+    "/login",
+    response_model=SuccessResponse[Union[LoginResponse, ChallengeResponse]],
+)
+async def auth_login(req: LoginRequest):
+    """
+    이메일+비밀번호로 Cognito 로그인.
+    초기 비밀번호 상태면 챌린지를 반환한다.
+    """
+    try:
+        result = login(req.email, req.password)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    if isinstance(result, ChallengeResult):
+        return SuccessResponse(
+            data=ChallengeResponse(
+                challenge=result.challenge,
+                session=result.session,
+            )
+        )
+
+    return SuccessResponse(
+        data=LoginResponse(
+            accessToken=result.access_token,
+            refreshToken=result.refresh_token,
+            idToken=result.id_token,
+            expiresIn=result.expires_in,
+        )
+    )
+
+
+# -------------------------------------------------------------------
+# 2. 비밀번호 변경 챌린지 (POST /auth/challenge)
+# -------------------------------------------------------------------
+@router.post("/challenge", response_model=SuccessResponse[LoginResponse])
+async def auth_challenge(req: ChallengeRequest):
+    """NEW_PASSWORD_REQUIRED 챌린지에 새 비밀번호로 응답."""
+    try:
+        result = respond_new_password(req.email, req.newPassword, req.session)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(
+        data=LoginResponse(
+            accessToken=result.access_token,
+            refreshToken=result.refresh_token,
+            idToken=result.id_token,
+            expiresIn=result.expires_in,
+        )
+    )
+
+
+# -------------------------------------------------------------------
+# 3. 토큰 갱신 (POST /auth/refresh)
+# -------------------------------------------------------------------
+@router.post("/refresh", response_model=SuccessResponse[RefreshResponse])
+async def auth_refresh(req: RefreshRequest):
+    """refreshToken으로 새 accessToken 발급."""
+    try:
+        result = refresh_token(req.refreshToken)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(
+        data=RefreshResponse(
+            accessToken=result.access_token,
+            expiresIn=result.expires_in,
+        )
+    )
+
+
+# -------------------------------------------------------------------
+# 4. 로그아웃 (POST /auth/logout)
+# -------------------------------------------------------------------
+@router.post("/logout", response_model=SuccessResponse[dict])
+async def auth_logout(token: str = Depends(_extract_access_token)):
+    """Cognito Global Sign-Out. 모든 토큰 무효화."""
+    try:
+        logout(token)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(data={"message": "로그아웃 완료"})
+
+
+# -------------------------------------------------------------------
+# 5. 내 정보 조회 (GET /auth/me) — DB User + 회사 정보
+# -------------------------------------------------------------------
 @router.get(
     "/me", response_model=SuccessResponse[UserMeResponse], summary="내 정보 조회"
 )
 async def get_my_info(current_user: User = Depends(get_current_user)):
-    """
-    프론트엔드가 전달한 Cognito JWT 토큰을 검증하고 유저 및 소속 회사 정보를 반환합니다.
-    """
-
-    # 1. 유저에게 연결된 회사 정보 확인
+    """Cognito JWT를 검증하고 유저 및 소속 회사 정보를 반환한다."""
     company_data = {"name": "소속 회사 없음", "logoUrl": ""}
 
-    # 2. 회사가 연결되어 있다면 실제 DB 데이터로 덮어쓰기
     if current_user.company:
         company_data["name"] = current_user.company.name
         company_data["logoUrl"] = current_user.company.logo_url
 
-    # 3. ⭐️ 리턴할 데이터를 조립한 후, SuccessResponse에 담아서 반환!
     my_info_data = {
         "name": current_user.name,
         "role": current_user.role,
