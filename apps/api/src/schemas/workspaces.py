@@ -1,7 +1,7 @@
 # apps/api/schemas/workspaces.py
 
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Literal, Optional, Any
 
 
 # --- 워크스페이스 목록 조회 (GET /workspaces) ---
@@ -41,7 +41,7 @@ class OpaPolicyParam(BaseModel):
     key: str
     label: str
     on: bool
-    severity: str  # "block" / "warn"
+    severity: Literal["block", "warn"]
     params: Optional[Any] = None
     exceptions: List[str] = []
 

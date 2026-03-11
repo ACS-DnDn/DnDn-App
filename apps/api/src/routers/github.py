@@ -30,6 +30,9 @@ router = APIRouter(prefix="/github", tags=["GitHub"])
 # 실무에서는 DB 또는 Redis를 사용합니다. 지금은 메모리(dict)로 처리.
 _github_tokens: dict[str, str] = {}
 
+# OAuth state CSRF 검증용 저장소 (사용자 ID → state 값)
+_oauth_states: dict[str, str] = {}
+
 
 def _get_github_token(user_id: str) -> str:
     """저장된 GitHub 토큰을 꺼낸다. 없으면 403."""
@@ -52,6 +55,9 @@ async def github_auth(
     """
     result = get_auth_url()
 
+    # CSRF 방지: state 값을 사용자 ID 기준으로 서버에 보관
+    _oauth_states[current_user.id] = result.state
+
     return SuccessResponse(
         data=GitHubAuthResponse(
             authorizeUrl=result.authorize_url,
@@ -73,10 +79,15 @@ async def github_callback(
     GitHub 인증 완료 후 리다이렉트되는 콜백.
     code를 access token으로 교환하고 서버에 저장한다.
     """
+    # CSRF 방지: 서버에 저장된 state와 콜백으로 전달된 state 비교
+    expected_state = _oauth_states.pop(current_user.id, None)
+    if not expected_state or expected_state != state:
+        raise HTTPException(status_code=400, detail="INVALID_OAUTH_STATE")
+
     try:
         result = exchange_code(code, state)
     except GitHubError as e:
-        raise HTTPException(status_code=e.status, detail=e.code)
+        raise HTTPException(status_code=e.status, detail=e.code) from e
 
     # access_token을 사용자 ID 기준으로 서버에 보관
     _github_tokens[current_user.id] = result.access_token
@@ -105,7 +116,7 @@ async def github_orgs(
     try:
         orgs = get_orgs(token)
     except GitHubError as e:
-        raise HTTPException(status_code=e.status, detail=e.code)
+        raise HTTPException(status_code=e.status, detail=e.code) from e
 
     return SuccessResponse(
         data=GitHubOrgsResponse(
@@ -134,7 +145,7 @@ async def github_repos(
     try:
         repos = get_repos(token, org)
     except GitHubError as e:
-        raise HTTPException(status_code=e.status, detail=e.code)
+        raise HTTPException(status_code=e.status, detail=e.code) from e
 
     return SuccessResponse(
         data=GitHubReposResponse(
@@ -171,7 +182,7 @@ async def github_branches(
     try:
         branches = get_branches(token, org, repo)
     except GitHubError as e:
-        raise HTTPException(status_code=e.status, detail=e.code)
+        raise HTTPException(status_code=e.status, detail=e.code) from e
 
     return SuccessResponse(
         data=GitHubBranchesResponse(

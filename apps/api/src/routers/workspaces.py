@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Workspace
@@ -86,11 +86,15 @@ async def update_workspace(
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
-    # 2. 별칭 필수값 검증 (400)
+    # 2. 소유자 권한 확인 (403)
+    if ws.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 3. 별칭 필수값 검증 (400)
     if not req.alias or not req.alias.strip():
         raise HTTPException(status_code=400, detail="MISSING_ALIAS")
 
-    # 3. 수정 반영
+    # 4. 수정 반영
     ws.alias = req.alias
     ws.icon = req.icon
     ws.memo = req.memo
@@ -129,7 +133,11 @@ async def get_opa_settings(
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
-    # 2. OPA 설정이 없으면 빈 배열 반환
+    # 2. 소유자 권한 확인 (403)
+    if ws.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 3. OPA 설정이 없으면 빈 배열 반환
     policies = ws.opa_settings if ws.opa_settings else []
 
     return SuccessResponse(data=OpaSettingsResponse(policies=policies))
@@ -157,18 +165,22 @@ async def save_opa_settings(
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
-    # 2. policies 구조 검증 (400)
+    # 2. 소유자 권한 확인 (403)
+    if ws.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 3. policies 구조 검증 (400)
     if req.policies is None:
         raise HTTPException(status_code=400, detail="MISSING_POLICIES")
 
-    # 3. OPA 설정 전체 교체 (Pydantic → dict 변환하여 JSON 컬럼에 저장)
+    # 4. OPA 설정 전체 교체 (Pydantic → dict 변환하여 JSON 컬럼에 저장)
     ws.opa_settings = [cat.model_dump() for cat in req.policies]
 
     db.commit()
 
     return SuccessResponse(
         data=OpaSettingsSavedResponse(
-            savedAt=datetime.now().isoformat(),
+            savedAt=datetime.now(timezone.utc).isoformat(),
         )
     )
 
@@ -189,7 +201,7 @@ async def test_aws_connection(
     try:
         result = test_assume_role(req.acctId)
     except StsValidationError as e:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
+        raise HTTPException(status_code=400, detail="BAD_REQUEST") from e
 
     # 2. 결과 반환 (성공/실패 모두 200)
     return SuccessResponse(
