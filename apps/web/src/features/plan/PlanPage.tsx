@@ -87,7 +87,7 @@ export function PlanPage() {
   const [workplanData, setWorkplanData] = useState<Record<string, unknown> | null>(null);
   const [iframeSrcdoc, setIframeSrcdoc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
-  const [refDocCanonical, setRefDocCanonical] = useState<Record<string, unknown> | null>(null);
+  const [canonicalMap, setCanonicalMap] = useState<Record<string, Record<string, unknown>>>({});
   const logPanelRef = useRef<HTMLDivElement>(null);
 
   /* ── approver popup state ── */
@@ -232,8 +232,8 @@ export function PlanPage() {
       if (prev.some(r => r.no === d.no)) return prev;
       return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
-    const canonical = DOC_CANONICAL_DATA[d.no] ?? null;
-    setRefDocCanonical(canonical);
+    const canonical = DOC_CANONICAL_DATA[d.no];
+    if (canonical) setCanonicalMap(prev => ({ ...prev, [d.no]: canonical }));
     setDocPopupOpen(false);
   }
 
@@ -380,10 +380,21 @@ ${risks.length ? `  <div class="section">
 
   async function generateDoc() {
     setDocState('loading');
+    setTfState('blank');
+    setTfStatus('pending');
+    setTfStatusText('대기 중');
+    setGeneratedTfFiles([]);
+    setTfCodes(TF_FILES.map(f => f.code));
+    setLogEntries([]);
     try {
-      // 참조 문서(주간 보고서 등) canonical 데이터가 있으면 컨텍스트로 사용 + 작업 내용 추가
-      const sourceDoc = refDocCanonical
-        ? { ...refDocCanonical, user_request: nlInput, target: nlTarget || undefined }
+      // refDocs 순서대로 canonical을 병합해 컨텍스트로 사용
+      const mergedCanonical = refDocs.reduce<Record<string, unknown>>((acc, rd) => {
+        const c = canonicalMap[rd.no];
+        return c ? { ...acc, ...c } : acc;
+      }, {});
+      const hasCanonical = Object.keys(mergedCanonical).length > 0;
+      const sourceDoc = hasCanonical
+        ? { ...mergedCanonical, user_request: nlInput, target: nlTarget || undefined }
         : { title: nlTarget || '작업 계획', content: nlInput, type: 'manual' };
       const res = await fetch('/api/report/workplan', {
         method: 'POST',
@@ -640,7 +651,10 @@ ${risks.length ? `  <div class="section">
             {refDocs.map(rd => (
               <div key={rd.no} className="ref-doc-item">
                 <div className="ref-doc-name">{rd.name}</div>
-                <button className="ref-doc-remove" onClick={() => setRefDocs(prev => prev.filter(r => r.no !== rd.no))}>&times;</button>
+                <button className="ref-doc-remove" onClick={() => {
+                  setRefDocs(prev => prev.filter(r => r.no !== rd.no));
+                  setCanonicalMap(prev => { const next = { ...prev }; delete next[rd.no]; return next; });
+                }}>&times;</button>
               </div>
             ))}
           </div>
