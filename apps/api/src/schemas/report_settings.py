@@ -1,5 +1,7 @@
 # apps/api/schemas/report_settings.py
 
+from datetime import datetime
+
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 
@@ -24,8 +26,8 @@ class ReportSettingsResponse(BaseModel):
 # --- 2. 현황 보고서 즉시 생성 (POST /reports/summary) ---
 class SummaryCreateRequest(BaseModel):
     title: str  # 보고서 제목 (프론트에서 자동 생성)
-    startDate: str  # 수집 시작 일시 (ISO 8601)
-    endDate: str  # 수집 종료 일시 (ISO 8601)
+    startDate: datetime  # 수집 시작 일시 (ISO 8601)
+    endDate: datetime  # 수집 종료 일시 (ISO 8601)
 
 
 class SummaryCreateResponse(BaseModel):

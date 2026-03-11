@@ -44,10 +44,8 @@ async def create_summary_report(
     if ws.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
-    # 3. 필수값 검증 (400)
+    # 3. 필수값 검증 (400) — startDate/endDate는 Pydantic datetime으로 자동 검증
     if not req.title or not req.title.strip():
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-    if not req.startDate or not req.endDate:
         raise HTTPException(status_code=400, detail="BAD_REQUEST")
 
     # 4. TODO: Worker 큐에 보고서 생성 작업 전달
