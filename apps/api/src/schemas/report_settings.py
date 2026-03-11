@@ -16,27 +16,21 @@ class ScheduleItem(BaseModel):
 
 
 # --- 1. 전체 설정 조회 (GET /report-settings) ---
-class SummarySettings(BaseModel):
-    repeatEnabled: bool
-    intervalHours: int
-    lastRun: Optional[str] = None  # ISO 8601
-
-
 class ReportSettingsResponse(BaseModel):
-    summary: SummarySettings
     schedules: List[ScheduleItem]
     eventSettings: Dict[str, bool]
 
 
-# --- 2. 현황 보고서 설정 저장 (PATCH /report-settings/summary) ---
-class SummaryUpdateRequest(BaseModel):
-    repeatEnabled: bool
-    intervalHours: int
+# --- 2. 현황 보고서 즉시 생성 (POST /reports/summary) ---
+class SummaryCreateRequest(BaseModel):
+    title: str  # 보고서 제목 (프론트에서 자동 생성)
+    startDate: str  # 수집 시작 일시 (ISO 8601)
+    endDate: str  # 수집 종료 일시 (ISO 8601)
 
 
-class SummaryUpdateResponse(BaseModel):
-    repeatEnabled: bool
-    intervalHours: int
+class SummaryCreateResponse(BaseModel):
+    reportId: int  # 생성된 보고서 ID
+    runId: str  # Worker 실행 ID (상태 조회용)
 
 
 # --- 3/4. 스케줄 추가/수정 (POST·PATCH /report-settings/schedules) ---

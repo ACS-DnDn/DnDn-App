@@ -12,10 +12,7 @@ from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.report_settings import (
     ScheduleItem,
-    SummarySettings,
     ReportSettingsResponse,
-    SummaryUpdateRequest,
-    SummaryUpdateResponse,
     ScheduleCreateRequest,
     ScheduleCreateResponse,
     EventSettingsRequest,
@@ -79,7 +76,7 @@ def _validate_schedule(req: ScheduleCreateRequest) -> None:
         if req.dayOfWeek is not None or req.dayOfMonth is not None:
             raise HTTPException(status_code=400, detail="BAD_REQUEST")
     elif req.preset == "weekly":
-        if req.dayOfWeek is None or not (0 <= req.dayOfWeek <= 6):
+        if req.dayOfWeek is None or not (1 <= req.dayOfWeek <= 7):
             raise HTTPException(status_code=400, detail="BAD_REQUEST")
         if req.dayOfMonth is not None:
             raise HTTPException(status_code=400, detail="BAD_REQUEST")
@@ -113,11 +110,6 @@ async def get_report_settings(
 
     return SuccessResponse(
         data=ReportSettingsResponse(
-            summary=SummarySettings(
-                repeatEnabled=settings.repeat_enabled,
-                intervalHours=settings.interval_hours,
-                lastRun=settings.last_run.isoformat() if settings.last_run else None,
-            ),
             schedules=[
                 ScheduleItem(
                     id=s.id,
@@ -136,40 +128,7 @@ async def get_report_settings(
 
 
 # ---------------------------------------------------------
-# 2. 현황 보고서 설정 저장 (PATCH /report-settings/summary)
-# ---------------------------------------------------------
-@router.patch("/summary", response_model=SuccessResponse[SummaryUpdateResponse])
-async def update_summary(
-    req: SummaryUpdateRequest,
-    workspaceId: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    현황 보고서 자동 반복 ON/OFF 및 주기를 저장한다.
-    """
-    _get_workspace(db, workspaceId, current_user)
-    settings = _get_or_create_settings(db, workspaceId)
-
-    # intervalHours 유효성 검증
-    if req.intervalHours not in (24, 168, 720):
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-
-    settings.repeat_enabled = req.repeatEnabled
-    settings.interval_hours = req.intervalHours
-
-    db.commit()
-
-    return SuccessResponse(
-        data=SummaryUpdateResponse(
-            repeatEnabled=settings.repeat_enabled,
-            intervalHours=settings.interval_hours,
-        )
-    )
-
-
-# ---------------------------------------------------------
-# 3. 스케줄 추가 (POST /report-settings/schedules)
+# 2. 스케줄 추가 (POST /report-settings/schedules)
 # ---------------------------------------------------------
 @router.post(
     "/schedules",
@@ -208,7 +167,7 @@ async def create_schedule(
 
 
 # ---------------------------------------------------------
-# 4. 스케줄 수정 (PATCH /report-settings/schedules/{id})
+# 3. 스케줄 수정 (PATCH /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.patch("/schedules/{schedule_id}", response_model=SuccessResponse[ScheduleCreateResponse])
 async def update_schedule(
@@ -247,7 +206,7 @@ async def update_schedule(
 
 
 # ---------------------------------------------------------
-# 5. 스케줄 삭제 (DELETE /report-settings/schedules/{id})
+# 4. 스케줄 삭제 (DELETE /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.delete("/schedules/{schedule_id}", status_code=204)
 async def delete_schedule(
@@ -275,7 +234,7 @@ async def delete_schedule(
 
 
 # ---------------------------------------------------------
-# 6. 이벤트 설정 저장 (PATCH /report-settings/events)
+# 5. 이벤트 설정 저장 (PATCH /report-settings/events)
 # ---------------------------------------------------------
 @router.patch("/events", response_model=SuccessResponse[EventSettingsResponse])
 async def update_event_settings(
