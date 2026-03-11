@@ -1,0 +1,41 @@
+{
+  "version": "0",
+  "id": "9e6f7g8h-f6j7-9g8h-ei3j-2k1f0g9h8i7j",
+  "detail-type": "AWS Health Event",
+  "source": "aws.health",
+  "account": "123456789012",
+  "time": "2025-11-01T00:00:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:lambda:ap-northeast-2:123456789012:function:dndn-worker"
+  ],
+  "detail": {
+    "eventArn": "arn:aws:health:ap-northeast-2::event/LAMBDA/AWS_LAMBDA_RUNTIME_DEPRECATION_SCHEDULED/AWS_LAMBDA_RUNTIME_DEPRECATION_SCHEDULED_python3-9_ap-northeast-2_20251101",
+    "service": "LAMBDA",
+    "eventTypeCode": "AWS_LAMBDA_RUNTIME_DEPRECATION_SCHEDULED",
+    "eventTypeCategory": "scheduledChange",
+    "eventScopeCode": "ACCOUNT_SPECIFIC",
+    "communicationId": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1-1",
+    "startTime": "Sat, 01 Nov 2025 00:00:00 GMT",
+    "endTime": "Sat, 31 Jan 2026 23:59:59 GMT",
+    "lastUpdatedTime": "Sat, 01 Nov 2025 00:30:00 GMT",
+    "statusCode": "open",
+    "eventRegion": "ap-northeast-2",
+    "eventDescription": [
+      {
+        "language": "en_US",
+        "latestDescription": "AWS Lambda will end support for Python 3.9 on January 31, 2026. After this date, Lambda functions using the python3.9 runtime will no longer be invocable via the Lambda console, CLI, or API. Existing functions will continue to run on the deprecated runtime, but you will not be able to create or update functions using python3.9.\n\nAffected Lambda function(s):\n  - dndn-worker (ap-northeast-2) — Runtime: python3.9\n\nPhase 1 – Blocking date: January 31, 2026\n  New function creation and updates using python3.9 will be blocked.\n\nPhase 2 – Invocation disabled: (TBD, announced separately)\n  Function invocations will return a runtime error.\n\nRecommended action: Update your Lambda function runtime to python3.12 or python3.13. Test your function thoroughly after the runtime upgrade.\n\nRuntime migration guide: https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html"
+      }
+    ],
+    "affectedEntities": [
+      {
+        "entityValue": "dndn-worker",
+        "tags": {
+          "Environment": "production",
+          "Project": "dndn"
+        },
+        "statusCode": "IMPAIRED"
+      }
+    ]
+  }
+}
