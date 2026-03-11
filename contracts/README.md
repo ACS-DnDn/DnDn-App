@@ -1,184 +1,467 @@
-# contracts/
+# contracts
 
-> 📌 팀원용 요약: `TEAM_BRIEF.md`
->
-> 📖 자세한 가이드: `CONTRACT_GUIDE.md`
+`contracts/`는 DnDn 프로젝트에서 **데이터 계약(Contract)** 을 정의하는 폴더입니다.
 
+쉽게 말하면:
 
-DnDn 프로젝트에서 **A(데이터 공급망 오너)** 가 생성하는 표준 JSON의 **데이터 계약(Contract)** 입니다.  
-B(문서 생성)는 이 계약만 믿고 `canonical.json` / `event.json`을 검증(`jsonschema validate`)한 뒤 문서화를 진행합니다.
+- A(Worker)가 어떤 JSON을 만들어서 내보내는지
+- C/API가 Worker를 어떤 payload로 호출하는지
+- B(Report)가 어떤 구조를 믿고 보고서를 생성하는지
 
-## 핵심 목표
+를 **명확하게 고정하는 기준 문서와 스키마 모음**입니다.
 
-- **정확성**: 원천(raw) 근거를 S3에 보존하고, normalized JSON에는 **원천 포인터(S3 URI)** 를 남긴다.
-- **일관성**: 스키마/규칙 기반으로 항상 같은 구조로 만든다.
-- **재현성**: 동일 입력(기간/이벤트/룰셋) → 동일 출력(정렬/키/룰) 을 보장한다.
-
----
-
-## 파일 구성
-
-- `canonical_model.schema.json`  
-  WEEKLY/EVENT 공통 **정규화 모델**(MVP P0) 스키마
-
-- `event_model.schema.json`  
-  EVENT 전용 스키마(**meta.type=EVENT + meta.trigger 필수** 강제)
-
-- `na_rules.md`  
-  수집 불가/미적용(NA) 표준 규칙(문구/코드)
-
-- `error_codes.md`  
-  A 파이프라인에서 사용하는 표준 에러 코드 목록
-
-- `payload/`
-  Worker 실행 입력(payload) 스키마 + 샘플
-
-- `samples/`
-  출력 예시(canonical/event) 샘플
+즉, `contracts/`는 단순한 샘플 파일 모음이 아니라  
+**A ↔ B ↔ C ↔ D 사이의 합의 문서**라고 보면 됩니다.
 
 ---
 
-## 스키마 버전
+## 1. 왜 contracts가 필요한가
 
-- `meta.schema_version`: `MAJOR.MINOR.PATCH` (예: `0.2.0`)
-- 스키마가 바뀌면 **schema_version을 올리고**, B는 해당 버전에 맞는 문서 생성 로직을 적용합니다.
+프로젝트에서 각 파트가 동시에 움직일 때 가장 자주 깨지는 게 이거야:
 
-> 이번 버전(0.2.x) 변경점(추가):
-> - EVENT 트리거가 **고객 선택형 Trigger Catalog / Custom Trigger / Manual API** 로 확장될 수 있도록
->   `meta.trigger.selector` 필드를 옵션으로 추가했습니다(하위호환).
+- A는 JSON 구조를 조금 바꿈
+- B는 예전 구조를 가정하고 문서 생성
+- C는 payload 형식을 다르게 보냄
+- 결과적으로 “작동은 하는데 서로 안 맞는” 상태가 됨
+
+`contracts/`는 이 문제를 막기 위한 장치입니다.
+
+### contracts가 해주는 일
+1. **표준화**
+   - 결과 JSON 구조를 고정
+2. **검증**
+   - 스키마로 `canonical.json`, `event.json` 검증 가능
+3. **분업 안정화**
+   - A/B/C가 동시에 개발해도 구조 충돌을 줄임
+4. **확장성**
+   - 새 기능은 가급적 `extensions` 아래로 넣어 하위호환 유지
 
 ---
 
-## 검증 방법(예시)
+## 2. 이 폴더의 핵심 개념
 
-### Python (jsonschema)
+### 2-1. 결과 JSON은 2종류
+- `canonical.json` → WEEKLY 결과
+- `event.json` → EVENT 결과
 
+### 2-2. Worker 실행 입력도 계약 대상
+Worker에 들어가는 payload도 자유 형식이 아니라  
+`job_payload.schema.json` 을 따릅니다.
+
+즉 contracts는 크게 두 종류를 정의합니다.
+
+- **입력 계약**
+  - Worker payload
+- **출력 계약**
+  - canonical/event JSON
+
+---
+
+## 3. 폴더 구조
+
+```text
+contracts/
+  README.md
+  canonical_model.schema.json
+  event_model.schema.json
+  na_rules.md
+  error_codes.md
+  payload/
+    job_payload.schema.json
+    weekly.payload.sample.json
+    event.payload.sample.json
+    event.securityhub.payload.sample.json
+    event.aws_health.payload.sample.json
+  samples/
+    canonical.sample.json
+    event.sample.json
+    event.securityhub.sample.json
+    event.aws_health.sample.json
+```
+
+---
+
+## 4. 각 파일 설명
+
+### 4-1. `canonical_model.schema.json`
+WEEKLY / EVENT 공통으로 쓰는 **핵심 normalized 결과 모델 스키마**입니다.
+
+여기서 보통 강제하는 것:
+- `meta`
+- `collection_status`
+- `events`
+- `resources`
+- `extensions`
+
+즉, Worker 결과 JSON의 뼈대는 이 스키마가 결정합니다.
+
+---
+
+### 4-2. `event_model.schema.json`
+EVENT 전용 스키마입니다.
+
+핵심 차이:
+- `meta.type = EVENT`
+- `meta.trigger` 필수
+
+즉, **이벤트 보고서용 결과물은 반드시 trigger 정보가 있어야 한다**는 걸 강제합니다.
+
+---
+
+### 4-3. `na_rules.md`
+Worker가 “수집 불가 / 미적용” 상태를 어떤 식으로 표현하는지 정의한 문서입니다.
+
+예:
+- `SERVICE_DISABLED`
+- `PERMISSION_DENIED`
+- `NO_DATA`
+
+이 문서가 중요한 이유는:
+- Config 꺼져 있는 계정
+- 권한이 없는 서비스
+- 기간 내 이벤트 없음
+
+같은 상황을 **실패가 아니라 N/A로 표현할 기준**을 팀이 공유해야 하기 때문입니다.
+
+---
+
+### 4-4. `error_codes.md`
+실제 오류(`FAILED`)가 났을 때 어떤 에러 코드를 쓰는지 정의합니다.
+
+예:
+- `ASSUME_ROLE_FAILED`
+- `CLOUDTRAIL_LOOKUP_FAILED`
+- `SCHEMA_VALIDATION_FAILED`
+
+즉:
+- `NA`는 “정상적으로 못 하는 상태”
+- `FAILED`는 “실제 오류 상태”
+
+를 구분해주는 기준입니다.
+
+---
+
+### 4-5. `payload/job_payload.schema.json`
+Worker 실행 요청(payload)의 구조를 정의합니다.
+
+핵심 필드:
+- `type`
+- `account_id`
+- `regions`
+- `assume_role`
+- `s3`
+
+추가 필드:
+- WEEKLY → `time_range`
+- EVENT → `event_time`, `window_minutes`, `trigger`
+
+이 스키마 덕분에 API/C 파트는  
+**어떤 형식으로 Worker를 호출해야 하는지** 명확히 알 수 있습니다.
+
+---
+
+### 4-6. `payload/*.sample.json`
+실행 예시 payload입니다.
+
+예:
+- `weekly.payload.sample.json`
+- `event.payload.sample.json`
+- `event.securityhub.payload.sample.json`
+- `event.aws_health.payload.sample.json`
+
+이 샘플들은 단순 예제가 아니라,
+- 로컬 테스트
+- 디버깅
+- 팀 간 기능 설명
+
+에 바로 쓸 수 있는 기준본입니다.
+
+---
+
+### 4-7. `samples/*.sample.json`
+Worker가 만들어야 하는 결과물의 샘플입니다.
+
+예:
+- `canonical.sample.json`
+- `event.sample.json`
+- `event.securityhub.sample.json`
+- `event.aws_health.sample.json`
+
+이 샘플은 특히 B(Report)에게 중요합니다.
+B는 이 샘플을 보고:
+- 어떤 필드가 들어오는지
+- 어디서 무엇을 읽어 문서를 만들지
+를 바로 이해할 수 있습니다.
+
+---
+
+## 5. 데이터 모델 핵심 설명
+
+## 5-1. `meta`
+결과물의 메타데이터입니다.
+
+예:
+- `schema_version`
+- `type`
+- `run_id`
+- `account_id`
+- `regions`
+- `time_range`
+- `generated_at`
+- `collector`
+- `evidence`
+
+EVENT일 경우에는 여기에 `trigger`가 추가됩니다.
+
+즉, `meta`는 결과물의 “송장/표지” 역할을 합니다.
+
+---
+
+## 5-2. `collection_status`
+수집 단계별 상태입니다.
+
+예:
+- `assume_role`
+- `cloudtrail`
+- `config`
+- `normalized`
+
+각 단계는 대체로 아래 셋 중 하나를 가집니다.
+- `OK`
+- `NA`
+- `FAILED`
+
+이 구조 덕분에:
+- 실행은 성공했지만 Config는 비활성화 → `NA`
+- AWS API가 실제로 터짐 → `FAILED`
+
+같은 상황을 구분할 수 있습니다.
+
+---
+
+## 5-3. `events`
+정규화된 이벤트 목록입니다.
+
+주로 CloudTrail 기반으로 만들어지며:
+- `event_id`
+- `event_time`
+- `event_source`
+- `event_name`
+- `resources`
+- `raw`
+
+같은 정보를 포함합니다.
+
+즉, `events[]`는 **타임라인 중심 데이터**입니다.
+
+---
+
+## 5-4. `resources`
+보고서/분석에 더 유용한 단위입니다.
+
+Worker는 이벤트를 리소스 기준으로 묶어서 `resources[]`를 만듭니다.
+
+리소스 항목은 보통:
+- `resource`
+- `events`
+- `change_summary`
+- `config`
+
+를 가집니다.
+
+즉, `resources[]`는 **리소스 중심 요약 뷰**라고 보면 됩니다.
+
+### 왜 중요하냐
+B(Report)는 보통 `events[]`보다 `resources[]`를 더 많이 씁니다.
+왜냐면 사람은 “이벤트 500개”보다 “어떤 리소스가 어떻게 바뀌었는지”를 더 보고 싶어하니까요.
+
+---
+
+## 5-5. `extensions`
+이 폴더/스키마의 가장 중요한 철학 중 하나입니다.
+
+contracts는 핵심 구조(`meta`, `collection_status`, `events`, `resources`)는 고정하고,  
+**새 기능은 가급적 `extensions` 아래에 넣습니다.**
+
+왜냐면:
+- core 구조를 자주 바꾸면 B/C/D가 다 깨짐
+- 새 기능은 하위호환이 중요함
+
+예:
+- `extensions.event_origin`
+- `extensions.aws_health`
+- `extensions.actionability`
+- `extensions.advisor_collection_status`
+- `extensions.advisor_checks`
+- `extensions.advisor_rollup`
+
+즉, `extensions`는 **실험/확장/신규 기능을 담는 안전한 공간**입니다.
+
+---
+
+## 6. 현재 contracts가 지원하는 주요 확장
+
+### 6-1. AWS Health 이벤트
+EVENT payload와 output sample에 Health 예시가 들어 있습니다.
+
+Worker는 Health payload를 받아:
+- `extensions.event_origin.kind = AWS_HEALTH`
+- `extensions.aws_health`
+- `extensions.actionability`
+
+로 확장합니다.
+
+즉 contracts는 이미 **AWS Health 이벤트 루트**를 염두에 둔 상태입니다.
+
+---
+
+### 6-2. Security Hub 이벤트
+Security Hub Finding 기반 EVENT도 샘플로 제공됩니다.
+
+즉 contracts는 단일 이벤트 소스가 아니라,
+**여러 이벤트 소스를 EVENT라는 공통 구조로 다루는 방향**입니다.
+
+---
+
+### 6-3. weekly advisor checks
+WEEKLY 결과에서는 운영 점검 결과를 `extensions.advisor_checks[]`에 넣는 방향을 사용합니다.
+
+예:
+- 미사용 EIP
+- 미연결 EBS
+- RDS 백업 미설정
+- RDS Multi-AZ 미설정
+
+즉 주간 보고서는 단순 변경 이력뿐 아니라 **운영 점검 결과**도 포함할 수 있게 설계되어 있습니다.
+
+---
+
+## 7. contracts를 실제로 어떻게 쓰나
+
+### A(Worker)
+- payload 스키마에 맞는 입력을 받는다
+- 결과 JSON이 schema를 통과하게 만든다
+
+### B(Report)
+- sample / schema를 보고 문서 생성 로직을 맞춘다
+- `resources[]`, `extensions.*`를 활용한다
+
+### C(API/Front)
+- `job_payload.schema.json` 기준으로 Worker 요청 payload를 만든다
+
+### D(Infra)
+- EventBridge / IAM / S3 구조를 contracts와 맞춘다
+- 특히 trigger payload와 evidence 위치가 중요하다
+
+---
+
+## 8. 검증 방법
+
+### 8-1. Python(jsonschema)
 ```bash
 pip install jsonschema
-python -c "import json; from jsonschema import validate; s=json.load(open('contracts/canonical_model.schema.json')); d=json.load(open('canonical.json')); validate(d,s); print('OK')"
+python - <<'PY'
+import json
+from jsonschema import validate
+
+schema = json.load(open("contracts/canonical_model.schema.json"))
+data = json.load(open("contracts/samples/canonical.sample.json"))
+validate(data, schema)
+print("OK canonical")
+PY
 ```
 
-### Node (ajv)
-
+EVENT 검증:
 ```bash
-npm i ajv
-node -e "const Ajv=require('ajv'); const fs=require('fs'); const ajv=new Ajv({strict:false,allErrors:true}); const schema=JSON.parse(fs.readFileSync('contracts/canonical_model.schema.json')); const data=JSON.parse(fs.readFileSync('canonical.json')); const ok=ajv.validate(schema,data); console.log(ok? 'OK': ajv.errors)"
+python - <<'PY'
+import json
+from jsonschema import validate
+
+schema = json.load(open("contracts/event_model.schema.json"))
+data = json.load(open("contracts/samples/event.sample.json"))
+validate(data, schema)
+print("OK event")
+PY
 ```
 
 ---
 
-## 모델 개념(중요)
+## 9. contracts를 수정할 때 원칙
 
-### 1) 리포트 중심 단위는 `resources[]`
+### 원칙 1. core는 자주 흔들지 않는다
+- `meta`
+- `collection_status`
+- `events`
+- `resources`
 
-MVP 기준으로 B가 가장 원하는 단위는 “사용자 집계”보다  
-**리소스 기준 묶음(`resources[]`)** 입니다.
+이 구조는 웬만하면 유지
 
-- `events[]`: 수집한 (WRITE 중심) 이벤트 목록(정규화)
-- `resources[]`: 이벤트에서 추출한 리소스를 **리소스 키로 그룹핑**한 결과
-  - `resources[].events[]`: 해당 리소스에 연결된 이벤트 링크(가벼운 참조)
-  - `resources[].config`: 가능할 때만 Config before/after를 붙임(best-effort)
+### 원칙 2. 새 기능은 extensions 우선
+예:
+- 새 이벤트 소스
+- 새 운영 점검
+- 새 리포트 보조 데이터
 
-사용자/서비스별 통계는 필요하면 `extensions.stats` 같은 확장 영역으로 둡니다.
+이건 먼저 `extensions`에 넣어서 하위호환을 유지
 
----
+### 원칙 3. 샘플도 같이 갱신한다
+스키마만 바꾸면 안 되고:
+- payload sample
+- result sample
+도 같이 갱신해야 B/C가 바로 이해할 수 있음
 
-## 확장 규칙: `extensions` (스키마를 최대한 안 바꾸기)
-
-contracts는 core(메타/수집상태/이벤트/리소스)를 고정하고, **새 기능 데이터는 `extensions` 아래에 추가**합니다.
-
-왜 이렇게 하냐면:
-- 스키마를 자주 바꾸면 A/B/C/D가 동시에 수정해야 해서 개발 속도가 느려집니다.
-- `extensions`는 “첨부서류” 같은 공간이라, **기능을 추가해도 하위호환**을 유지할 수 있습니다.
-
-### 추천 키(초안)
-- `extensions.advisor_checks[]` : Trusted Advisor 벤치마킹(주간 리포트용)
-  - 예: 미사용 EIP, 미연결 EBS, RDS 백업 미설정, Service Quotas 사용률 등
-- `extensions.advisor_collection_status` : CloudWatch/ServiceQuotas 수집 상태(선택)
-  - 참고: core `collection_status`는 현재 assume_role/cloudtrail/config/normalized만 정의되어 있어, 추가 수집 단계는 extensions에 기록합니다.
-- `extensions.securityhub_finding` : SecurityHub Finding 요약(EVENT용, 선택)
-  - 원본 Finding/Event는 `meta.trigger.raw_event_s3_uri`로 추적합니다.
-
-### 샘플
-- `samples/canonical.sample.json` : advisor_checks 예시 포함
-- `samples/event.securityhub.sample.json` : SecurityHub Finding 기반 EVENT 예시
-- `payload/event.securityhub.payload.sample.json` : Worker 호출 입력 예시
+### 원칙 4. PR에서 검증 결과를 같이 남긴다
+가능하면 PR 본문에:
+- 어떤 샘플로 검증했는지
+- 어떤 결과가 나왔는지
+를 남기는 게 좋다.
 
 ---
 
-### 2) EVENT 타입은 `meta.trigger`가 필수
+## 10. 자주 헷갈리는 포인트
 
-- `meta.type = "EVENT"` 인 경우, 반드시 `meta.trigger`가 포함되어야 합니다.
-- 주의: **Event ID만으로는 Config before/after 조인이 불가능**합니다.  
-  EVENT에서도 결국 CloudTrailEvent에서 `resourceType/resourceId` 추출이 필요합니다.
+### 10-1. `source`와 `logical_source`
+예를 들어 AWS Health는:
+- transport source는 `EVENTBRIDGE`
+- logical source는 `AWS_HEALTH`
 
----
+이렇게 분리해서 볼 수 있습니다.
 
-### 3) 고객 선택형 트리거(Trigger Catalog / Custom) 표현
+즉:
+- `source` = 들어온 채널
+- `logical_source` = 실제 이벤트 의미상 출처
 
-우리는 고객 환경을 모르므로, EVENT 트리거는 보통 다음 중 하나로 구성됩니다.
+### 10-2. `NA`와 `FAILED`
+- `NA` = 수집 대상/조건이 맞지 않아 정상적으로 수집 불가
+- `FAILED` = 코드/권한/API 등 실제 오류
 
-- CATALOG: 우리가 제공한 “변경 유형 리스트(팩)”에서 고객이 선택
-- CUSTOM: 고객이 `eventSource + eventName[]` 또는 EventBridge pattern을 직접 지정
-- MANUAL_API: 룰 없이 고객이 API로 온디맨드 실행(1회성)
-
-이를 normalized JSON에 남기고 싶으면, 아래 필드를 사용하세요.
-
-- `meta.trigger.selector.mode`: `CATALOG | CUSTOM_EVENT | CUSTOM_PATTERN | MANUAL_API`
-- `meta.trigger.selector.catalog`: (CATALOG일 때) catalog_id/pack_id/item_id/version
-- `meta.trigger.selector.match`: event_source / event_names (권장)
-- `meta.trigger.selector.rule_name/rule_arn`: EventBridge 룰 식별자(있으면)
-- `meta.trigger.selector.event_pattern_hash/event_pattern_s3_uri`: custom pattern을 저장/추적할 때
-
-> 운영에서 가장 중요한 건 “event.json이 어떤 트리거 규칙에서 왔는지” 역추적 가능한 것.
-> (trigger.selector를 쓰거나, 최소한 raw_event_s3_uri를 남기는 것을 권장)
+### 10-3. `advisor_checks`가 0건이어도 정상
+실제 계정에 문제 리소스가 없으면 당연히 0건일 수 있습니다.
+핵심은 로직과 상태/rollup가 생기는지입니다.
 
 ---
 
-## 시간 기준(팀 합의 반영)
+## 11. 이 폴더를 처음 보는 팀원이 읽는 순서 추천
+1. `README.md`
+4. `payload/job_payload.schema.json`
+5. `payload/*.sample.json`
+6. `samples/*.sample.json`
 
-- 주간 기간(weekly)은 **KST(Asia/Seoul) 기준 월요일 00:00**을 시작으로 자릅니다.
-- `meta.time_range.start/end`에는 **timezone 포함 ISO 8601**을 저장하세요.
-  - 예: `2026-02-23T00:00:00+09:00` (KST)
-- CloudTrail/Config API 호출 시에는 내부적으로 UTC 변환해서 조회하되,
-  **표준 출력(JSON)에는 KST 포함 타임스탬프**를 유지하는 것을 권장합니다.
-
----
-
-## S3 저장 규칙(요약)
-
-A의 책임: raw/normalized를 S3에 정확히 저장하고, JSON에 포인터를 남김.
-
-권장 Prefix (예시):
-
-- WEEKLY  
-  `s3://dndn-data/account_id=.../type=WEEKLY/year=YYYY/week=WW/run_id=.../raw/...`  
-  `s3://dndn-data/account_id=.../type=WEEKLY/year=YYYY/week=WW/run_id=.../normalized/canonical.json`
-
-- EVENT  
-  `s3://dndn-data/account_id=.../type=EVENT/year=YYYY/month=MM/day=DD/run_id=.../raw/...`  
-  `s3://dndn-data/account_id=.../type=EVENT/year=YYYY/month=MM/day=DD/run_id=.../normalized/event.json`
-
-`meta.evidence.raw_prefix_s3_uri` / `meta.evidence.normalized_prefix_s3_uri` 로
-B가 run_id 기반으로 원천을 역추적할 수 있어야 합니다.
+이 순서로 보면 전체 그림이 잘 보입니다.
 
 ---
 
-## 결정론(Determinism) 규칙(강력 권장)
+## 12. 마지막 정리
 
-동일 입력 → 동일 출력 보장을 위해 아래를 지키는 것을 권장합니다.
+`contracts/`는 DnDn에서:
+- Worker 입력
+- Worker 출력
+- 상태 표현
+- 확장 방식
+을 고정하는 **공식 인터페이스 문서**입니다.
 
-- `events[]` 정렬: `(event_time ASC, event_id ASC)`
-- `resources[]` 정렬: `(key ASC)`
-- `resources[].events[]` 정렬: `(event_time ASC, event_id ASC)`
-- JSON 직렬화: `utf-8`, `sort_keys=True`(또는 동등한 안정화), `indent` 고정
-- `run_id`는 충돌 방지(ULID/UUIDv7 권장)
-
----
-
-## 출력 최소 조건(MVP Done 기준)
-
-- WEEKLY: `canonical.json` 1개가 생성되고 스키마 검증을 통과
-- EVENT: `event.json` 1개가 생성되고 스키마 검증을 통과
-- raw 증거(CloudTrail/Config/trigger payload)가 S3에 저장되고,
-  normalized JSON에 S3 URI 포인터가 남아있음
+즉, 이 폴더를 이해하면
+- Worker가 무슨 JSON을 만드는지
+- Report가 뭘 읽어야 하는지
+- API가 어떤 payload를 보내야 하는지
+를 한 번에 이해할 수 있습니다.
