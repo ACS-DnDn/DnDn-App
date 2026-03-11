@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import boto3
 import subprocess
 import threading
@@ -6,8 +8,15 @@ import time
 from typing import Any
 from github import Github
 
-MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-REGION = "us-east-1"
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
+REGION = os.getenv("AWS_REGION", "us-east-1")
+
+def _find_uvx() -> str:
+    return (
+        os.getenv("UVX_PATH")
+        or shutil.which("uvx")
+        or os.path.expanduser("~/.local/bin/uvx")
+    )
 
 
 # ─────────────────────────────────────────────────
@@ -24,7 +33,7 @@ class TerraformMCPClient:
 
     def start(self):
         self.proc = subprocess.Popen(
-            ["/Users/chanhyeok/.local/bin/uvx", "awslabs.terraform-mcp-server@latest"],
+            [_find_uvx(), "awslabs.terraform-mcp-server@latest"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -190,8 +199,12 @@ def _run_checkov_scan(files: list) -> dict:
         mcp.start()
         with tempfile.TemporaryDirectory() as tmpdir:
             for f in files:
-                with open(os.path.join(tmpdir, f["filename"]), "w") as fp:
-                    fp.write(f["content"])
+                # path traversal 방지: basename만 허용, .tf 확장자 강제
+                safe_name = os.path.basename(f.get("filename", "main.tf"))
+                if not safe_name.endswith(".tf"):
+                    safe_name = safe_name + ".tf"
+                with open(os.path.join(tmpdir, safe_name), "w") as fp:
+                    fp.write(f.get("content", ""))
 
             result = mcp.call_tool("RunCheckovScan", {
                 "working_directory": tmpdir,

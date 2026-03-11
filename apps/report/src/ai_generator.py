@@ -4,17 +4,19 @@ import subprocess
 import threading
 import time
 import os
+import shutil
 import functools
-from cachetools import TTLCache
-from threading import Lock
 
-_docs_cache = TTLCache(maxsize=50, ttl=86400)
-_cache_lock = Lock()
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 
-# MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-# REGION = "us-east-1"
-MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-REGION = "ap-northeast-2"
+def _find_uvx() -> str:
+    """uvx 실행 경로 자동 탐지 (환경변수 → PATH → 기본 경로 순)"""
+    return (
+        os.getenv("UVX_PATH")
+        or shutil.which("uvx")
+        or os.path.expanduser("~/.local/bin/uvx")
+    )
 
 
 # ─────────────────────────────────────────────────
@@ -31,7 +33,7 @@ class AWSDocsMCPClient:
 
     def start(self):
         self.proc = subprocess.Popen(
-            ["/Users/chanhyeok/.local/bin/uvx", "awslabs.aws-documentation-mcp-server@latest"],
+            [_find_uvx(), "awslabs.aws-documentation-mcp-server@latest"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

@@ -11,7 +11,7 @@ import healthLambdaSample from './data/health-lambda-runtime-deprecation.json';
 import healthRdsSample from './data/health-rds-cert-rotation.json';
 import './index.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_REPORT_API_BASE ?? 'http://localhost:8000';
 
 const TABS = [
   { key: 'event', label: '이벤트 보고서 (SecurityHub)' },

@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any
 import os
+import asyncio
+from functools import partial
 
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
@@ -44,7 +46,7 @@ class TerraformRequest(BaseModel):
 @app.post("/api/report/event")
 async def event_report(req: CanonicalRequest):
     try:
-        result = generate_event_report(req.canonical)
+        result = await asyncio.to_thread(generate_event_report, req.canonical)
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -54,7 +56,7 @@ async def event_report(req: CanonicalRequest):
 @app.post("/api/report/health-event")
 async def health_event_report(req: HealthEventRequest):
     try:
-        result = generate_health_event_report(req.raw)
+        result = await asyncio.to_thread(generate_health_event_report, req.raw)
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -64,8 +66,7 @@ async def health_event_report(req: HealthEventRequest):
 @app.post("/api/report/weekly")
 async def weekly_report(req: CanonicalRequest):
     try:
-        from ai_generator import generate_weekly_report
-        result = generate_weekly_report(req.canonical)
+        result = await asyncio.to_thread(generate_weekly_report, req.canonical)
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -75,11 +76,9 @@ async def weekly_report(req: CanonicalRequest):
 @app.post("/api/report/workplan")
 async def work_plan(req: DocBasedWorkPlanRequest):
     try:
-        result = generate_work_plan(req.source_doc)
+        result = await asyncio.to_thread(generate_work_plan, req.source_doc)
         return {"ok": True, "data": result}
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -89,7 +88,8 @@ async def terraform_generate(req: TerraformRequest):
     try:
         repo = req.repo_name or GITHUB_REPO
         token = req.github_token or GITHUB_TOKEN
-        result = generate_terraform_code(req.workplan, repo, token)
+        fn = partial(generate_terraform_code, req.workplan, repo, token)
+        result = await asyncio.to_thread(fn)
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
