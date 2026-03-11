@@ -14,17 +14,23 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
+
+
+def _require_env(key: str) -> str:
+    """필수 환경변수를 읽고 없으면 즉시 실패."""
+    value = os.getenv(key)
+    if not value:
+        raise RuntimeError(f"필수 환경변수 {key}가 설정되지 않았습니다.")
+    return value
+
 
 # ── 환경 변수 ──────────────────────────────────────────────
 REGION = os.getenv("AWS_REGION", "us-east-1")
 ROLE_NAME = os.getenv("STS_ROLE_NAME", "DnDnOpsAgentRole")
-EXTERNAL_ID = os.getenv("STS_EXTERNAL_ID", "dndn-ops-agent")
-PLATFORM_ACCOUNT_ID = os.getenv("PLATFORM_ACCOUNT_ID", "451017115109")
-CFN_TEMPLATE_URL = os.getenv(
-    "CFN_TEMPLATE_URL",
-    "https://dndn-cfn-templates.s3.amazonaws.com/cfn/dndn-ops-agent-role.yaml",
-)
+EXTERNAL_ID = _require_env("STS_EXTERNAL_ID")
+PLATFORM_ACCOUNT_ID = _require_env("PLATFORM_ACCOUNT_ID")
+CFN_TEMPLATE_URL = _require_env("CFN_TEMPLATE_URL")
 SESSION_NAME = "dndn-test-session"
 
 _ACCT_ID_RE = re.compile(r"^\d{12}$")
@@ -123,4 +129,11 @@ def test_assume_role(acct_id: str) -> AssumeRoleResult:
             acct_id=clean,
             role_arn=role_arn,
             error=error_msg,
+        )
+    except BotoCoreError:
+        return AssumeRoleResult(
+            success=False,
+            acct_id=clean,
+            role_arn=role_arn,
+            error="AWS 서비스에 연결할 수 없습니다. 자격증명 및 네트워크를 확인하세요.",
         )
