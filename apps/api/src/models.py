@@ -137,3 +137,28 @@ class Attachment(Base):
 
     # 명세서에 있는 파일 크기 (KB)
     size_kb = Column(Integer, default=0)
+
+
+# 6. 🏗️ 워크스페이스 테이블
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id = Column(String(50), primary_key=True, default=generate_uuid)
+    alias = Column(String(100), nullable=False)  # 별칭 (예: "Production")
+    acct_id = Column(String(12), nullable=False)  # AWS 계정 ID (12자리)
+    github_org = Column(String(100), nullable=False)  # GitHub 조직명
+    repo = Column(String(200), nullable=False)  # 레포지토리명
+    path = Column(String(500), nullable=True)  # 레포 내 경로 (옵션)
+    branch = Column(String(200), nullable=False)  # 브랜치명
+    icon = Column(String(30), nullable=False, default="rocket")  # 아이콘 키
+    memo = Column(Text, nullable=True)  # 메모
+
+    # OPA 인프라 정책 — PUT으로 전체 교체하므로 JSON 컬럼이 적합
+    opa_settings = Column(JSON, nullable=True)
+
+    # 워크스페이스 생성자 (부서장)
+    owner_id = Column(String(50), ForeignKey("users.id"), nullable=False)
+    owner = relationship("User")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
