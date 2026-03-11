@@ -11,7 +11,7 @@ export const AuthContext = createContext<AuthContextValue>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // TODO: API 연동 시 fetch('/api/me')로 교체
+  // TODO: Cognito Custom UI 연동 시 실제 인증 로직으로 교체
   const session = mockSession;
 
   return (

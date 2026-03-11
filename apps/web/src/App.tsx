@@ -12,6 +12,7 @@ import { WorkspaceCreatePage } from '@/features/workspace-create/WorkspaceCreate
 import { ReportSettingsPage } from '@/features/report-settings/ReportSettingsPage';
 import { ViewerPage } from '@/features/viewer/ViewerPage';
 import { PlanPage } from '@/features/plan/PlanPage';
+import { GitHubCallbackPage } from '@/features/auth/GitHubCallbackPage';
 
 export function App() {
   return (
@@ -20,6 +21,8 @@ export function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
+
             <Route path="/plan" element={<PlanPage />} />
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -32,6 +35,7 @@ export function App() {
               <Route path="/workspace/create" element={<WorkspaceCreatePage />} />
               <Route path="/mypage" element={<MyPage />} />
             </Route>
+
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
