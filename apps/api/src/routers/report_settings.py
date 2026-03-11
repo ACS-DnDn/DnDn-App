@@ -1,6 +1,9 @@
 # apps/api/routers/report_settings.py
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
@@ -22,11 +25,13 @@ from apps.api.src.schemas.report_settings import (
 router = APIRouter(prefix="/report-settings", tags=["ReportSettings"])
 
 
-def _get_workspace(db: Session, workspace_id: str) -> Workspace:
-    """워크스페이스 존재 여부 확인 (404)."""
+def _get_workspace(db: Session, workspace_id: str, current_user: User) -> Workspace:
+    """워크스페이스 존재 여부 확인 (404) + 소유자 권한 확인 (403)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
+    if ws.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
     return ws
 
 
@@ -35,17 +40,54 @@ def _get_or_create_settings(db: Session, workspace_id: str) -> ReportSettings:
     settings = db.query(ReportSettings).filter(
         ReportSettings.workspace_id == workspace_id
     ).first()
-    if not settings:
-        settings = ReportSettings(
-            workspace_id=workspace_id,
-            repeat_enabled=False,
-            interval_hours=168,
-            event_settings={},
-        )
-        db.add(settings)
+    if settings:
+        return settings
+
+    settings = ReportSettings(
+        workspace_id=workspace_id,
+        repeat_enabled=False,
+        interval_hours=168,
+        event_settings={},
+    )
+    db.add(settings)
+    try:
         db.commit()
+    except IntegrityError:
+        db.rollback()
+        settings = db.query(ReportSettings).filter(
+            ReportSettings.workspace_id == workspace_id
+        ).first()
+        if not settings:
+            raise
+    else:
         db.refresh(settings)
     return settings
+
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_schedule(req: ScheduleCreateRequest) -> None:
+    """preset별 필드 범위 및 time 형식 검증 (400)."""
+    if req.preset not in ("daily", "weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="BAD_REQUEST")
+
+    if not _TIME_RE.match(req.time):
+        raise HTTPException(status_code=400, detail="BAD_REQUEST")
+
+    if req.preset == "daily":
+        if req.dayOfWeek is not None or req.dayOfMonth is not None:
+            raise HTTPException(status_code=400, detail="BAD_REQUEST")
+    elif req.preset == "weekly":
+        if req.dayOfWeek is None or not (0 <= req.dayOfWeek <= 6):
+            raise HTTPException(status_code=400, detail="BAD_REQUEST")
+        if req.dayOfMonth is not None:
+            raise HTTPException(status_code=400, detail="BAD_REQUEST")
+    elif req.preset == "monthly":
+        if req.dayOfMonth is None or not (1 <= req.dayOfMonth <= 31):
+            raise HTTPException(status_code=400, detail="BAD_REQUEST")
+        if req.dayOfWeek is not None:
+            raise HTTPException(status_code=400, detail="BAD_REQUEST")
 
 
 # ---------------------------------------------------------
@@ -61,7 +103,7 @@ async def get_report_settings(
     현황 보고서 · 스케줄 목록 · 이벤트 설정을 한 번에 반환한다.
     페이지 최초 진입 시 자동 호출.
     """
-    _get_workspace(db, workspaceId)
+    _get_workspace(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
     # 스케줄 목록 조회
@@ -106,7 +148,7 @@ async def update_summary(
     """
     현황 보고서 자동 반복 ON/OFF 및 주기를 저장한다.
     """
-    _get_workspace(db, workspaceId)
+    _get_workspace(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
     # intervalHours 유효성 검증
@@ -143,17 +185,8 @@ async def create_schedule(
     """
     새로운 보고서 생성 스케줄을 추가한다.
     """
-    _get_workspace(db, workspaceId)
-
-    # preset 유효성 검증
-    if req.preset not in ("daily", "weekly", "monthly"):
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-
-    # weekly → dayOfWeek 필수, monthly → dayOfMonth 필수
-    if req.preset == "weekly" and req.dayOfWeek is None:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-    if req.preset == "monthly" and req.dayOfMonth is None:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
+    _get_workspace(db, workspaceId, current_user)
+    _validate_schedule(req)
 
     schedule = ReportSchedule(
         workspace_id=workspaceId,
@@ -181,23 +214,23 @@ async def create_schedule(
 async def update_schedule(
     schedule_id: int,
     req: ScheduleCreateRequest,
+    workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     기존 스케줄을 수정한다.
     """
-    schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+    _get_workspace(db, workspaceId, current_user)
+
+    schedule = db.query(ReportSchedule).filter(
+        ReportSchedule.id == schedule_id,
+        ReportSchedule.workspace_id == workspaceId,
+    ).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
 
-    # preset 유효성 검증
-    if req.preset not in ("daily", "weekly", "monthly"):
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-    if req.preset == "weekly" and req.dayOfWeek is None:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
-    if req.preset == "monthly" and req.dayOfMonth is None:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST")
+    _validate_schedule(req)
 
     schedule.title = req.title
     schedule.preset = req.preset
@@ -219,13 +252,19 @@ async def update_schedule(
 @router.delete("/schedules/{schedule_id}", status_code=204)
 async def delete_schedule(
     schedule_id: int,
+    workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     스케줄을 삭제한다. 응답 본문 없음 (204).
     """
-    schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+    _get_workspace(db, workspaceId, current_user)
+
+    schedule = db.query(ReportSchedule).filter(
+        ReportSchedule.id == schedule_id,
+        ReportSchedule.workspace_id == workspaceId,
+    ).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
 
@@ -249,13 +288,12 @@ async def update_event_settings(
     이벤트 보고서 유형별 ON/OFF 설정을 저장한다.
     변경된 항목만 포함해도 기존 설정과 병합된다.
     """
-    _get_workspace(db, workspaceId)
+    _get_workspace(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
-    # 기존 설정과 병합 (변경된 항목만 업데이트)
-    current = settings.event_settings or {}
-    current.update(req.settings)
-    settings.event_settings = current
+    # 기존 설정과 병합 (새 dict 할당으로 SQLAlchemy 변경 감지 보장)
+    merged = {**(settings.event_settings or {}), **req.settings}
+    settings.event_settings = merged
 
     db.commit()
     db.refresh(settings)
