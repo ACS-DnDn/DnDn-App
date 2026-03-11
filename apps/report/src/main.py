@@ -33,7 +33,6 @@ class HealthEventRequest(BaseModel):
 
 class DocBasedWorkPlanRequest(BaseModel):
     source_doc: dict[str, Any]   # 이벤트 보고서 or 주간 보고서 canonical
-    doc_type: str                 # "event" | "weekly"
 
 
 class TerraformRequest(BaseModel):

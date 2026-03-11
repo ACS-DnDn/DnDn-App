@@ -385,11 +385,10 @@ ${risks.length ? `  <div class="section">
       const sourceDoc = refDocCanonical
         ? { ...refDocCanonical, user_request: nlInput, target: nlTarget || undefined }
         : { title: nlTarget || '작업 계획', content: nlInput, type: 'manual' };
-      const docType = refDocCanonical ? String(refDocCanonical.type ?? 'weekly') : 'event';
       const res = await fetch('/api/report/workplan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_doc: sourceDoc, doc_type: docType }),
+        body: JSON.stringify({ source_doc: sourceDoc }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();

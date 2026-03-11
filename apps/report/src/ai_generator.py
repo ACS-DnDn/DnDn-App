@@ -323,7 +323,7 @@ def generate_work_plan(canonical: dict) -> dict:
     # 이미 보고서에 aws_docs가 있으면 재사용 (MCP 조회 스킵)
     aws_docs = canonical.get("aws_docs", "")
     if aws_docs:
-        print(f"[MCP] 작업계획서: aws_docs 재사용 (MCP 조회 스킵)")
+        print("[MCP] 작업계획서: aws_docs 재사용 (MCP 조회 스킵)")
     else:
         event_code, service = _detect_event_info(canonical)
         print(f"[MCP] 작업계획서용 AWS 문서 조회 중... (event: {event_code or service or 'unknown'})")
