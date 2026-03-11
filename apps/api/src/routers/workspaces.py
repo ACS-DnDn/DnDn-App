@@ -200,8 +200,8 @@ async def test_aws_connection(
     # 1. 계정 ID 형식 검증 (400)
     try:
         result = test_assume_role(req.acctId)
-    except StsValidationError as e:
-        raise HTTPException(status_code=400, detail="BAD_REQUEST") from e
+    except StsValidationError:
+        raise HTTPException(status_code=400, detail="BAD_REQUEST") from None
 
     # 2. 결과 반환 (성공/실패 모두 200)
     return SuccessResponse(

@@ -1,5 +1,10 @@
 # apps/api/routers/github.py
 
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from typing import NamedTuple
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from apps.api.src.models import User
@@ -26,20 +31,47 @@ from apps.api.src.security.github_oauth import (
 
 router = APIRouter(prefix="/github", tags=["GitHub"])
 
-# 💡 사용자별 GitHub access_token 임시 저장소
-# 실무에서는 DB 또는 Redis를 사용합니다. 지금은 메모리(dict)로 처리.
-_github_tokens: dict[str, str] = {}
+# ── TTL 설정 ──────────────────────────────────────────────
+_STATE_TTL = timedelta(minutes=10)
+_TOKEN_TTL = timedelta(hours=8)
 
-# OAuth state CSRF 검증용 저장소 (사용자 ID → state 값)
-_oauth_states: dict[str, str] = {}
+
+class _StateEntry(NamedTuple):
+    value: str
+    expires_at: datetime
+
+
+class _TokenEntry(NamedTuple):
+    value: str
+    expires_at: datetime
+
+
+# 💡 사용자별 임시 저장소 (실무에서는 DB/Redis 사용)
+_github_tokens: dict[str, _TokenEntry] = {}
+_oauth_states: dict[str, set[_StateEntry]] = {}
+
+
+def _cleanup_expired() -> None:
+    """만료된 state·token 항목 정리."""
+    now = datetime.now(timezone.utc)
+
+    for uid in list(_oauth_states):
+        _oauth_states[uid] = {s for s in _oauth_states[uid] if s.expires_at > now}
+        if not _oauth_states[uid]:
+            del _oauth_states[uid]
+
+    expired_tokens = [k for k, v in _github_tokens.items() if v.expires_at <= now]
+    for k in expired_tokens:
+        del _github_tokens[k]
 
 
 def _get_github_token(user_id: str) -> str:
-    """저장된 GitHub 토큰을 꺼낸다. 없으면 403."""
-    token = _github_tokens.get(user_id)
-    if not token:
+    """저장된 GitHub 토큰을 꺼낸다. 만료/없으면 403."""
+    _cleanup_expired()
+    entry = _github_tokens.get(user_id)
+    if not entry:
         raise HTTPException(status_code=403, detail="FORBIDDEN")
-    return token
+    return entry.value
 
 
 # ---------------------------------------------------------
@@ -53,10 +85,15 @@ async def github_auth(
     GitHub OAuth 인증 플로우를 시작한다.
     응답으로 받은 URL로 사용자를 리다이렉트한다.
     """
+    _cleanup_expired()
     result = get_auth_url()
 
-    # CSRF 방지: state 값을 사용자 ID 기준으로 서버에 보관
-    _oauth_states[current_user.id] = result.state
+    # CSRF 방지: state 값을 사용자 ID 기준으로 서버에 보관 (다중 플로우 허용)
+    if current_user.id not in _oauth_states:
+        _oauth_states[current_user.id] = set()
+    _oauth_states[current_user.id].add(
+        _StateEntry(value=result.state, expires_at=datetime.now(timezone.utc) + _STATE_TTL)
+    )
 
     return SuccessResponse(
         data=GitHubAuthResponse(
@@ -79,10 +116,16 @@ async def github_callback(
     GitHub 인증 완료 후 리다이렉트되는 콜백.
     code를 access token으로 교환하고 서버에 저장한다.
     """
-    # CSRF 방지: 서버에 저장된 state와 콜백으로 전달된 state 비교
-    expected_state = _oauth_states.pop(current_user.id, None)
-    if not expected_state or expected_state != state:
+    _cleanup_expired()
+
+    # CSRF 방지: 서버에 저장된 state set에서 일치하는 항목 소비
+    user_states = _oauth_states.get(current_user.id, set())
+    matched = next((s for s in user_states if s.value == state), None)
+    if not matched:
         raise HTTPException(status_code=400, detail="INVALID_OAUTH_STATE")
+    user_states.discard(matched)
+    if not user_states:
+        _oauth_states.pop(current_user.id, None)
 
     try:
         result = exchange_code(code, state)
@@ -90,7 +133,10 @@ async def github_callback(
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
     # access_token을 사용자 ID 기준으로 서버에 보관
-    _github_tokens[current_user.id] = result.access_token
+    _github_tokens[current_user.id] = _TokenEntry(
+        value=result.access_token,
+        expires_at=datetime.now(timezone.utc) + _TOKEN_TTL,
+    )
 
     return SuccessResponse(
         data=GitHubCallbackResponse(
