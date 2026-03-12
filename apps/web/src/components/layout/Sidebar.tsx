@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
+// TODO: pending 배지 카운트 — getDashboard() API 연동 후 실제 값으로 교체
 import { dashboardData } from '@/mocks';
 
 interface SidebarProps {
