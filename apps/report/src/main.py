@@ -7,6 +7,9 @@ import asyncio
 import logging
 from functools import partial
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
 
