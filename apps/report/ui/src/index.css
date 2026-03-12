@@ -132,3 +132,474 @@ code { font-family: SFMono-Regular, Consolas, Menlo, monospace; font-size: 11.5p
 
 /* ── 인쇄 ── */
 @media print { body { font-size: 11px; } .doc { padding: 0; max-width: 100%; } }
+
+/* AI 버튼 */
+.dev-tab-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-ai {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: 'Pretendard', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-ai:hover { background: #1d4ed8; }
+.btn-ai:disabled { background: #93c5fd; cursor: not-allowed; }
+.ai-error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 10px 16px;
+  font-size: 13px;
+  border-left: 3px solid #dc2626;
+  margin: 8px 16px;
+}
+.ai-result-banner {
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 10px 16px;
+  font-size: 13px;
+  border-left: 3px solid #2563eb;
+  margin: 8px 16px;
+}
+
+.btn-download {
+  background: #fff;
+  color: #1e3a5f;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: 'Pretendard', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-download:hover { background: #1e3a5f; color: #fff; }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  gap: 12px;
+  color: #888;
+}
+.empty-state-icon { font-size: 48px; }
+.empty-state-text { font-size: 18px; font-weight: 600; color: #333; }
+.empty-state-sub { font-size: 13px; color: #888; margin-bottom: 8px; }
+.btn-ai-large { font-size: 15px; padding: 12px 28px; }
+
+/* 작업계획서 설정 화면 */
+.workplan-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 16px;
+  padding: 40px;
+}
+.workplan-setup-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.workplan-setup-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+.workplan-no-docs {
+  background: #f8f9fa;
+  border: 1.5px dashed #ccc;
+  border-radius: 8px;
+  padding: 24px 40px;
+  color: #888;
+  font-size: 14px;
+  text-align: center;
+}
+.workplan-doc-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 480px;
+}
+.workplan-doc-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  align-self: flex-start;
+}
+.workplan-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.workplan-doc-item {
+  background: #fff;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  color: #333;
+}
+.workplan-doc-item:hover { border-color: #2563eb; color: #2563eb; }
+.workplan-doc-item.selected { border-color: #2563eb; background: #eff6ff; color: #2563eb; font-weight: 600; }
+
+/* 테라폼 버튼 */
+.terraform-btn-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+.btn-terraform {
+  background: #1e3a5f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-family: 'Pretendard', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-terraform:hover { background: #162d4a; }
+.btn-terraform:disabled { background: #93c5fd; cursor: not-allowed; }
+
+/* 테라폼 에디터 */
+.tf-editor {
+  margin: 24px 16px;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tf-editor-header {
+  background: #1e3a5f;
+  color: #fff;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tf-editor-title { font-size: 15px; font-weight: 700; }
+.tf-editor-actions { display: flex; gap: 8px; }
+.btn-close {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tf-tabs {
+  background: #f1f5f9;
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid #ddd;
+}
+.tf-tab {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #555;
+}
+.tf-tab.active { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+.tf-code {
+  width: 100%;
+  min-height: 400px;
+  padding: 16px;
+  font-family: 'Fira Code', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+/* ── Health 샘플 선택 ── */
+.health-sample-list {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.health-sample-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 2px solid #dde3ef;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+}
+
+.health-sample-item:hover {
+  border-color: #1f3864;
+  color: #1f3864;
+}
+
+.health-sample-item.selected {
+  border-color: #1f3864;
+  background: #edf0f7;
+  color: #1f3864;
+  font-weight: 600;
+}
+
+.health-sample-icon {
+  font-size: 16px;
+}
+
+/* ── 보고서 공통 (doc 계열) ── */
+.doc {
+  background: #fff;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 36px 44px 52px;
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #1a1a1a;
+}
+
+.doc-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid #1f3864;
+  margin-bottom: 20px;
+}
+
+.doc-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.doc-logo-placeholder {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px dashed #ccc;
+  border-radius: 2px;
+  font-size: 11px;
+  color: #bbb;
+}
+
+.doc-header-title {
+  font-size: 23px;
+  font-weight: 800;
+  color: #1f3864;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.doc-header-meta {
+  text-align: right;
+  font-size: 11px;
+  color: #666;
+  line-height: 1.75;
+}
+
+.tbl-info {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #bbb;
+  margin-bottom: 22px;
+}
+
+.tbl-info th {
+  padding: 7px 11px;
+  background: #d4dae6;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1f3864;
+  text-align: center;
+  border: 1px solid #bbb;
+  white-space: nowrap;
+  vertical-align: middle;
+  width: 110px;
+}
+
+.tbl-info td {
+  padding: 7px 11px;
+  border: 1px solid #bbb;
+  color: #1a1a1a;
+  vertical-align: middle;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  background: #1f3864;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  letter-spacing: 0.3px;
+  margin-bottom: 7px;
+}
+
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #bbb;
+  font-size: 12.5px;
+}
+
+.tbl th {
+  padding: 7px 11px;
+  background: #d4dae6;
+  font-weight: 600;
+  color: #1f3864;
+  border: 1px solid #bbb;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tbl td {
+  padding: 7px 11px;
+  border: 1px solid #bbb;
+  color: #1a1a1a;
+  vertical-align: top;
+  line-height: 1.65;
+}
+
+.tbl tbody tr:nth-child(even) td:not(.td-step) {
+  background: #fafafa;
+}
+
+.th-label { width: 110px; }
+
+.td-time {
+  font-family: 'SFMono-Regular', 'Consolas', monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.td-type {
+  font-weight: 600;
+  color: #333;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.td-step {
+  text-align: center;
+  font-weight: 600;
+  color: #1a1a1a;
+  background: #f0f0f0;
+  vertical-align: middle;
+}
+
+.doc-footer {
+  margin-top: 28px;
+  padding-top: 8px;
+  border-top: 1px solid #bbb;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  color: #999;
+}
+/* ── Health 샘플 선택 ── */
+.health-sample-list {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.health-sample-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 2px solid #dde3ef;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+}
+
+.health-sample-item:hover {
+  border-color: #1f3864;
+  color: #1f3864;
+}
+
+.health-sample-item.selected {
+  border-color: #1f3864;
+  background: #edf0f7;
+  color: #1f3864;
+  font-weight: 600;
+}
+
+.health-sample-icon {
+  font-size: 16px;
+}
+
+/* ── Checkov 배지 ── */
+.checkov-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.checkov-badge.all-pass {
+  background: #e6f4ea;
+  color: #1e7e34;
+  border: 1px solid #a8d5b5;
+}
+
+.checkov-badge.has-issues {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+}
+
+.checkov-fail {
+  color: #dc3545;
+  font-weight: 700;
+}

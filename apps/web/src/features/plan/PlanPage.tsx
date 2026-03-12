@@ -7,49 +7,39 @@ import { orgData, docData, ALL_DOCS, wsAccounts } from '@/mocks';
 import type { DocDataItem } from '@/mocks';
 import './PlanPage.css';
 
-/* ── Terraform mock ── */
+/* ── Terraform 기본값 (API 실패 시 fallback) ── */
 const TF_FILES = [
-  {
-    name: 'eks_node_group.tf',
-    code: `resource "aws_eks_node_group" "production_ng" {
-  cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "production-ng"
-  node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.private_subnet_ids
-
-  instance_types = ["t3.large"]
-
-  scaling_config {
-    desired_size = 3
-    min_size     = 2
-    max_size     = 6
-  }
-
-  update_config {
-    max_unavailable = 1
-  }
-
-  tags = {
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
-}`,
-  },
-  {
-    name: 'variables.tf',
-    code: `variable "node_instance_type" {
-  description = "EKS 노드 인스턴스 타입"
-  type        = string
-  default     = "t3.large"
-}
-
-variable "rollback_instance_type" {
-  description = "롤백용 인스턴스 타입 (t3.medium)"
-  type        = string
-  default     = "t3.medium"
-}`,
-  },
+  { name: 'main.tf', code: '# Terraform 코드 생성 버튼을 눌러 코드를 생성하세요.' },
 ];
+
+/* ── 문서별 샘플 canonical 데이터 (참조 문서 → workplan 컨텍스트) ── */
+const DOC_CANONICAL_DATA: Record<string, Record<string, unknown>> = {
+  'DOC-2026-001': {
+    type: 'weekly',
+    title: '주간 보고서 (02.17~02.23)',
+    period: '2026.02.17 ~ 2026.02.23',
+    account_id: '123456789012',
+    key_issues: [
+      {
+        resource: 'EKS production-ng',
+        service: 'EKS',
+        issue: 'CPU 사용률 지속 초과',
+        detail: '피크타임(18~22시) 평균 CPU 94%, 응답 지연 평균 +340ms. 2주 연속 동일 이슈 발생. 즉각 조치 권고.',
+        severity: 'HIGH',
+      },
+    ],
+    changes: [
+      { date: '02.19 10:32', resource: 'S3 bucket', change: '버전관리 활성화' },
+      { date: '02.21 15:44', resource: 'Security Group', change: '인바운드 규칙 3개 추가' },
+      { date: '02.22 09:00', resource: 'CloudWatch', change: '알람 임계값 조정 (CPU 90→80%)' },
+    ],
+    action_items: [
+      'EKS 노드그룹 인스턴스 타입 업그레이드 검토 (담당: 이서연, 기한: 02.28)',
+      'CloudWatch CPU 알람 임계값 80%로 하향 조정',
+      'Security Hub 미해결 Findings 3건 처리',
+    ],
+  },
+};
 
 interface Approver { name: string; rank: string; type: string; }
 interface PendingApprover { name: string; rank: string; type: string; }
@@ -92,6 +82,12 @@ export function PlanPage() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const tfTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const validationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  /* ── API 연동 state ── */
+  const [workplanData, setWorkplanData] = useState<Record<string, unknown> | null>(null);
+  const [iframeSrcdoc, setIframeSrcdoc] = useState<string | null>(null);
+  const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
+  const [canonicalMap, setCanonicalMap] = useState<Record<string, Record<string, unknown>>>({});
   const logPanelRef = useRef<HTMLDivElement>(null);
 
   /* ── approver popup state ── */
@@ -236,17 +232,186 @@ export function PlanPage() {
       if (prev.some(r => r.no === d.no)) return prev;
       return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
+    const canonical = DOC_CANONICAL_DATA[d.no];
+    if (canonical) setCanonicalMap(prev => ({ ...prev, [d.no]: canonical }));
     setDocPopupOpen(false);
   }
 
   /* ══════════════════════════════
      계획서 생성
   ══════════════════════════════ */
-  function generateDoc() {
+  function renderWorkplanHtml(wp: Record<string, unknown>): string {
+    const esc = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const title = esc(wp.title ?? '작업계획서');
+    const reason = esc(wp.reason ?? '');
+    const resource = esc(wp.resource ?? '');
+    const accountId = esc(wp.account_id ?? '');
+    const scheduledAt = esc(wp.scheduled_at ?? '');
+    const assignee = esc(wp.assignee ?? 'devops@dndn');
+    type Step = { name: string; description: string; executor?: string; assignee?: string };
+    type BA = { item: string; before: string; after: string };
+    type Risk = { item: string; level: string; description: string };
+    type Rollback = { trigger?: string; method?: string; estimated_time?: string; assignee?: string };
+    const steps = (wp.steps as Step[]) ?? [];
+    const beforeAfter = (wp.before_after as BA[]) ?? [];
+    const risks = (wp.risks as Risk[]) ?? [];
+    const rollback = (wp.rollback as Rollback) ?? {};
+    const NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
+    const riskClass = (level: string) => level === 'HIGH' ? 'r-hi' : level === 'MEDIUM' ? 'r-mid' : 'r-low';
+    const riskLabel = (level: string) => level === 'HIGH' ? '상' : level === 'MEDIUM' ? '중' : '하';
+
+    const today = new Date();
+    const docDate = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
+
+    return `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:13px;line-height:1.65;color:#1a1a1a;background:#fff;}
+.doc{background:#fff;max-width:860px;margin:0 auto;padding:36px 44px 52px;}
+.doc-header{display:flex;flex-direction:column;gap:10px;padding-bottom:10px;border-bottom:3px solid #1f3864;margin-bottom:20px;}
+.doc-header-top{display:flex;justify-content:space-between;align-items:center;}
+.doc-header-title{font-size:21px;font-weight:800;color:#1f3864;text-align:center;line-height:1.4;}
+.doc-header-meta{text-align:right;font-size:11px;color:#666;line-height:1.75;}
+.section{margin-bottom:20px;}
+.section-title{background:#1f3864;color:#fff;font-size:12.5px;font-weight:700;padding:6px 12px;letter-spacing:.3px;margin-bottom:7px;}
+.tbl-info{width:100%;border-collapse:collapse;border:1px solid #bbb;margin-bottom:0;}
+.tbl-info th{padding:7px 11px;background:#d4dae6;font-size:12.5px;font-weight:600;color:#1f3864;text-align:center;border:1px solid #bbb;white-space:nowrap;vertical-align:middle;width:110px;}
+.tbl-info td{padding:7px 11px;border:1px solid #bbb;color:#1a1a1a;vertical-align:middle;font-size:12.5px;}
+.tbl{width:100%;border-collapse:collapse;border:1px solid #bbb;font-size:12.5px;}
+.tbl th{padding:7px 11px;background:#d4dae6;font-weight:600;color:#1f3864;border:1px solid #bbb;text-align:center;vertical-align:middle;white-space:nowrap;}
+.tbl td{padding:7px 11px;border:1px solid #bbb;color:#1a1a1a;vertical-align:top;line-height:1.65;}
+.tbl tbody tr:nth-child(even) td:not(.td-step):not(.td-item):not(.td-risk){background:#fafafa;}
+.td-step{text-align:center;font-weight:600;color:#1a1a1a;background:#f0f0f0;vertical-align:middle;}
+.td-exec{text-align:center;font-size:12px;}
+.td-item{background:#f0f0f0;font-weight:600;color:#1a1a1a;width:155px;text-align:center;vertical-align:middle;}
+.td-risk{text-align:center;font-weight:600;color:#1a1a1a;background:#f0f0f0;vertical-align:middle;}
+.td-before{color:#a00;text-align:center;vertical-align:middle;}
+.td-after{color:#197340;font-weight:600;text-align:center;vertical-align:middle;}
+.th-before{color:#a00;}.th-after{color:#197340;}
+.r-hi{font-size:12.5px;font-weight:700;color:#c00;}
+.r-mid{font-size:12.5px;font-weight:700;color:#555;}
+.r-low{font-size:12.5px;font-weight:700;color:#888;}
+.th-label{width:110px;text-align:center;}
+.doc-footer{margin-top:28px;padding-top:8px;border-top:1px solid #bbb;display:flex;justify-content:flex-end;font-size:11px;color:#999;}
+</style></head><body>
+<div class="doc">
+  <div class="doc-header">
+    <div class="doc-header-top">
+      <div style="font-weight:800;font-size:16px;color:#1f3864;letter-spacing:.5px;">DnDn</div>
+      <div class="doc-header-meta">작성일: ${docDate}<br>작성자: ${assignee}</div>
+    </div>
+    <div class="doc-header-title">${title}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Overview</div>
+    <table class="tbl-info">
+      <tr><th>작업 사유</th><td colspan="3">${reason}</td></tr>
+      <tr>
+        <th>대상 리소스</th><td>${resource}</td>
+        <th>AWS 계정</th><td>${accountId}</td>
+      </tr>
+      <tr>
+        <th>작업 예정일</th><td>${scheduledAt}</td>
+        <th>담당자</th><td>${assignee}</td>
+      </tr>
+    </table>
+  </div>
+
+${steps.length ? `  <div class="section">
+    <div class="section-title">1. 작업 절차</div>
+    <table class="tbl">
+      <thead><tr><th style="width:44px">단계</th><th style="width:130px">작업</th><th>내용</th><th style="width:78px">실행</th><th style="width:60px">담당</th></tr></thead>
+      <tbody>
+        ${steps.map((s, i) => `<tr>
+          <td class="td-step">${NUMS[i] ?? i+1}</td>
+          <td class="td-exec">${esc(s.name)}</td>
+          <td>${esc(s.description)}</td>
+          <td class="td-exec">${esc(s.executor ?? '')}</td>
+          <td class="td-exec">${esc(s.assignee ?? assignee)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+${beforeAfter.length ? `  <div class="section">
+    <div class="section-title">2. 변경 Before / After</div>
+    <table class="tbl">
+      <thead><tr><th style="width:155px">항목</th><th class="th-before" style="width:40%">Before (현재 상태)</th><th class="th-after">After (적용 후)</th></tr></thead>
+      <tbody>
+        ${beforeAfter.map(b => `<tr>
+          <td class="td-item">${esc(b.item)}</td>
+          <td class="td-before">${esc(b.before)}</td>
+          <td class="td-after">${esc(b.after)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+${risks.length ? `  <div class="section">
+    <div class="section-title">3. 위험도 분석</div>
+    <table class="tbl">
+      <thead><tr><th style="width:185px">위험 항목</th><th style="width:55px">수준</th><th>분석</th></tr></thead>
+      <tbody>
+        ${risks.map(r => `<tr>
+          <td class="td-risk">${esc(r.item)}</td>
+          <td style="text-align:center;vertical-align:middle"><span class="${riskClass(r.level)}">${riskLabel(r.level)}</span></td>
+          <td>${esc(r.description)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  <div class="section">
+    <div class="section-title">4. 롤백 계획</div>
+    <table class="tbl">
+      <tr><th class="th-label">롤백 트리거</th><td>${esc(rollback.trigger ?? '')}</td></tr>
+      <tr><th class="th-label">롤백 방법</th><td>${esc(rollback.method ?? '')}</td></tr>
+      <tr><th class="th-label">예상 시간</th><td>${esc(rollback.estimated_time ?? '')}</td></tr>
+      <tr><th class="th-label">담당자</th><td>${esc(rollback.assignee ?? assignee)}</td></tr>
+    </table>
+  </div>
+
+  <div class="doc-footer"><span>${docDate}</span></div>
+</div>
+</body></html>`;
+  }
+
+  async function generateDoc() {
     setDocState('loading');
-    docTimerRef.current = setTimeout(() => {
+    setTfState('blank');
+    setTfStatus('pending');
+    setTfStatusText('대기 중');
+    setGeneratedTfFiles([]);
+    setTfCodes(TF_FILES.map(f => f.code));
+    setLogEntries([]);
+    try {
+      // refDocs 순서대로 canonical을 병합해 컨텍스트로 사용
+      const mergedCanonical = refDocs.reduce<Record<string, unknown>>((acc, rd) => {
+        const c = canonicalMap[rd.no];
+        return c ? { ...acc, ...c } : acc;
+      }, {});
+      const hasCanonical = Object.keys(mergedCanonical).length > 0;
+      const sourceDoc = hasCanonical
+        ? { ...mergedCanonical, user_request: nlInput, target: nlTarget || undefined }
+        : { title: nlTarget || '작업 계획', content: nlInput, type: 'manual' };
+      const res = await fetch('/api/report/workplan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_doc: sourceDoc }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
+      setWorkplanData(json.data);
+      setIframeSrcdoc(renderWorkplanHtml(json.data));
       setDocState('ready');
-    }, 2200);
+    } catch (err) {
+      console.error('workplan API error:', err);
+      setDocState('blank');
+      alert('계획서 생성 중 오류가 발생했습니다: ' + String(err));
+    }
   }
 
   function doAutoSave() {
@@ -278,63 +443,56 @@ export function PlanPage() {
   /* ══════════════════════════════
      Terraform 코드 생성
   ══════════════════════════════ */
-  function generateTerraform() {
+  async function generateTerraform() {
+    if (!workplanData) return;
     setTfState('loading');
     setTfStatus('generating');
     setTfStatusText('코드 생성 중');
+    setLogEntries([]);
     addLog('작업 계획서 분석 중...', 'muted', 0);
-    addLog('변경 대상 리소스 추출 중...', 'run', 0);
-
-    tfTimerRef.current = setTimeout(() => {
-      setTfState('ready');
+    addLog('Terraform 코드 생성 중...', 'run', 0);
+    try {
+      const res = await fetch('/api/terraform/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workplan: workplanData }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
+      // backend returns { filename, content } — normalize to { name, code }
+      const rawFiles: Record<string, string>[] = json.data.files ?? [];
+      const files = rawFiles.map(f => ({
+        name: f.name ?? f.filename ?? 'main.tf',
+        code: f.code ?? f.content ?? '',
+      }));
+      if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
+      const checkov = json.data.checkov ?? {};
+      setGeneratedTfFiles(files);
+      setTfCodes(files.map(f => f.code));
       setTfTab(0);
-      addLog('eks_node_group.tf 생성 완료', 'ok', 0);
-      addLog('instance_types: t3.medium → t3.large', 'info', 0);
-      addLog('variables.tf 생성 완료', 'ok', 1);
-      addLog('node_instance_type, rollback_instance_type 추가', 'info', 1);
-      runValidation();
-    }, 1800);
-  }
-
-  function runValidation() {
-    validationTimersRef.current.forEach((t) => { clearTimeout(t); });
-    validationTimersRef.current = [];
-
-    setTfStatus('generating');
-    setTfStatusText('보안 검증 중');
-    addLog('보안 검증 중...', 'run', 0);
-    addLog('보안 검증 중...', 'run', 1);
-
-    const t1 = setTimeout(() => {
-      addLog('보안 검증 통과', 'ok', 0);
-      addLog('보안 검증 통과', 'ok', 1);
-      setTfStatusText('비용 분석 중');
-      addLog('비용 분석 중...', 'run', 0);
-      addLog('비용 분석 중...', 'run', 1);
-
-      const t2 = setTimeout(() => {
-        addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 0);
-        addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 1);
-        setTfStatusText('정책 검증 중');
-        addLog('정책 검증 중...', 'run', 0);
-        addLog('정책 검증 중...', 'run', 1);
-
-        const t3 = setTimeout(() => {
-          addLog('정책 검증 통과', 'ok', 0);
-          addLog('정책 검증 통과', 'ok', 1);
-          setTfStatus('ok');
-          setTfStatusText('검증 완료');
-        }, 900);
-        validationTimersRef.current.push(t3);
-      }, 900);
-      validationTimersRef.current.push(t2);
-    }, 900);
-    validationTimersRef.current.push(t1);
+      setTfState('ready');
+      files.forEach((f, i) => addLog(`${f.name} 생성 완료`, 'ok', i));
+      const passed = checkov.summary?.passed ?? 0;
+      const failed = checkov.summary?.failed ?? 0;
+      if (failed > 0) {
+        addLog(`Checkov: ${passed} passed / ${failed} failed`, 'info', 0);
+      } else if (passed > 0) {
+        addLog(`Checkov: 보안 검증 통과 (${passed} passed)`, 'ok', 0);
+      }
+      setTfStatus('ok');
+      setTfStatusText('생성 완료');
+    } catch (err) {
+      console.error('terraform API error:', err);
+      setTfState('blank');
+      setTfStatus('pending');
+      setTfStatusText('대기 중');
+      addLog('오류: ' + String(err), 'muted', 0);
+    }
   }
 
   function revalidate() {
     setLogEntries([]);
-    runValidation();
   }
 
   /* ── auto-resize textarea ── */
@@ -493,7 +651,10 @@ export function PlanPage() {
             {refDocs.map(rd => (
               <div key={rd.no} className="ref-doc-item">
                 <div className="ref-doc-name">{rd.name}</div>
-                <button className="ref-doc-remove" onClick={() => setRefDocs(prev => prev.filter(r => r.no !== rd.no))}>&times;</button>
+                <button className="ref-doc-remove" onClick={() => {
+                  setRefDocs(prev => prev.filter(r => r.no !== rd.no));
+                  setCanonicalMap(prev => { const next = { ...prev }; delete next[rd.no]; return next; });
+                }}>&times;</button>
               </div>
             ))}
           </div>
@@ -564,7 +725,7 @@ export function PlanPage() {
             <iframe
               ref={iframeRef}
               className="plan-iframe"
-              src="/mock/plan-sample.html"
+              {...(iframeSrcdoc ? { srcDoc: iframeSrcdoc } : { src: '/mock/plan-sample.html' })}
               onLoad={() => {
                 const doc = iframeRef.current?.contentDocument;
                 if (doc) {
@@ -605,12 +766,12 @@ export function PlanPage() {
         {tfState === 'ready' && (
           <div className="tf-code-area">
             <div className="tf-tabs-bar">
-              {TF_FILES.map((f, i) => (
+              {(generatedTfFiles.length > 0 ? generatedTfFiles : TF_FILES).map((f, i) => (
                 <button key={f.name} className={`plan-tf-tab${tfTab === i ? ' active' : ''}`} onClick={() => setTfTab(i)}>{f.name}</button>
               ))}
             </div>
             <div className="tf-code-scroll">
-              {TF_FILES.map((_, i) => (
+              {(generatedTfFiles.length > 0 ? generatedTfFiles : TF_FILES).map((_, i) => (
                 <div key={i} className={`tf-tab-panel${tfTab === i ? ' active' : ''}`}>
                   <textarea
                     className="tf-editor"
