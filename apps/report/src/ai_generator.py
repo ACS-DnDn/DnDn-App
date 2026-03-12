@@ -164,6 +164,17 @@ def _detect_event_info(data: dict) -> tuple[str, str]:
             code = data["이벤트_상세"]["이벤트_유형_코드"]
             service = code.split("_")[1] if "_" in code else ""
             return code, service
+        # Health canonical (resources[].extensions.aws_health)
+        aws_health = (
+            data.get("resources", [{}])[0]
+            .get("extensions", {})
+            .get("aws_health", {})
+        )
+        if aws_health:
+            return (
+                aws_health.get("event_type_code", ""),
+                aws_health.get("service", ""),
+            )
         # SecurityHub canonical
         findings = (
             data.get("resources", [{}])[0]
