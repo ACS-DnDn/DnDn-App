@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getRefDocs, getDocContent } from '@/services/document.service';
 import './ViewerPage.css';
@@ -123,10 +123,18 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const docId = Number(id);
   // mock: localStorage에 저장된 문서가 있으면 /mock/ URL 사용, 나중에 API 연동 시 S3 URL로 대체
   const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
-  const doc = useMemo(() => (Number.isInteger(docId) ? getDocumentById(docId) : undefined), [docId]);
+  const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
+  const [docNotFound, setDocNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!id) { setDocNotFound(true); return; }
+    getDocumentById(id).then(result => {
+      if (result) setDoc(result);
+      else setDocNotFound(true);
+    }).catch(() => setDocNotFound(true));
+  }, [id]);
 
   /* 패널 탭 */
   const [panelTab, setPanelTab] = useState<'refs' | 'attach'>('refs');
@@ -143,9 +151,8 @@ export function ViewerPage() {
   const [approveOpinion, setApproveOpinion] = useState('');
   const [rejectReason, setRejectReason] = useState('');
 
-  if (!doc) {
-    return <Navigate to="/documents" replace />;
-  }
+  if (docNotFound) return <Navigate to="/documents" replace />;
+  if (!doc) return null;
 
   const docContent = getDocContent();
   const refDocs = getRefDocs();

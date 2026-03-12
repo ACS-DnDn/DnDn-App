@@ -114,15 +114,13 @@ export function ReportSettingsPage() {
   const section = params.get('section') === 'events' ? 'events' : 'summary';
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
 
-  const settings = getReportSettings();
-
   /* 현황 보고서 */
   const [summaryStart, setSummaryStart] = useState('2026-03-03T00:00');
   const [summaryEnd, setSummaryEnd] = useState('2026-03-09T23:59');
   const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
 
   /* 스케줄 */
-  const [schedules, setSchedules] = useState<Schedule[]>([...settings.schedules]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [schTitle, setSchTitle] = useState('');
@@ -134,7 +132,14 @@ export function ReportSettingsPage() {
   const autoFilled = useRef(false);
 
   /* 이벤트 */
-  const [evtSettings, setEvtSettings] = useState({ ...settings.eventSettings });
+  const [evtSettings, setEvtSettings] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    getReportSettings().then(settings => {
+      setSchedules([...settings.schedules]);
+      setEvtSettings({ ...settings.eventSettings });
+    }).catch(console.error);
+  }, []);
   const [openDescs, setOpenDescs] = useState<Set<string>>(new Set());
 
   /* 토스트 */

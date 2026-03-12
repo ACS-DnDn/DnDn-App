@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { getWorkspaces } from '@/services/workspace.service';
 import { getReportSettings } from '@/services/report.service';
 import { WS_ICONS, ICON_KEYS } from '@/mocks/data/icons.mock';
@@ -21,7 +21,7 @@ const OPA_ICONS: Record<string, ReactNode> = {
 export function WorkspacePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { session } = useAuth();
+  const session = useSession();
 
   const sectionParam = searchParams.get('section');
   const section = sectionParam === 'opa' ? 'opa' : 'general';
@@ -44,13 +44,13 @@ export function WorkspacePage() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const ws = getWorkspaces();
-    if (ws.length > 0) setAccount({ ...ws[0]! });
-    const settings = getReportSettings();
-    setOpaData(JSON.parse(JSON.stringify(settings.opa)));
-    // 기본으로 모든 아이템 접힘
-    const allKeys = settings.opa.flatMap(g => g.items.map(i => i.key));
-    setClosedItems(new Set(allKeys));
+    Promise.all([getWorkspaces(), getReportSettings()]).then(([ws, settings]) => {
+      if (ws.length > 0) setAccount({ ...ws[0]! });
+      setOpaData(JSON.parse(JSON.stringify(settings.opa)));
+      // 기본으로 모든 아이템 접힘
+      const allKeys = settings.opa.flatMap(g => g.items.map(i => i.key));
+      setClosedItems(new Set(allKeys));
+    }).catch(console.error);
   }, []);
 
   // 아이콘 피커 외부 클릭

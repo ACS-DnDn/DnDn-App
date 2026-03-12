@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
 import './WorkspaceCreatePage.css';
@@ -18,7 +18,7 @@ const POLICY_ROWS = [
 
 export function WorkspaceCreatePage() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const session = useSession();
 
   const [step, setStep] = useState(0);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);

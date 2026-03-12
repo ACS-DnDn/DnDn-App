@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { dashboardData } from '@/mocks';
 
@@ -74,7 +74,7 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
 export function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark, toggle } = useTheme();
 
   const logoSrc = isDark && session.company.logoDarkUrl
