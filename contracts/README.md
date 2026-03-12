@@ -329,6 +329,7 @@ Worker는 Health payload를 받아:
 
 그리고 가능하면 trigger 원문도 `raw/trigger/aws_health_event.json` 으로 저장하고,
 `meta.trigger.raw_event_s3_uri` 로 그 위치를 남깁니다.
+원문 payload가 없는 경우에는 현재 trigger metadata가 저장될 수 있습니다.
 
 즉 contracts는 이미 **AWS Health 이벤트 루트**를 염두에 둔 상태입니다.
 
@@ -343,6 +344,7 @@ Security Hub Finding 기반 EVENT도 샘플로 제공됩니다.
 Security Hub도 동일하게 trigger 원문 또는 trigger metadata가
 `raw/trigger/securityhub_finding.json` 으로 저장될 수 있으며,
 결과 JSON에서는 `meta.trigger.raw_event_s3_uri` 로 참조됩니다.
+원문 payload가 없는 경우에는 현재 trigger metadata가 저장될 수 있습니다.
 
 ---
 
@@ -456,16 +458,6 @@ PY
 - `source` = 들어온 채널
 - `logical_source` = 실제 이벤트 의미상 출처
 
-### 10-4. evidence는 한 군데에 다 들어있지 않다
-현재 contracts에서 evidence는 용도별로 분산되어 있습니다.
-
-- 실행 전체 evidence → `meta.evidence`
-- trigger evidence → `meta.trigger.raw_event_s3_uri`
-- 이벤트별 CloudTrail evidence → `events[].raw.*`
-- advisor evidence → `extensions.advisor_checks[].evidence`
-
-그래서 사람이 전체를 한 번에 보려면 `raw/index.json` 을 같이 보는 것이 가장 빠릅니다.
-
 ### 10-2. `NA`와 `FAILED`
 - `NA` = 수집 대상/조건이 맞지 않아 정상적으로 수집 불가
 - `FAILED` = 코드/권한/API 등 실제 오류
@@ -473,6 +465,16 @@ PY
 ### 10-3. `advisor_checks`가 0건이어도 정상
 실제 계정에 문제 리소스가 없으면 당연히 0건일 수 있습니다.
 핵심은 로직과 상태/rollup가 생기는지입니다.
+
+### 10-4. evidence는 한 군데에 다 들어있지 않다
+현재 contracts에서 evidence는 용도별로 분산되어 있습니다.
+
+- 실행 전체 evidence → `meta.evidence`
+- trigger evidence → `meta.trigger.raw_event_s3_uri`
+- 이벤트별 CloudTrail evidence → `events[].raw.*_s3_uri`
+- advisor evidence → `extensions.advisor_checks[].evidence`
+
+그래서 사람이 전체를 한 번에 보려면 `raw/index.json` 을 같이 보는 것이 가장 빠릅니다.
 
 ---
 
