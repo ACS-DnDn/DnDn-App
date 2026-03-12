@@ -8,6 +8,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     headers.set('Content-Type', 'application/json');
   }
 
+  const token = localStorage.getItem('dndn-access-token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers,

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { wsAccounts } from '@/mocks';
 import { AnimatedLogo } from './AnimatedLogo';
@@ -11,7 +11,7 @@ interface TopNavProps {
 
 export function TopNav({ breadcrumb, onMenuClick }: TopNavProps) {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark } = useTheme();
 
   const companyLogoSrc = session.company.logoUrl;

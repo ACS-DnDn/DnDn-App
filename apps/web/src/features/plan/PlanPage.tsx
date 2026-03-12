@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
 import { orgData, docData, ALL_DOCS, wsAccounts } from '@/mocks';
@@ -56,7 +56,7 @@ function now() {
 export function PlanPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark } = useTheme();
 
   /* ── left panel state ── */
@@ -110,7 +110,7 @@ export function PlanPage() {
   useEffect(() => {
     const refDocId = searchParams.get('refDocId');
     if (!refDocId) return;
-    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId, 10));
+    const doc = ALL_DOCS.find(d => d.id === refDocId);
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;

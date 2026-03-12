@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { getWorkspaces } from '@/services/workspace.service';
-import { getReportSettings } from '@/services/report.service';
+import { useSession } from '@/hooks/useSession';
+import { getWorkspaces, getOpaSettings, saveOpaSettings } from '@/services/workspace.service';
 import { WS_ICONS, ICON_KEYS } from '@/mocks/data/icons.mock';
 import type { Workspace, IconKey } from '@/mocks/types/workspace';
 import type { OpaCategory, OpaItem, OpaSeverity } from '@/mocks/types/report';
@@ -21,7 +20,7 @@ const OPA_ICONS: Record<string, ReactNode> = {
 export function WorkspacePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { session } = useAuth();
+  const session = useSession();
 
   const sectionParam = searchParams.get('section');
   const section = sectionParam === 'opa' ? 'opa' : 'general';
@@ -38,19 +37,34 @@ export function WorkspacePage() {
   // OPA
   const [opaData, setOpaData] = useState<OpaCategory[]>([]);
   const [closedItems, setClosedItems] = useState<Set<string>>(() => new Set());
+  const [fetchError, setFetchError] = useState(false);
+  const [opaFetchError, setOpaFetchError] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // 토스트
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'warn' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const ws = getWorkspaces();
-    if (ws.length > 0) setAccount({ ...ws[0]! });
-    const settings = getReportSettings();
-    setOpaData(JSON.parse(JSON.stringify(settings.opa)));
-    // 기본으로 모든 아이템 접힘
-    const allKeys = settings.opa.flatMap(g => g.items.map(i => i.key));
-    setClosedItems(new Set(allKeys));
+    getWorkspaces()
+      .then((ws) => {
+        if (ws.length === 0) return;
+        setAccount({ ...ws[0]! });
+        getOpaSettings(ws[0]!.id)
+          .then((policies) => {
+            setOpaData(JSON.parse(JSON.stringify(policies)));
+            const allKeys = policies.flatMap(g => g.items.map(i => i.key));
+            setClosedItems(new Set(allKeys));
+          })
+          .catch((err) => {
+            console.error(err);
+            setOpaFetchError(true);
+          });
+      })
+      .catch((err) => {
+        console.error(err);
+        setFetchError(true);
+      });
   }, []);
 
   // 아이콘 피커 외부 클릭
@@ -144,7 +158,11 @@ export function WorkspacePage() {
         {/* 일반 섹션 */}
         {section === 'general' && (
           <>
-            {!account ? (
+            {fetchError ? (
+              <div className="empty-state">
+                <div className="empty-title">워크스페이스 정보를 불러오지 못했습니다.</div>
+              </div>
+            ) : !account ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -207,8 +225,20 @@ export function WorkspacePage() {
                 <div className="opa-title">인프라 정책</div>
                 <div className="opa-desc">생성된 Terraform 코드를 정적 분석하여 자동 검증합니다</div>
               </div>
-              <button className="btn-save-opa" onClick={() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok')} disabled={session.auth !== 'leader'}>설정 저장</button>
+              <button className="btn-save-opa" onClick={() => {
+                if (!account) return;
+                setIsSaving(true);
+                saveOpaSettings(account.id, opaData)
+                  .then(() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok'))
+                  .catch(() => showToast('저장에 실패했습니다.', 'warn'))
+                  .finally(() => setIsSaving(false));
+              }} disabled={session.auth !== 'leader' || isSaving}>
+                {isSaving ? '저장 중...' : '설정 저장'}
+              </button>
             </div>
+            {opaFetchError && (
+              <div className="empty-title" style={{ padding: '1rem' }}>정책 정보를 불러오지 못했습니다.</div>
+            )}
             <div className="eg-list">
               {opaData.map(g => (
                 <div key={g.category} className="eg">
