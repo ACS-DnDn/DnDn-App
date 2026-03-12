@@ -12,6 +12,7 @@ load_dotenv()
 
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
+from .s3_client import save_result
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,12 @@ class TerraformRequest(BaseModel):
     workplan: dict[str, Any]
     repo_name: str | None = None
     github_token: str | None = None
+
+
+class SaveRequest(BaseModel):
+    account_id: str = "default"
+    workplan: dict[str, Any]
+    terraform_files: list[dict[str, str]]  # [{ name, code }]
 
 
 # ── 이벤트 보고서 ──────────────────────────────────────────
@@ -107,6 +114,18 @@ async def terraform_generate(req: TerraformRequest):
         return {"ok": True, "data": result}
     except Exception as e:
         logger.error("terraform_generate 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
+
+
+@app.post("/api/save")
+async def save_to_s3(req: SaveRequest):
+    try:
+        result = await asyncio.to_thread(
+            save_result, req.account_id, req.workplan, req.terraform_files
+        )
+        return {"ok": True, "data": result}
+    except Exception as e:
+        logger.error("save 오류: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 

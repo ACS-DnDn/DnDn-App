@@ -72,6 +72,7 @@ export function PlanPage() {
   const [docId] = useState(() => Date.now());
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [isSaving, setIsSaving] = useState(false);
 
   /* ── right panel state ── */
   const [tfState, setTfState] = useState<'blank' | 'loading' | 'ready'>('blank');
@@ -407,6 +408,11 @@ ${risks.length ? `  <div class="section">
       setWorkplanData(json.data);
       setIframeSrcdoc(renderWorkplanHtml(json.data));
       setDocState('ready');
+      // iframe 로드 후 body를 편집 가능하게 설정
+      setTimeout(() => {
+        const body = iframeRef.current?.contentDocument?.body;
+        if (body) body.contentEditable = 'true';
+      }, 300);
     } catch (err) {
       console.error('workplan API error:', err);
       setDocState('blank');
@@ -430,14 +436,35 @@ ${risks.length ? `  <div class="section">
   }, []);
 
   async function saveDoc() {
-    if (docState !== 'ready') { alert('저장할 계획서가 없습니다.'); return; }
-
-    const editedHtml = iframeRef.current?.contentDocument?.documentElement.outerHTML;
-    if (!editedHtml) { alert('문서 내용을 가져올 수 없습니다.'); return; }
-
-    // mock: localStorage에 저장 후 viewer 이동 (API 연동 시 POST /api/documents 로 교체)
-    localStorage.setItem(`doc-${docId}`, editedHtml);
-    navigate(`/viewer/${docId}`);
+    if (docState !== 'ready' || !workplanData) { alert('저장할 계획서가 없습니다.'); return; }
+    setIsSaving(true);
+    try {
+      const currentTfFiles = generatedTfFiles.length > 0
+        ? generatedTfFiles.map((f, i) => ({ name: f.name, code: tfCodes[i] ?? f.code }))
+        : [];
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: 'default',
+          workplan: workplanData,
+          terraform_files: currentTfFiles,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
+      const { job_id } = json.data;
+      const timestamp = new Date();
+      setLastSaved(
+        `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
+      );
+      alert(`S3 저장 완료 (job: ${job_id})`);
+    } catch (err) {
+      alert('저장 중 오류: ' + String(err));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   /* ══════════════════════════════
@@ -694,9 +721,9 @@ ${risks.length ? `  <div class="section">
           {lastSaved && <span className="auto-save-label">마지막 저장 {lastSaved}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <button className="btn-tf" disabled={docState !== 'ready' || tfState === 'loading'} onClick={generateTerraform}>Terraform 코드 생성</button>
-            <button className="plan-btn-save" onClick={saveDoc}>
+            <button className="plan-btn-save" onClick={saveDoc} disabled={isSaving || docState !== 'ready'}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 10l4 4 8-9"/></svg>
-              결재 상신
+              {isSaving ? 'S3 저장 중...' : '결재 상신'}
             </button>
           </div>
         </div>
