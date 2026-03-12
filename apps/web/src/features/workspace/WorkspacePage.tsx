@@ -38,25 +38,33 @@ export function WorkspacePage() {
   const [opaData, setOpaData] = useState<OpaCategory[]>([]);
   const [closedItems, setClosedItems] = useState<Set<string>>(() => new Set());
   const [fetchError, setFetchError] = useState(false);
+  const [opaFetchError, setOpaFetchError] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // 토스트
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'warn' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    getWorkspaces().then((ws) => {
-      if (ws.length === 0) return;
-      setAccount({ ...ws[0]! });
-      return getOpaSettings(ws[0]!.id);
-    }).then((policies) => {
-      if (!policies) return;
-      setOpaData(JSON.parse(JSON.stringify(policies)));
-      const allKeys = policies.flatMap(g => g.items.map(i => i.key));
-      setClosedItems(new Set(allKeys));
-    }).catch(err => {
-      console.error(err);
-      setFetchError(true);
-    });
+    getWorkspaces()
+      .then((ws) => {
+        if (ws.length === 0) return;
+        setAccount({ ...ws[0]! });
+        getOpaSettings(ws[0]!.id)
+          .then((policies) => {
+            setOpaData(JSON.parse(JSON.stringify(policies)));
+            const allKeys = policies.flatMap(g => g.items.map(i => i.key));
+            setClosedItems(new Set(allKeys));
+          })
+          .catch((err) => {
+            console.error(err);
+            setOpaFetchError(true);
+          });
+      })
+      .catch((err) => {
+        console.error(err);
+        setFetchError(true);
+      });
   }, []);
 
   // 아이콘 피커 외부 클릭
@@ -219,11 +227,18 @@ export function WorkspacePage() {
               </div>
               <button className="btn-save-opa" onClick={() => {
                 if (!account) return;
+                setIsSaving(true);
                 saveOpaSettings(account.id, opaData)
                   .then(() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok'))
-                  .catch(() => showToast('저장에 실패했습니다.', 'warn'));
-              }} disabled={session.auth !== 'leader'}>설정 저장</button>
+                  .catch(() => showToast('저장에 실패했습니다.', 'warn'))
+                  .finally(() => setIsSaving(false));
+              }} disabled={session.auth !== 'leader' || isSaving}>
+                {isSaving ? '저장 중...' : '설정 저장'}
+              </button>
             </div>
+            {opaFetchError && (
+              <div className="empty-title" style={{ padding: '1rem' }}>정책 정보를 불러오지 못했습니다.</div>
+            )}
             <div className="eg-list">
               {opaData.map(g => (
                 <div key={g.category} className="eg">

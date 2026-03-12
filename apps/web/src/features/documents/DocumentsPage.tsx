@@ -391,7 +391,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = `${doc.date.slice(0, 4)}-DnDn-${String(doc.id).padStart(4, '0')}`;
+                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 return (
                   <tr
                     key={doc.id}

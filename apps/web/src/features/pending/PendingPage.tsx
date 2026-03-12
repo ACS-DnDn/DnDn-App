@@ -263,7 +263,7 @@ export function PendingPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = `${doc.date.slice(0, 4)}-DnDn-${String(doc.id).padStart(4, '0')}`;
+                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : 'badge badge-progress';
                 const badgeLabel = doc.status === 'rejected' ? '반려' : '결재 대기';
                 return (
