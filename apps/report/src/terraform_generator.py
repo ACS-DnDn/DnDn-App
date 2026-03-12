@@ -110,7 +110,7 @@ class TerraformMCPClient:
 # GitHub .tf 수집
 # ─────────────────────────────────────────────────
 
-def load_tf_from_github(repo_name: str, token: str = None) -> str:
+def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
     g = Github(token) if token else Github()
     repo = g.get_repo(repo_name)
     tf_files = []
@@ -311,7 +311,7 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
     try:
         return json.loads(clean, strict=False)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Claude 응답 JSON 파싱 실패: {e}\n원문: {clean[:200]}")
+        raise ValueError(f"Claude 응답 JSON 파싱 실패: {e}\n원문: {clean[:200]}") from e
 
 
 # ─────────────────────────────────────────────────
