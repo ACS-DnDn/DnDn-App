@@ -338,6 +338,14 @@
           ],
           "format": "uri",
           "description": "Optional pointer to stored run_job input payload."
+        },
+        "index_s3_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri",
+          "description": "Pointer to raw/index.json containing the artifact inventory for this run."
         }
       },
       "additionalProperties": false

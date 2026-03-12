@@ -208,10 +208,12 @@ def _evidence_uris(payload: Dict[str, Any]) -> Dict[str, Any]:
     norm_prefix = _s3_uri(bucket, f"{prefix}/normalized/")
     # Optional: where the job payload itself was stored
     job_payload_uri = _s3_uri(bucket, f"{prefix}/raw/meta/job_payload.json")
+    index_uri = _s3_uri(bucket, f"{prefix}/raw/index.json")
     return {
         "raw_prefix_s3_uri": raw_prefix,
         "normalized_prefix_s3_uri": norm_prefix,
         "job_payload_s3_uri": job_payload_uri,
+        "index_s3_uri": index_uri,
     }
 
 
@@ -406,6 +408,125 @@ def _write_config_snapshot_artifacts(
         uris["after_s3_uri"] = _s3_uri(bucket, f"{prefix}/raw/config/{safe_key}/after.json")
 
     return uris
+
+
+def _trigger_artifact_filename(trigger: Dict[str, Any]) -> str:
+    detail_type = str(trigger.get("detail_type") or "")
+    logical_source = str(
+        trigger.get("logical_source")
+        or trigger.get("origin_kind")
+        or trigger.get("upstream_source")
+        or trigger.get("source")
+        or ""
+    ).upper()
+
+    if detail_type == "AWS Health Event" or logical_source == "AWS_HEALTH":
+        return "aws_health_event.json"
+    if detail_type == "Security Hub Findings - Imported" or logical_source == "SECURITYHUB":
+        return "securityhub_finding.json"
+    if logical_source in {"MANUAL", "API"}:
+        return "manual_trigger.json"
+    return "eventbridge.json"
+
+
+def _trigger_artifact_payload(trigger: Dict[str, Any]) -> Optional[Any]:
+    for key in ("raw_event", "event", "detail", "finding", "health"):
+        value = trigger.get(key)
+        if value is not None:
+            return value
+    if trigger:
+        return trigger
+    return None
+
+
+def _write_trigger_artifact(
+    raw_dir: Path,
+    payload: Dict[str, Any],
+) -> Optional[str]:
+    if payload.get("type") != "EVENT":
+        return None
+
+    trigger = payload.get("trigger")
+    if not isinstance(trigger, dict):
+        return None
+
+    artifact_payload = _trigger_artifact_payload(trigger)
+    if artifact_payload is None:
+        return None
+
+    trigger_dir = raw_dir / "trigger"
+    _ensure_dir(trigger_dir)
+
+    filename = _trigger_artifact_filename(trigger)
+    path = trigger_dir / filename
+    dump_json(path, artifact_payload)
+
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/trigger/{filename}")
+
+
+def _artifact_kind_from_path(rel_path: str) -> str:
+    parts = rel_path.split("/")
+    if rel_path == "raw/index.json":
+        return "artifact_index"
+    if rel_path == "raw/meta/job_payload.json":
+        return "job_payload"
+    if parts[:2] == ["raw", "trigger"]:
+        return "trigger"
+    if parts[:2] == ["raw", "cloudtrail"]:
+        return "cloudtrail_lookup" if rel_path.endswith("lookup_events.jsonl") else "cloudtrail_event"
+    if parts[:2] == ["raw", "config"]:
+        return "config_snapshot"
+    if parts[:2] == ["raw", "advisor"]:
+        return "advisor_raw"
+    if parts[:2] == ["normalized"]:
+        return "normalized_result"
+    return "artifact"
+
+
+def _write_artifact_index(job_dir: Path, payload: Dict[str, Any]) -> Path:
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].strip("/")
+
+    files: List[Dict[str, Any]] = []
+    for p in sorted(job_dir.rglob("*")):
+        if p.is_dir():
+            continue
+        if p.name == ".DS_Store" or p.name.startswith("._"):
+            continue
+        rel = p.relative_to(job_dir).as_posix()
+        files.append(
+            {
+                "category": rel.split("/", 1)[0],
+                "kind": _artifact_kind_from_path(rel),
+                "path": rel,
+                "s3_uri": _s3_uri(bucket, f"{prefix}/{rel}" if prefix else rel),
+            }
+        )
+
+    index_rel = "raw/index.json"
+    files.append(
+        {
+            "category": "raw",
+            "kind": "artifact_index",
+            "path": index_rel,
+            "s3_uri": _s3_uri(bucket, f"{prefix}/{index_rel}" if prefix else index_rel),
+        }
+    )
+
+    index_doc = {
+        "run_id": payload.get("run_id"),
+        "type": payload.get("type"),
+        "bucket": bucket,
+        "prefix": prefix,
+        "files": files,
+    }
+
+    index_path = job_dir / index_rel
+    _ensure_dir(index_path.parent)
+    dump_json(index_path, index_doc)
+    return index_path
 
 
 def enrich_resources_with_config(
@@ -1406,6 +1527,12 @@ def run_job_from_payload_file(
     # Store payload as raw evidence (local)
     dump_json(raw_dir / "meta" / "job_payload.json", payload)
 
+    trigger_artifact_s3_uri = _write_trigger_artifact(raw_dir, payload)
+    if trigger_artifact_s3_uri:
+        payload.setdefault("trigger", {})
+        if isinstance(payload["trigger"], dict):
+            payload["trigger"]["raw_event_s3_uri"] = trigger_artifact_s3_uri
+
     # 저장은 항상 "우리(DnDn) 계정" 권한으로 수행
     storage_session = boto3.Session()
 
@@ -1439,6 +1566,7 @@ def run_job_from_payload_file(
 
         result_obj.setdefault("extensions", {})
         dump_json(result_path, result_obj)
+        _write_artifact_index(job_dir, payload)
 
         upload_status: Dict[str, Any] = {"ok": True, "bucket": bucket, "prefix": prefix}
         try:
