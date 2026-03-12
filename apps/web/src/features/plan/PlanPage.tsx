@@ -12,34 +12,7 @@ const TF_FILES = [
   { name: 'main.tf', code: '# Terraform 코드 생성 버튼을 눌러 코드를 생성하세요.' },
 ];
 
-/* ── 문서별 샘플 canonical 데이터 (참조 문서 → workplan 컨텍스트) ── */
-const DOC_CANONICAL_DATA: Record<string, Record<string, unknown>> = {
-  'DOC-2026-001': {
-    type: 'weekly',
-    title: '주간 보고서 (02.17~02.23)',
-    period: '2026.02.17 ~ 2026.02.23',
-    account_id: '123456789012',
-    key_issues: [
-      {
-        resource: 'EKS production-ng',
-        service: 'EKS',
-        issue: 'CPU 사용률 지속 초과',
-        detail: '피크타임(18~22시) 평균 CPU 94%, 응답 지연 평균 +340ms. 2주 연속 동일 이슈 발생. 즉각 조치 권고.',
-        severity: 'HIGH',
-      },
-    ],
-    changes: [
-      { date: '02.19 10:32', resource: 'S3 bucket', change: '버전관리 활성화' },
-      { date: '02.21 15:44', resource: 'Security Group', change: '인바운드 규칙 3개 추가' },
-      { date: '02.22 09:00', resource: 'CloudWatch', change: '알람 임계값 조정 (CPU 90→80%)' },
-    ],
-    action_items: [
-      'EKS 노드그룹 인스턴스 타입 업그레이드 검토 (담당: 이서연, 기한: 02.28)',
-      'CloudWatch CPU 알람 임계값 80%로 하향 조정',
-      'Security Hub 미해결 Findings 3건 처리',
-    ],
-  },
-};
+const REPORT_API_BASE = import.meta.env.VITE_REPORT_API_BASE ?? 'http://localhost:8000';
 
 interface Approver { name: string; rank: string; type: string; }
 interface PendingApprover { name: string; rank: string; type: string; }
@@ -225,7 +198,7 @@ export function PlanPage() {
   const totalDocPages = Math.max(1, Math.ceil(filteredDocs.length / DOC_PAGE_SIZE));
   const currentPageDocs = filteredDocs.slice((docPage - 1) * DOC_PAGE_SIZE, docPage * DOC_PAGE_SIZE);
 
-  function saveDocPopup() {
+  async function saveDocPopup() {
     if (!selectedDocNo) return;
     const d = docData.find(x => x.no === selectedDocNo);
     if (!d) return;
@@ -233,9 +206,16 @@ export function PlanPage() {
       if (prev.some(r => r.no === d.no)) return prev;
       return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
-    const canonical = DOC_CANONICAL_DATA[d.no];
-    if (canonical) setCanonicalMap(prev => ({ ...prev, [d.no]: canonical }));
     setDocPopupOpen(false);
+    try {
+      const res = await fetch(`${REPORT_API_BASE}/api/reports/${d.no}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) setCanonicalMap(prev => ({ ...prev, [d.no]: json.data }));
+      }
+    } catch {
+      // canonical 없이 진행 (작업 내용 직접 입력으로 대체)
+    }
   }
 
   /* ══════════════════════════════

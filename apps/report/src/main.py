@@ -12,7 +12,7 @@ load_dotenv()
 
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
-from .s3_client import save_result
+from .s3_client import save_result, save_report, list_reports, get_report
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,34 @@ class SaveRequest(BaseModel):
     account_id: str = "default"
     workplan: dict[str, Any]
     terraform_files: list[dict[str, str]]  # [{ name, code }]
+
+
+class ReportSaveRequest(BaseModel):
+    account_id: str = "default"
+    doc_id: str
+    data: dict[str, Any]
+
+
+# ── 보고서 목록 조회 ───────────────────────────────────────
+@app.get("/api/reports")
+async def list_reports_api(account_id: str = "default"):
+    try:
+        result = await asyncio.to_thread(list_reports, account_id)
+        return {"ok": True, "data": result}
+    except Exception as e:
+        logger.error("list_reports 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="내부 서버 오류")
+
+
+# ── 보고서 단건 조회 ───────────────────────────────────────
+@app.get("/api/reports/{doc_id}")
+async def get_report_api(doc_id: str, account_id: str = "default"):
+    try:
+        result = await asyncio.to_thread(get_report, doc_id, account_id)
+        return {"ok": True, "data": result}
+    except Exception as e:
+        logger.error("get_report 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=404, detail="보고서를 찾을 수 없습니다.")
 
 
 # ── 이벤트 보고서 ──────────────────────────────────────────
