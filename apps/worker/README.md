@@ -252,6 +252,112 @@ python apps/worker/tools/run_payload.py \
 - `normalized/` 는 report가 바로 읽을 표준 결과물입니다.
 - `raw/index.json` 은 이번 실행에서 어떤 파일이 생성됐는지 한 번에 보여주는 inventory 입니다.
 
+### 6-4. 실제 AWS 계정으로 SELF 테스트
+고객 계정 AssumeRole 전 단계에서 Worker 기능 자체를 검증하려면,
+현재 로그인된 AWS 계정을 수집 대상로 사용하고 S3도 DnDn 쪽 테스트 버킷으로 두는 방식이 가장 단순합니다.
+
+검증 순서:
+1. 현재 AWS 자격증명으로 STS 호출이 되는지 확인
+2. 현재 AWS 자격증명으로 CloudTrail 조회가 되는지 확인
+3. `role_arn=SELF` payload로 WEEKLY 실행
+4. `role_arn=SELF` payload로 EVENT 실행
+5. 로컬 산출물과 S3 업로드 결과 확인
+
+예시 명령:
+```bash
+cd /Users/mh/Desktop/DnDn-App
+source .venv/bin/activate
+export PYTHONPATH=apps/worker
+
+python apps/worker/tools/smoke_assume_role.py --role-arn SELF
+python apps/worker/tools/smoke_cloudtrail.py --role-arn SELF --region ap-northeast-2 --hours 24 --max 5
+
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+
+cat >/tmp/worker-weekly.json <<EOF
+{
+  "account_id": "${ACCOUNT_ID}",
+  "assume_role": {
+    "external_id": "local-test",
+    "role_arn": "SELF"
+  },
+  "regions": ["ap-northeast-2"],
+  "rule_set_version": "eks-mvp-0.1",
+  "run_id": "manual-weekly-test-001",
+  "s3": {
+    "bucket": "dndn-data-dev-20260304",
+    "prefix": "manual-tests/weekly/manual-weekly-test-001"
+  },
+  "time_range": {
+    "start": "2026-03-01T00:00:00+09:00",
+    "end": "2026-03-08T00:00:00+09:00",
+    "timezone": "Asia/Seoul"
+  },
+  "type": "WEEKLY"
+}
+EOF
+
+python apps/worker/tools/run_payload.py \
+  --payload /tmp/worker-weekly.json \
+  --repo-root . \
+  --out /tmp/dndn-out \
+  --max-events 20
+
+cat >/tmp/worker-event.json <<EOF
+{
+  "account_id": "${ACCOUNT_ID}",
+  "assume_role": {
+    "external_id": "local-test",
+    "role_arn": "SELF"
+  },
+  "event_time": "2026-03-11T10:30:00+09:00",
+  "hint": {
+    "resource": {
+      "region": "ap-northeast-2",
+      "resource_id": "my-eks-cluster",
+      "resource_type": "AWS::EKS::Cluster"
+    }
+  },
+  "regions": ["ap-northeast-2"],
+  "rule_set_version": "eks-mvp-0.1",
+  "run_id": "manual-event-test-001",
+  "s3": {
+    "bucket": "dndn-data-dev-20260304",
+    "prefix": "manual-tests/event/manual-event-test-001"
+  },
+  "trigger": {
+    "event_id": "manual-event-001",
+    "source": "EVENTBRIDGE"
+  },
+  "type": "EVENT",
+  "window_minutes": 60
+}
+EOF
+
+python apps/worker/tools/run_payload.py \
+  --payload /tmp/worker-event.json \
+  --repo-root . \
+  --out /tmp/dndn-out \
+  --max-events 20
+
+aws s3 ls s3://dndn-data-dev-20260304/manual-tests/weekly/manual-weekly-test-001/ --recursive
+aws s3 ls s3://dndn-data-dev-20260304/manual-tests/event/manual-event-test-001/ --recursive
+```
+
+이 테스트로 확인되는 것:
+- 현재 AWS 자격증명 기반 `SELF` 실행 가능 여부
+- CloudTrail 실제 조회 가능 여부
+- Worker 정규화 결과 생성 여부
+- 로컬 raw/normalized 산출물 생성 여부
+- DnDn S3 버킷 업로드 여부
+
+이 테스트로 확인되지 않는 것:
+- 고객 계정 AssumeRole trust policy
+- 고객 계정 권한 정책
+- 고객 환경별 리전/서비스 차이
+
+즉, 이 절차는 **"내 계정으로 Worker 자체가 실제로 도는지"** 를 보는 실동작 테스트입니다.
+
 ---
 
 ## 7. Worker 결과물 구조
@@ -462,6 +568,11 @@ D는 EventBridge, IAM, 배포, 저장 구조와 연동합니다.
 1. `smoke_assume_role.py`
 2. `smoke_cloudtrail.py`
 3. `run_payload.py` with role_arn
+
+### Worker 실동작만 빠르게 확인하고 싶다면
+1. `smoke_assume_role.py --role-arn SELF`
+2. `smoke_cloudtrail.py --role-arn SELF`
+3. 위 `6-4. 실제 AWS 계정으로 SELF 테스트` 절차 실행
 
 ### 주간 점검 확인이 목적이면
 1. WEEKLY payload 생성
