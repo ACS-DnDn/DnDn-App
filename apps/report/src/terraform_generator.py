@@ -309,7 +309,7 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
     text = result["content"][0]["text"]
     clean = text.strip().removeprefix("```json").removesuffix("```").strip()
     try:
-        return json.loads(clean)
+        return json.loads(clean, strict=False)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude 응답 JSON 파싱 실패: {e}\n원문: {clean[:200]}")
 
