@@ -4,6 +4,7 @@ export type DocAction = 'approve' | 'rejected' | null;
 
 export interface Document {
   id: number;
+  docNum?: string;
   name: string;
   author: string;
   date: string;

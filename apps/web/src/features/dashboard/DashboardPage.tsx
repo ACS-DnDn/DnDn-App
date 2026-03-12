@@ -164,7 +164,7 @@ export function DashboardPage() {
             <tbody>
               {recentDocs.map((d) => (
                 <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
-                  <td className="td-num">DnDn-{String(d.id).padStart(4, '0')}</td>
+                  <td className="td-num">{d.docNum ?? String(d.id)}</td>
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{d.type}</td>
                   <td className="td-author">{d.author}</td>

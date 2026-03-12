@@ -92,7 +92,7 @@ export function LoginPage() {
           </form>
         ) : (
           <form className="form" onSubmit={handleChallenge} noValidate>
-            <p className="field-input" style={{ fontSize: '0.85rem', marginBottom: '8px', opacity: 0.7 }}>
+            <p style={{ fontSize: '0.85rem', marginBottom: '8px', opacity: 0.7 }}>
               첫 로그인입니다. 새 비밀번호를 설정해 주세요.
             </p>
             <div className="field">

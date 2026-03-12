@@ -17,6 +17,7 @@ interface ApiDocItem {
 function mapDoc(item: ApiDocItem): Document {
   return {
     id: item.id as unknown as number,
+    docNum: item.docNum,
     name: item.name,
     author: item.author,
     date: item.date,
