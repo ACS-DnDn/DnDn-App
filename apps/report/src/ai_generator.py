@@ -1,8 +1,8 @@
 import json
+import select
 import boto3
 import subprocess
 import threading
-import time
 import os
 import shutil
 import functools
@@ -93,9 +93,11 @@ class AWSDocsMCPClient:
 
     def _read(self) -> dict:
         for _ in range(30):
+            ready, _, _ = select.select([self.proc.stdout], [], [], 0.1)
+            if not ready:
+                continue
             line = self.proc.stdout.readline()
             if not line:
-                time.sleep(0.1)
                 continue
             try:
                 obj = json.loads(line)
