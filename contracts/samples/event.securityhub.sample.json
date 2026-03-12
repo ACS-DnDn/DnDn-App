@@ -78,6 +78,7 @@
       "version": "0.1.0"
     },
     "evidence": {
+      "index_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/raw/index.json",
       "normalized_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/normalized/",
       "raw_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=EVENT/year=2026/month=02/day=26/run_id=01J0SHULID9999/raw/"
     },

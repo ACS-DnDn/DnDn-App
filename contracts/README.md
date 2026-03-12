@@ -94,6 +94,7 @@ WEEKLY / EVENT 공통으로 쓰는 **핵심 normalized 결과 모델 스키마**
 - `extensions`
 
 즉, Worker 결과 JSON의 뼈대는 이 스키마가 결정합니다.
+또한 `meta.evidence` 아래의 artifact pointer 규칙도 이 스키마에 포함됩니다.
 
 ---
 
@@ -215,6 +216,19 @@ EVENT일 경우에는 여기에 `trigger`가 추가됩니다.
 
 즉, `meta`는 결과물의 “송장/표지” 역할을 합니다.
 
+### `meta.evidence`에서 바로 볼 수 있는 것
+- `raw_prefix_s3_uri`
+- `normalized_prefix_s3_uri`
+- `job_payload_s3_uri`
+- `index_s3_uri`
+
+여기서 중요한 건 `index_s3_uri` 입니다.
+이 파일(`raw/index.json`)은 이번 실행에서 생성된 raw/normalized 파일 목록과 각 S3 URI를 모아둔 artifact inventory 입니다.
+
+즉:
+- B(Report)는 경로를 추측하지 말고 `meta.evidence.index_s3_uri` 를 우선 기준으로 쓰는 것이 좋습니다.
+- evidence bundle zip을 만들 때도 이 index를 기준으로 포함 대상을 정하면 됩니다.
+
 ---
 
 ## 5-2. `collection_status`
@@ -253,6 +267,8 @@ EVENT일 경우에는 여기에 `trigger`가 추가됩니다.
 같은 정보를 포함합니다.
 
 즉, `events[]`는 **타임라인 중심 데이터**입니다.
+
+특히 `events[].raw.*_s3_uri` 는 해당 이벤트가 어떤 CloudTrail raw evidence를 근거로 정규화되었는지 보여주는 포인터입니다.
 
 ---
 
@@ -311,6 +327,9 @@ Worker는 Health payload를 받아:
 
 로 확장합니다.
 
+그리고 가능하면 trigger 원문도 `raw/trigger/aws_health_event.json` 으로 저장하고,
+`meta.trigger.raw_event_s3_uri` 로 그 위치를 남깁니다.
+
 즉 contracts는 이미 **AWS Health 이벤트 루트**를 염두에 둔 상태입니다.
 
 ---
@@ -320,6 +339,10 @@ Security Hub Finding 기반 EVENT도 샘플로 제공됩니다.
 
 즉 contracts는 단일 이벤트 소스가 아니라,
 **여러 이벤트 소스를 EVENT라는 공통 구조로 다루는 방향**입니다.
+
+Security Hub도 동일하게 trigger 원문 또는 trigger metadata가
+`raw/trigger/securityhub_finding.json` 으로 저장될 수 있으며,
+결과 JSON에서는 `meta.trigger.raw_event_s3_uri` 로 참조됩니다.
 
 ---
 
@@ -341,10 +364,12 @@ WEEKLY 결과에서는 운영 점검 결과를 `extensions.advisor_checks[]`에 
 ### A(Worker)
 - payload 스키마에 맞는 입력을 받는다
 - 결과 JSON이 schema를 통과하게 만든다
+- raw evidence와 `raw/index.json` 을 일관된 구조로 생성한다
 
 ### B(Report)
 - sample / schema를 보고 문서 생성 로직을 맞춘다
 - `resources[]`, `extensions.*`를 활용한다
+- evidence bundle이 필요하면 `meta.evidence.index_s3_uri` 와 각 raw pointer를 이용해 파일을 수집한다
 
 ### C(API/Front)
 - `job_payload.schema.json` 기준으로 Worker 요청 payload를 만든다
@@ -430,6 +455,16 @@ PY
 즉:
 - `source` = 들어온 채널
 - `logical_source` = 실제 이벤트 의미상 출처
+
+### 10-4. evidence는 한 군데에 다 들어있지 않다
+현재 contracts에서 evidence는 용도별로 분산되어 있습니다.
+
+- 실행 전체 evidence → `meta.evidence`
+- trigger evidence → `meta.trigger.raw_event_s3_uri`
+- 이벤트별 CloudTrail evidence → `events[].raw.*`
+- advisor evidence → `extensions.advisor_checks[].evidence`
+
+그래서 사람이 전체를 한 번에 보려면 `raw/index.json` 을 같이 보는 것이 가장 빠릅니다.
 
 ### 10-2. `NA`와 `FAILED`
 - `NA` = 수집 대상/조건이 맞지 않아 정상적으로 수집 불가
