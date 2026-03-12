@@ -174,20 +174,20 @@ def _detect_event_info(data: dict) -> tuple[str, str]:
             return "SOFTWARE_VULNERABILITY", "SecurityHub"
     except Exception:
         pass
-        # 주간/이벤트 보고서 ai_summary → action_items 카테고리로 서비스 추출
-        ai_summary = data.get("ai_summary", {})
-        if ai_summary:
-            items = ai_summary.get("action_items", [])
-            categories = list(set(i.get("category", "") for i in items if i.get("category")))
-            if categories:
-                return "", " ".join(categories)
-        # events 배열이 있는 경우 (주간 보고서)
-        events = data.get("events", [])
-        if events:
-            first = events[0] if events else {}
-            code = first.get("eventTypeCode", "") or first.get("type", "")
-            service = first.get("service", "")
-            return code, service
+    # 주간/이벤트 보고서 ai_summary → action_items 카테고리로 서비스 추출
+    ai_summary = data.get("ai_summary", {})
+    if ai_summary:
+        items = ai_summary.get("action_items", [])
+        categories = list(set(i.get("category", "") for i in items if i.get("category")))
+        if categories:
+            return "", " ".join(categories)
+    # events 배열이 있는 경우 (주간 보고서)
+    events = data.get("events", [])
+    if events:
+        first = events[0] if events else {}
+        code = first.get("eventTypeCode", "") or first.get("type", "")
+        service = first.get("service", "")
+        return code, service
     return "", ""
 
 
