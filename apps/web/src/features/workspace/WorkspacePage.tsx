@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
-import { getWorkspaces } from '@/services/workspace.service';
-import { getReportSettings } from '@/services/report.service';
+import { getWorkspaces, getOpaSettings, saveOpaSettings } from '@/services/workspace.service';
 import { WS_ICONS, ICON_KEYS } from '@/mocks/data/icons.mock';
 import type { Workspace, IconKey } from '@/mocks/types/workspace';
 import type { OpaCategory, OpaItem, OpaSeverity } from '@/mocks/types/report';
@@ -44,11 +43,14 @@ export function WorkspacePage() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    Promise.all([getWorkspaces(), getReportSettings()]).then(([ws, settings]) => {
-      if (ws.length > 0) setAccount({ ...ws[0]! });
-      setOpaData(JSON.parse(JSON.stringify(settings.opa)));
-      // 기본으로 모든 아이템 접힘
-      const allKeys = settings.opa.flatMap(g => g.items.map(i => i.key));
+    getWorkspaces().then((ws) => {
+      if (ws.length === 0) return;
+      setAccount({ ...ws[0]! });
+      return getOpaSettings(ws[0]!.id);
+    }).then((policies) => {
+      if (!policies) return;
+      setOpaData(JSON.parse(JSON.stringify(policies)));
+      const allKeys = policies.flatMap(g => g.items.map(i => i.key));
       setClosedItems(new Set(allKeys));
     }).catch(console.error);
   }, []);
@@ -207,7 +209,12 @@ export function WorkspacePage() {
                 <div className="opa-title">인프라 정책</div>
                 <div className="opa-desc">생성된 Terraform 코드를 정적 분석하여 자동 검증합니다</div>
               </div>
-              <button className="btn-save-opa" onClick={() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok')} disabled={session.auth !== 'leader'}>설정 저장</button>
+              <button className="btn-save-opa" onClick={() => {
+                if (!account) return;
+                saveOpaSettings(account.id, opaData)
+                  .then(() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok'))
+                  .catch(() => showToast('저장에 실패했습니다.', 'warn'));
+              }} disabled={session.auth !== 'leader'}>설정 저장</button>
             </div>
             <div className="eg-list">
               {opaData.map(g => (
