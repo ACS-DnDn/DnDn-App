@@ -8,7 +8,8 @@ import time
 from typing import Any
 from github import Github
 
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
+# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
 REGION = os.getenv("AWS_REGION", "us-east-1")
 
 def _find_uvx() -> str:
