@@ -33,8 +33,8 @@ export function DocumentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 읽음/선택 상태
-  const [readIds, setReadIds] = useState<Set<number>>(() => new Set());
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   // 날짜 피커 상태
   const [pickStart, setPickStart] = useState<string | null>(null);
@@ -91,7 +91,7 @@ export function DocumentsPage() {
   const resetPage = useCallback(() => setCurrentPage(1), []);
 
   // 체크박스 핸들러
-  const toggleSelect = (id: number, checked: boolean) => {
+  const toggleSelect = (id: string, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       checked ? next.add(id) : next.delete(id);

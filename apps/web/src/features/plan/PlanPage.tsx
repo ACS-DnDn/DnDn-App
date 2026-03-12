@@ -110,7 +110,7 @@ export function PlanPage() {
   useEffect(() => {
     const refDocId = searchParams.get('refDocId');
     if (!refDocId) return;
-    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId, 10));
+    const doc = ALL_DOCS.find(d => d.id === refDocId);
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;

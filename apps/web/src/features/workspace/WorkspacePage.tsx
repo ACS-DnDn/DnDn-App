@@ -37,6 +37,7 @@ export function WorkspacePage() {
   // OPA
   const [opaData, setOpaData] = useState<OpaCategory[]>([]);
   const [closedItems, setClosedItems] = useState<Set<string>>(() => new Set());
+  const [fetchError, setFetchError] = useState(false);
 
   // 토스트
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'warn' } | null>(null);
@@ -52,7 +53,10 @@ export function WorkspacePage() {
       setOpaData(JSON.parse(JSON.stringify(policies)));
       const allKeys = policies.flatMap(g => g.items.map(i => i.key));
       setClosedItems(new Set(allKeys));
-    }).catch(console.error);
+    }).catch(err => {
+      console.error(err);
+      setFetchError(true);
+    });
   }, []);
 
   // 아이콘 피커 외부 클릭
@@ -146,7 +150,11 @@ export function WorkspacePage() {
         {/* 일반 섹션 */}
         {section === 'general' && (
           <>
-            {!account ? (
+            {fetchError ? (
+              <div className="empty-state">
+                <div className="empty-title">워크스페이스 정보를 불러오지 못했습니다.</div>
+              </div>
+            ) : !account ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

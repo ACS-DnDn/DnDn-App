@@ -12,11 +12,12 @@ interface ApiDocItem {
   status: string;
   action: string | null;
   isRead: boolean;
+  workspace?: string;
 }
 
 function mapDoc(item: ApiDocItem): Document {
   return {
-    id: item.id as unknown as number,
+    id: item.id,
     docNum: item.docNum,
     name: item.name,
     author: item.author,
@@ -25,7 +26,7 @@ function mapDoc(item: ApiDocItem): Document {
     status: item.status as Document['status'],
     action: item.action as Document['action'],
     icon: '📄',
-    workspace: '',
+    workspace: item.workspace ?? '',
   };
 }
 
@@ -58,22 +59,24 @@ export async function getDocuments(params?: {
 
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
-    const res = await apiFetch<{ id: string; title: string; type: string; status: string; author?: { name: string } }>(
-      `/documents/${id}`
-    );
+    const res = await apiFetch<{
+      id: string; title: string; type: string; status: string;
+      author?: { name: string }; date?: string; workspace?: string;
+    }>(`/documents/${id}`);
     return {
-      id: res.id as unknown as number,
+      id: res.id,
       name: res.title,
       author: res.author?.name ?? '',
-      date: '',
+      date: res.date ?? '',
       type: res.type as Document['type'],
       status: res.status as Document['status'],
       action: null,
       icon: '📄',
-      workspace: '',
+      workspace: res.workspace ?? '',
     };
-  } catch {
-    return undefined;
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('API 404')) return undefined;
+    throw err;
   }
 }
 

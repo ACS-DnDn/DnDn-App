@@ -28,7 +28,7 @@ export function PendingPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   // 날짜 피커
   const [pickStart, setPickStart] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function PendingPage() {
 
   const resetPage = useCallback(() => setCurrentPage(1), []);
 
-  const toggleSelect = (id: number, checked: boolean) => {
+  const toggleSelect = (id: string, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       checked ? next.add(id) : next.delete(id);

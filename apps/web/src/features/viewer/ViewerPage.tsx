@@ -127,13 +127,17 @@ export function ViewerPage() {
   const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
   const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
   const [docNotFound, setDocNotFound] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     if (!id) { setDocNotFound(true); return; }
+    setDoc(undefined);
+    setDocNotFound(false);
+    setFetchError(false);
     getDocumentById(id).then(result => {
       if (result) setDoc(result);
       else setDocNotFound(true);
-    }).catch(() => setDocNotFound(true));
+    }).catch(() => setFetchError(true));
   }, [id]);
 
   /* 패널 탭 */
@@ -152,6 +156,7 @@ export function ViewerPage() {
   const [rejectReason, setRejectReason] = useState('');
 
   if (docNotFound) return <Navigate to="/documents" replace />;
+  if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
   if (!doc) return null;
 
   const docContent = getDocContent();
