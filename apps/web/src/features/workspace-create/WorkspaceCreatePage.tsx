@@ -47,6 +47,7 @@ export function WorkspaceCreatePage() {
   const [branchList, setBranchList] = useState<{ name: string; isDefault: boolean }[]>([]);
 
   // Step 3: Profile
+  const [creating, setCreating] = useState(false);
   const [alias, setAlias] = useState('');
   const [memo, setMemo] = useState('');
   const [selectedIcon, setSelectedIcon] = useState<IconKey>('cloud');
@@ -91,7 +92,7 @@ export function WorkspaceCreatePage() {
         body: JSON.stringify({ acctId: clean }),
       });
       if (data.success) {
-        window.open(data.data.url, '_blank');
+        window.open(data.data?.url, '_blank');
       } else {
         showToast(data.error?.message || 'URL 생성 실패');
       }
@@ -113,7 +114,9 @@ export function WorkspaceCreatePage() {
         body: JSON.stringify({ acctId: clean }),
       });
       setAwsTesting(false);
-      if (data.data?.success) {
+      if (!data.success) {
+        setAwsError(data.data?.error || '연동 실패 — 스택 생성을 먼저 완료하세요.');
+      } else if (data.data?.success) {
         setAwsTested(true);
         setAwsError('');
       } else {
@@ -130,6 +133,7 @@ export function WorkspaceCreatePage() {
     setGhConnecting(true);
     try {
       const res = await fetch(`${BASE_URL}/github/auth-url`);
+      if (!res.ok) { showToast('GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
       const data = await res.json();
       if (!data.success) { showToast(data.error?.message || 'GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
 
@@ -170,6 +174,7 @@ export function WorkspaceCreatePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, state }),
         });
+        if (!exRes.ok) { showToast('GitHub 토큰 교환 실패'); setGhConnecting(false); return; }
         const exData = await exRes.json();
         if (!exData.success) { showToast(exData.error?.message || 'GitHub 토큰 교환 실패'); setGhConnecting(false); return; }
 
@@ -180,6 +185,7 @@ export function WorkspaceCreatePage() {
 
         // 조직 목록 자동 로드
         const orgRes = await fetch(`${BASE_URL}/github/orgs`, { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
+        if (!orgRes.ok) { return; }
         const orgData = await orgRes.json();
         if (orgData.success) {
           // 본인 계정도 포함
@@ -252,6 +258,8 @@ export function WorkspaceCreatePage() {
   };
 
   const createWorkspace = async () => {
+    if (creating) return;
+    setCreating(true);
     const ws = {
       alias: alias.trim() || 'Workspace-' + acctId.replace(/\D/g, '').slice(-4),
       acctId: acctId.replace(/\D/g, ''),
@@ -263,11 +271,12 @@ export function WorkspaceCreatePage() {
         method: 'POST',
         body: JSON.stringify(ws),
       });
-      if (!data.success) { showToast(data.error?.message || '생성 실패'); return; }
+      if (!data.success) { showToast(data.error?.message || '생성 실패'); setCreating(false); return; }
       showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
       navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
     } catch {
       showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
+      setCreating(false);
     }
   };
 
@@ -439,7 +448,7 @@ export function WorkspaceCreatePage() {
         {/* 하단 버튼 */}
         <div className="wizard-foot">
           <button className="btn-wiz btn-prev" onClick={prevStep}>{step === 0 ? '취소' : '이전'}</button>
-          <button className="btn-wiz btn-next" onClick={nextStep}>{step === 2 ? '생성' : '다음'}</button>
+          <button className="btn-wiz btn-next" onClick={nextStep} disabled={step === 2 && creating}>{step === 2 ? (creating ? '생성 중…' : '생성') : '다음'}</button>
         </div>
       </div>
       {toast && createPortal(<div className={`wsc-toast ${toast.type}`} role={toast.type === 'warn' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>, document.body)}
