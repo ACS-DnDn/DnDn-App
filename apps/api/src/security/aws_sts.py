@@ -31,6 +31,7 @@ ROLE_NAME = os.getenv("STS_ROLE_NAME", "DnDnOpsAgentRole")
 EXTERNAL_ID = _require_env("STS_EXTERNAL_ID")
 PLATFORM_ACCOUNT_ID = _require_env("PLATFORM_ACCOUNT_ID")
 CFN_TEMPLATE_URL = _require_env("CFN_TEMPLATE_URL")
+EVENT_BUS_ARN = _require_env("EVENT_BUS_ARN")
 SESSION_NAME = "dndn-test-session"
 
 _ACCT_ID_RE = re.compile(r"^\d{12}$")
@@ -81,6 +82,8 @@ def get_cfn_link(acct_id: str) -> CfnLinkResult:
         "stackName": "DnDn-OpsAgent",
         "param_DnDnPlatformAccountId": PLATFORM_ACCOUNT_ID,
         "param_ExternalId": EXTERNAL_ID,
+        "param_DnDnEventBusArn": EVENT_BUS_ARN,
+        "param_EnableEventForwarding": "true",
     }
     url = (
         f"https://{REGION}.console.aws.amazon.com/cloudformation/home"

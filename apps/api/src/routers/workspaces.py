@@ -19,9 +19,10 @@ from apps.api.src.schemas.workspaces import (
     OpaSettingsRequest,
     OpaSettingsSavedResponse,
 )
-from apps.api.src.schemas.aws import AwsTestRequest, AwsTestResponse
+from apps.api.src.schemas.aws import AwsTestRequest, AwsTestResponse, CfnLinkRequest, CfnLinkResponse
 from apps.api.src.security.aws_sts import (
     test_assume_role,
+    get_cfn_link,
     StsValidationError,
 )
 
@@ -186,7 +187,30 @@ async def save_opa_settings(
 
 
 # ---------------------------------------------------------
-# 5. AWS 연동 테스트 (POST /workspaces/test-aws)
+# 5. CFN Quick-create URL 생성 (POST /workspaces/cfn-link)
+# ---------------------------------------------------------
+@router.post("/cfn-link", response_model=SuccessResponse[CfnLinkResponse])
+async def get_cfn_quick_link(
+    req: CfnLinkRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    고객이 자신의 AWS 계정에 OpsAgent 스택을 설치할 수 있는
+    CloudFormation Quick-create URL을 반환한다.
+    Step 1 — 역할 생성 버튼 클릭 시 호출.
+    """
+    try:
+        result = get_cfn_link(req.acctId)
+    except StsValidationError:
+        raise HTTPException(status_code=400, detail="BAD_REQUEST") from None
+
+    return SuccessResponse(
+        data=CfnLinkResponse(url=result.url, acctId=result.acct_id)
+    )
+
+
+# ---------------------------------------------------------
+# 7. AWS 연동 테스트 (POST /workspaces/test-aws)
 # ---------------------------------------------------------
 @router.post("/test-aws", response_model=SuccessResponse[AwsTestResponse])
 async def test_aws_connection(
@@ -215,7 +239,7 @@ async def test_aws_connection(
 
 
 # ---------------------------------------------------------
-# 6. 워크스페이스 생성 (POST /workspaces)
+# 8. 워크스페이스 생성 (POST /workspaces)
 # ---------------------------------------------------------
 @router.post(
     "",
