@@ -1,68 +1,118 @@
-import { createContext, useState, useEffect, type ReactNode } from 'react';
-import type { Session } from '@/mocks';
-import { session as mockSession } from '@/mocks';
+import { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiFetch } from '@/services/api';
+import type { Session, AuthRole } from '@/mocks';
+
+interface ApiMeResponse {
+  success: boolean;
+  data: { name: string; role: string; company: { name: string; logoUrl: string } };
+}
+
+interface ApiLoginData {
+  accessToken: string;
+  refreshToken: string;
+  idToken: string;
+  expiresIn: number;
+}
+
+interface ApiChallengeData {
+  challenge: string;
+  session: string;
+}
+
+export type LoginResult =
+  | { type: 'success' }
+  | { type: 'challenge'; session: string };
 
 interface AuthContextValue {
-  session: Session;
-  isAuthenticated: boolean;
-  logout: () => void;
+  session: Session | null;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  challenge: (email: string, newPassword: string, session: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue>({
-  session: mockSession,
-  isAuthenticated: false,
-  logout: () => {},
+  session: null,
+  isLoading: true,
+  login: async () => ({ type: 'success' }),
+  challenge: async () => {},
+  logout: async () => {},
 });
 
-interface MeResponse {
-  success: boolean;
-  data: {
-    username: string;
-    email: string;
-    name: string | null;
+function roleToAuth(role: string): AuthRole {
+  if (role === 'leader' || role === 'admin') return 'leader';
+  if (role === 'auditor') return 'auditor';
+  return 'user';
+}
+
+function saveTokens(data: ApiLoginData) {
+  localStorage.setItem('dndn-access-token', data.accessToken);
+  localStorage.setItem('dndn-refresh-token', data.refreshToken);
+  localStorage.setItem('dndn-id-token', data.idToken);
+}
+
+function clearTokens() {
+  localStorage.removeItem('dndn-access-token');
+  localStorage.removeItem('dndn-refresh-token');
+  localStorage.removeItem('dndn-id-token');
+}
+
+async function fetchMe(): Promise<Session> {
+  const res = await apiFetch<ApiMeResponse>('/auth/me');
+  const { name, role, company } = res.data;
+  return {
+    name,
+    role,
+    auth: roleToAuth(role),
+    company: { name: company.name, logoUrl: company.logoUrl, logoDarkUrl: company.logoUrl },
   };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>(mockSession);
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => !!localStorage.getItem('dndn-access-token'),
-  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // 앱 초기화 — 저장된 토큰으로 세션 복원
   useEffect(() => {
     const token = localStorage.getItem('dndn-access-token');
-    if (!token) return;
-
-    apiFetch<MeResponse>('/auth/me')
-      .then((res) => {
-        setSession({
-          name: res.data.name ?? res.data.username,
-          role: '',
-          auth: 'user',
-          company: mockSession.company,
-        });
-        setIsAuthenticated(true);
-      })
-      .catch(() => {
-        // 토큰 만료 등 — 로그아웃 처리
-        localStorage.removeItem('dndn-access-token');
-        localStorage.removeItem('dndn-refresh-token');
-        localStorage.removeItem('dndn-id-token');
-        setIsAuthenticated(false);
-      });
+    if (!token) { setIsLoading(false); return; }
+    fetchMe()
+      .then(setSession)
+      .catch(clearTokens)
+      .finally(() => setIsLoading(false));
   }, []);
 
-  function logout() {
-    apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
-    localStorage.removeItem('dndn-access-token');
-    localStorage.removeItem('dndn-refresh-token');
-    localStorage.removeItem('dndn-id-token');
-    setIsAuthenticated(false);
-  }
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const res = await apiFetch<{ success: boolean; data: ApiLoginData | ApiChallengeData }>(
+      '/auth/login',
+      { method: 'POST', body: JSON.stringify({ email, password }) },
+    );
+    const data = res.data;
+    if ('challenge' in data) {
+      return { type: 'challenge', session: data.session };
+    }
+    saveTokens(data as ApiLoginData);
+    setSession(await fetchMe());
+    return { type: 'success' };
+  }, []);
+
+  const challenge = useCallback(async (email: string, newPassword: string, sess: string) => {
+    const res = await apiFetch<{ success: boolean; data: ApiLoginData }>(
+      '/auth/challenge',
+      { method: 'POST', body: JSON.stringify({ email, newPassword, session: sess }) },
+    );
+    saveTokens(res.data);
+    setSession(await fetchMe());
+  }, []);
+
+  const logout = useCallback(async () => {
+    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+    clearTokens();
+    setSession(null);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ session, isAuthenticated, logout }}>
+    <AuthContext.Provider value={{ session, isLoading, login, challenge, logout }}>
       {children}
     </AuthContext.Provider>
   );
