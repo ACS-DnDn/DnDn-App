@@ -161,7 +161,19 @@ EVENT의 `trigger` 는 단순 메타데이터일 수도 있고,
 Worker는 가능한 경우 이 trigger 내용을 `raw/trigger/*.json` 으로 저장하고
 `meta.trigger.raw_event_s3_uri` 를 결과에 남깁니다.
 
-### 4-2. SELF 모드
+### 4-2. 에러 모델 / retryable
+Worker는 실행 결과와 예외에 `retryable` 기준을 명시합니다.
+
+- 실행 결과: `WorkerExecutionResult`
+- 실행 예외: `WorkerExecutionError`
+
+원칙:
+- `retryable=False` 이면 consumer는 메시지를 delete
+- `retryable=True` 이면 consumer는 메시지를 남겨 재시도
+- validation 실패는 `INVALID_PAYLOAD`, `retryable=False`
+- S3 업로드 실패는 `S3_PUT_FAILED`, `retryable=True`
+
+### 4-3. SELF 모드
 개발 단계에서는 `assume_role.role_arn = "SELF"` 로 두면,
 AssumeRole 없이 현재 로컬 AWS 자격증명을 그대로 사용합니다.
 
@@ -170,7 +182,14 @@ AssumeRole 없이 현재 로컬 AWS 자격증명을 그대로 사용합니다.
 - 스키마/정규화 테스트
 - 실제 고객 계정 없이 구조 확인
 
-### 4-3. AssumeRole 모드
+### 4-4. 멱등성 기준
+같은 `run_id`가 다시 들어오면 로컬 `out/<run_id>/normalized/{canonical|event}.json` 존재 여부를 먼저 확인합니다.
+
+- 이미 결과 파일이 있으면 재수집하지 않고 `already_processed=True` 로 즉시 반환
+- 즉, 동일 worker 인스턴스/볼륨 기준에서는 `run_id` 재처리를 막습니다
+- 분산 환경 전역 멱등성(S3/DB 락 기반)은 후속 운영 설계 범위입니다
+
+### 4-5. AssumeRole 모드
 운영/실전에서는 보통 고객 계정의 Read-only Role을 AssumeRole 해서 수집합니다.
 
 Worker는 구조적으로 아래 두 세션을 분리합니다.
@@ -281,9 +300,9 @@ consumer 동작:
 - JSON 파싱
 - payload schema 검증
 - `run_job_from_payload(...)` 호출
-- 성공 시 delete
-- JSON 파싱 실패 / schema validation 실패 시 delete
-- 그 외 실행 오류는 delete 하지 않고 예외로 남김
+- `retryable=False` 결과/예외면 delete
+- `retryable=True` 예외면 delete 하지 않고 재시도 대상으로 남김
+- 같은 `run_id` 재수신으로 `already_processed=True` 가 오면 delete
 
 ### 6-5. 실제 AWS 계정으로 SELF 테스트
 고객 계정 AssumeRole 전 단계에서 Worker 기능 자체를 검증하려면,

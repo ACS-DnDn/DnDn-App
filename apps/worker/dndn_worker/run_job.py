@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -22,6 +23,30 @@ except ImportError:  # pragma: no cover
 
 
 KST_TZ = "Asia/Seoul"
+
+
+@dataclass(frozen=True)
+class WorkerExecutionResult:
+    run_id: str
+    result_path: Path
+    job_type: str
+    retryable: bool = False
+    already_processed: bool = False
+    error_code: Optional[str] = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error_code is None
+
+
+class WorkerExecutionError(Exception):
+    def __init__(self, error_code: str, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.retryable = retryable
+
+    def __str__(self) -> str:
+        return f"{self.error_code}: {super().__str__()}"
 
 
 def _json_default(o):
@@ -1502,12 +1527,16 @@ def _contract_paths(repo_root: Path) -> Tuple[Path, Path, Path]:
     return payload_schema, canonical_schema, event_schema
 
 
+def _result_path_for_job(job_dir: Path, job_type: str) -> Path:
+    return job_dir / "normalized" / ("event.json" if job_type == "EVENT" else "canonical.json")
+
+
 def run_job_from_payload(
     payload: Dict[str, Any],
     repo_root: Path,
     out_root: Path,
     max_cloudtrail_events: int = 500,
-) -> Path:
+) -> WorkerExecutionResult:
     """
     End-to-end runner:
       payload dict -> raw/ -> normalized/{canonical|event}.json
@@ -1516,7 +1545,14 @@ def run_job_from_payload(
     payload_schema, canonical_schema, event_schema = _contract_paths(repo_root)
 
     payload = dict(payload)
-    validate_with_schema(payload, payload_schema)
+    try:
+        validate_with_schema(payload, payload_schema)
+    except ValueError as exc:
+        raise WorkerExecutionError(
+            "INVALID_PAYLOAD",
+            str(exc),
+            retryable=False,
+        ) from exc
 
     run_id = payload.get("run_id") or ("run-" + _sha256_bytes(os.urandom(16))[:12])
     payload["run_id"] = run_id
@@ -1526,6 +1562,15 @@ def run_job_from_payload(
     job_dir = out_root / run_id
     raw_dir = job_dir / "raw"
     norm_dir = job_dir / "normalized"
+    result_path = _result_path_for_job(job_dir, job_type)
+    if result_path.exists():
+        return WorkerExecutionResult(
+            run_id=run_id,
+            result_path=result_path,
+            job_type=job_type,
+            already_processed=True,
+        )
+
     _ensure_dir(raw_dir / "meta")
     _ensure_dir(norm_dir)
 
@@ -1586,7 +1631,11 @@ def run_job_from_payload(
             result_obj["extensions"]["upload"] = upload_status
             dump_json(result_path, result_obj)
             if strict_upload:
-                raise RuntimeError(f"S3 업로드 실패: {upload_err}") from upload_err
+                raise WorkerExecutionError(
+                    "S3_PUT_FAILED",
+                    f"S3 업로드 실패: {upload_err}",
+                    retryable=True,
+                ) from upload_err
             return result_path
 
         result_obj["extensions"]["upload"] = upload_status
@@ -1598,7 +1647,11 @@ def run_job_from_payload(
             result_obj["extensions"]["upload_sync_warning"] = str(sync_err)
             dump_json(result_path, result_obj)
             if strict_upload:
-                raise RuntimeError(f"최종 normalized 결과 동기화 실패: {sync_err}") from sync_err
+                raise WorkerExecutionError(
+                    "S3_PUT_FAILED",
+                    f"최종 normalized 결과 동기화 실패: {sync_err}",
+                    retryable=True,
+                ) from sync_err
 
         return result_path
 
@@ -1627,7 +1680,6 @@ def run_job_from_payload(
             f"{code}: {e}",
             retryable=False,
         )
-        result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
         failed_result = {
             "meta": build_meta(payload, resolve_time_range(payload)),
             "collection_status": collection_status,
@@ -1638,7 +1690,14 @@ def run_job_from_payload(
                 "note": "assume_role failed; no further collection",
             },
         }
-        return _finalize_result(result_path, failed_result, strict_upload=False)
+        finalized_path = _finalize_result(result_path, failed_result, strict_upload=False)
+        return WorkerExecutionResult(
+            run_id=run_id,
+            result_path=finalized_path,
+            job_type=job_type,
+            retryable=False,
+            error_code="ASSUME_ROLE_FAILED",
+        )
 
     # 2) Resolve time range
     time_range = resolve_time_range(payload)
@@ -1753,8 +1812,15 @@ def run_job_from_payload(
         collection_status["normalized"] = _stage_failed("SCHEMA_VALIDATION_FAILED", str(e), retryable=False)
         result["extensions"]["schema_error"] = str(e)
 
-    result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
-    return _finalize_result(result_path, result, strict_upload=True)
+    finalized_path = _finalize_result(result_path, result, strict_upload=True)
+    normalized_status = collection_status["normalized"]
+    return WorkerExecutionResult(
+        run_id=run_id,
+        result_path=finalized_path,
+        job_type=job_type,
+        retryable=bool(normalized_status.get("retryable", False)),
+        error_code=normalized_status.get("error_code"),
+    )
 
 
 def run_job_from_payload_file(
@@ -1762,7 +1828,7 @@ def run_job_from_payload_file(
     repo_root: Path,
     out_root: Path,
     max_cloudtrail_events: int = 500,
-) -> Path:
+) -> WorkerExecutionResult:
     """
     Thin file wrapper for local/CLI execution.
     """
