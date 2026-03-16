@@ -12,7 +12,7 @@ load_dotenv()
 
 from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
 from .terraform_generator import generate_terraform_code
-from .s3_client import save_result, save_report, list_reports, get_report
+from .s3_client import save_result, save_report_html, list_reports, get_report, get_workplan
 
 logger = logging.getLogger(__name__)
 
@@ -33,35 +33,44 @@ app.add_middleware(
 )
 
 
-class CanonicalRequest(BaseModel):
-    canonical: dict[str, Any]
+class ReportRequest(BaseModel):
+    workspace_id: str = "default"
+    target: str = ""
+    content: str = ""
+    ref_doc_ids: list[str] = []
+    account_id: str = "default"
 
 
-class HealthEventRequest(BaseModel):
-    raw: dict[str, Any]   # AWS Health EventBridge raw JSON
-
-
-class DocBasedWorkPlanRequest(BaseModel):
-    source_doc: dict[str, Any]   # 이벤트 보고서 or 주간 보고서 canonical
+WorkPlanRequest = ReportRequest  # alias
 
 
 class TerraformRequest(BaseModel):
-    workplan: dict[str, Any]
+    job_id: str | None = None
+    workplan: dict[str, Any] | None = None  # 직접 전달 (하위 호환)
     repo_name: str | None = None
     github_token: str | None = None
 
 
 class SaveRequest(BaseModel):
     account_id: str = "default"
-    workplan: dict[str, Any]
+    job_id: str | None = None
     html: str = ""
-    terraform_files: list[dict[str, str]]  # [{ name, code }]
+    terraform_files: list[dict[str, str]] = []
 
 
-class ReportSaveRequest(BaseModel):
-    account_id: str = "default"
+class RenderRequest(BaseModel):
     doc_id: str
-    data: dict[str, Any]
+    account_id: str = "default"
+
+
+async def _merge_context(ref_doc_ids: list[str], account_id: str) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for doc_id in ref_doc_ids:
+        try:
+            merged.update(await asyncio.to_thread(get_report, doc_id, account_id))
+        except Exception:
+            pass
+    return merged
 
 
 # ── 보고서 목록 조회 ───────────────────────────────────────
@@ -88,10 +97,11 @@ async def get_report_api(doc_id: str, account_id: str = "default"):
 
 # ── 이벤트 보고서 ──────────────────────────────────────────
 @app.post("/api/report/event")
-async def event_report(req: CanonicalRequest):
+async def event_report(req: ReportRequest):
+    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     try:
-        result = await asyncio.to_thread(generate_event_report, req.canonical)
-        return {"ok": True, "data": result}
+        html = await asyncio.to_thread(generate_event_report, req.target, req.content, ctx)
+        return {"ok": True, "data": html}
     except Exception as e:
         logger.error("event_report 오류: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="내부 서버 오류")
@@ -99,10 +109,11 @@ async def event_report(req: CanonicalRequest):
 
 # ── Health 이벤트 보고서 ───────────────────────────────────
 @app.post("/api/report/health-event")
-async def health_event_report(req: HealthEventRequest):
+async def health_event_report(req: ReportRequest):
+    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     try:
-        result = await asyncio.to_thread(generate_health_event_report, req.raw)
-        return {"ok": True, "data": result}
+        html = await asyncio.to_thread(generate_health_event_report, req.target, req.content, ctx)
+        return {"ok": True, "data": html}
     except Exception as e:
         logger.error("health_event_report 오류: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="내부 서버 오류")
@@ -110,24 +121,33 @@ async def health_event_report(req: HealthEventRequest):
 
 # ── 주간 보고서 ────────────────────────────────────────────
 @app.post("/api/report/weekly")
-async def weekly_report(req: CanonicalRequest):
+async def weekly_report(req: ReportRequest):
+    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     try:
-        result = await asyncio.to_thread(generate_weekly_report, req.canonical)
-        return {"ok": True, "data": result}
+        html = await asyncio.to_thread(generate_weekly_report, req.target, req.content, ctx)
+        return {"ok": True, "data": html}
     except Exception as e:
         logger.error("weekly_report 오류: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
-# ── 작업계획서 (문서 기반) ──────────────────────────────────
+# ── 작업계획서 생성 (target + content + refDocIds → HTML) ──
 @app.post("/api/report/workplan")
-async def work_plan(req: DocBasedWorkPlanRequest):
+async def work_plan(req: WorkPlanRequest):
+    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     try:
-        result = await asyncio.to_thread(generate_work_plan, req.source_doc)
-        return {"ok": True, "data": result}
+        html = await asyncio.to_thread(generate_work_plan, req.target, req.content, ctx)
     except Exception as e:
-        logger.error("work_plan 오류: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="내부 서버 오류")
+        logger.error("work_plan AI 생성 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="계획서 생성 실패")
+
+    try:
+        meta = {"target": req.target, "content": req.content}
+        result = await asyncio.to_thread(save_result, req.account_id, meta, html, [])
+        return {"ok": True, "data": {**result, "html": html}}
+    except Exception as e:
+        logger.error("work_plan 저장 오류: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="계획서 저장 실패")
 
 
 # ── 테라폼 코드 생성 ───────────────────────────────────────
@@ -136,9 +156,21 @@ async def terraform_generate(req: TerraformRequest):
     repo = req.repo_name or GITHUB_REPO
     if not repo:
         raise HTTPException(status_code=400, detail="GITHUB_REPO 환경변수가 설정되지 않았습니다.")
+
+    if req.job_id:
+        try:
+            workplan = await asyncio.to_thread(get_workplan, req.job_id)
+        except Exception as e:
+            logger.error("terraform: workplan 조회 실패: %s", e, exc_info=True)
+            raise HTTPException(status_code=404, detail="작업계획서를 찾을 수 없습니다.")
+    elif req.workplan:
+        workplan = req.workplan
+    else:
+        raise HTTPException(status_code=400, detail="job_id 또는 workplan 중 하나는 필수입니다.")
+
     try:
         token = req.github_token or GITHUB_TOKEN
-        fn = partial(generate_terraform_code, req.workplan, repo, token)
+        fn = partial(generate_terraform_code, workplan, repo, token)
         result = await asyncio.to_thread(fn)
         return {"ok": True, "data": result}
     except Exception as e:
@@ -150,12 +182,41 @@ async def terraform_generate(req: TerraformRequest):
 async def save_to_s3(req: SaveRequest):
     try:
         result = await asyncio.to_thread(
-            save_result, req.account_id, req.workplan, req.html, req.terraform_files
+            save_result, req.account_id, {}, req.html, req.terraform_files, req.job_id
         )
         return {"ok": True, "data": result}
     except Exception as e:
         logger.error("save 오류: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="내부 서버 오류")
+
+
+# ── 보고서 HTML 자동 렌더 (Lambda → S3 JSON 저장 후 호출) ──────
+@app.post("/api/report/render")
+async def render_report(req: RenderRequest):
+    """S3 canonical JSON 읽기 → AI HTML 보고서 생성 → HTML 저장 → html_key 반환"""
+    try:
+        canonical = await asyncio.to_thread(get_report, req.doc_id, req.account_id)
+    except Exception as e:
+        logger.error("render_report: canonical 조회 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=404, detail="canonical JSON을 찾을 수 없습니다.")
+
+    try:
+        meta_type = canonical.get("meta", {}).get("type", "EVENT")
+        if meta_type == "WEEKLY":
+            fn = partial(generate_weekly_report, "", "", canonical)
+        else:
+            fn = partial(generate_event_report, "", "", canonical)
+        html = await asyncio.to_thread(fn)
+    except Exception as e:
+        logger.error("render_report: AI 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
+
+    try:
+        html_key = await asyncio.to_thread(save_report_html, req.doc_id, html, req.account_id)
+        return {"ok": True, "data": {"doc_id": req.doc_id, "html_key": html_key}}
+    except Exception as e:
+        logger.error("render_report: HTML 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="HTML 저장 실패")
 
 
 @app.get("/health")

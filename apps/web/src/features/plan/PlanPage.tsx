@@ -12,8 +12,6 @@ const TF_FILES = [
   { name: 'main.tf', code: '# Terraform 코드 생성 버튼을 눌러 코드를 생성하세요.' },
 ];
 
-const REPORT_API_BASE = import.meta.env.VITE_REPORT_API_BASE ?? 'http://localhost:8000';
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
 
 interface Approver { name: string; rank: string; type: string; }
 interface PendingApprover { name: string; rank: string; type: string; }
@@ -43,7 +41,7 @@ export function PlanPage() {
   const [docState, setDocState] = useState<'blank' | 'loading' | 'ready'>('blank');
   const docTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [docId] = useState(() => Date.now());
+  const [jobId, setJobId] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [isSaving, setIsSaving] = useState(false);
@@ -59,10 +57,8 @@ export function PlanPage() {
   const validationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   /* ── API 연동 state ── */
-  const [workplanData, setWorkplanData] = useState<Record<string, unknown> | null>(null);
   const [iframeSrcdoc, setIframeSrcdoc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
-  const [canonicalMap, setCanonicalMap] = useState<Record<string, Record<string, unknown>>>({});
   const logPanelRef = useRef<HTMLDivElement>(null);
 
   /* ── approver popup state ── */
@@ -208,158 +204,11 @@ export function PlanPage() {
       return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
     setDocPopupOpen(false);
-    try {
-      const res = await fetch(`${REPORT_API_BASE}/api/reports/${d.no}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.ok) setCanonicalMap(prev => ({ ...prev, [d.no]: json.data }));
-      }
-    } catch {
-      // canonical 없이 진행 (작업 내용 직접 입력으로 대체)
-    }
   }
 
   /* ══════════════════════════════
      계획서 생성
   ══════════════════════════════ */
-  function renderWorkplanHtml(wp: Record<string, unknown>): string {
-    const esc = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const title = esc(wp.title ?? '작업계획서');
-    const reason = esc(wp.reason ?? '');
-    const resource = esc(wp.resource ?? '');
-    const accountId = esc(wp.account_id ?? '');
-    const scheduledAt = esc(wp.scheduled_at ?? '');
-    const assignee = esc(wp.assignee ?? 'devops@dndn');
-    type Step = { name: string; description: string; executor?: string; assignee?: string };
-    type BA = { item: string; before: string; after: string };
-    type Risk = { item: string; level: string; description: string };
-    type Rollback = { trigger?: string; method?: string; estimated_time?: string; assignee?: string };
-    const steps = (wp.steps as Step[]) ?? [];
-    const beforeAfter = (wp.before_after as BA[]) ?? [];
-    const risks = (wp.risks as Risk[]) ?? [];
-    const rollback = (wp.rollback as Rollback) ?? {};
-    const NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
-    const riskClass = (level: string) => level === 'HIGH' ? 'r-hi' : level === 'MEDIUM' ? 'r-mid' : 'r-low';
-    const riskLabel = (level: string) => level === 'HIGH' ? '상' : level === 'MEDIUM' ? '중' : '하';
-
-    const today = new Date();
-    const docDate = `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
-
-    return `<!DOCTYPE html>
-<html lang="ko"><head><meta charset="utf-8"/>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:13px;line-height:1.65;color:#1a1a1a;background:#fff;}
-.doc{background:#fff;max-width:860px;margin:0 auto;padding:36px 44px 52px;}
-.doc-header{display:flex;flex-direction:column;gap:10px;padding-bottom:10px;border-bottom:3px solid #1f3864;margin-bottom:20px;}
-.doc-header-top{display:flex;justify-content:space-between;align-items:center;}
-.doc-header-title{font-size:21px;font-weight:800;color:#1f3864;text-align:center;line-height:1.4;}
-.doc-header-meta{text-align:right;font-size:11px;color:#666;line-height:1.75;}
-.section{margin-bottom:20px;}
-.section-title{background:#1f3864;color:#fff;font-size:12.5px;font-weight:700;padding:6px 12px;letter-spacing:.3px;margin-bottom:7px;}
-.tbl-info{width:100%;border-collapse:collapse;border:1px solid #bbb;margin-bottom:0;}
-.tbl-info th{padding:7px 11px;background:#d4dae6;font-size:12.5px;font-weight:600;color:#1f3864;text-align:center;border:1px solid #bbb;white-space:nowrap;vertical-align:middle;width:110px;}
-.tbl-info td{padding:7px 11px;border:1px solid #bbb;color:#1a1a1a;vertical-align:middle;font-size:12.5px;}
-.tbl{width:100%;border-collapse:collapse;border:1px solid #bbb;font-size:12.5px;}
-.tbl th{padding:7px 11px;background:#d4dae6;font-weight:600;color:#1f3864;border:1px solid #bbb;text-align:center;vertical-align:middle;white-space:nowrap;}
-.tbl td{padding:7px 11px;border:1px solid #bbb;color:#1a1a1a;vertical-align:top;line-height:1.65;}
-.tbl tbody tr:nth-child(even) td:not(.td-step):not(.td-item):not(.td-risk){background:#fafafa;}
-.td-step{text-align:center;font-weight:600;color:#1a1a1a;background:#f0f0f0;vertical-align:middle;}
-.td-exec{text-align:center;font-size:12px;}
-.td-item{background:#f0f0f0;font-weight:600;color:#1a1a1a;width:155px;text-align:center;vertical-align:middle;}
-.td-risk{text-align:center;font-weight:600;color:#1a1a1a;background:#f0f0f0;vertical-align:middle;}
-.td-before{color:#a00;text-align:center;vertical-align:middle;}
-.td-after{color:#197340;font-weight:600;text-align:center;vertical-align:middle;}
-.th-before{color:#a00;}.th-after{color:#197340;}
-.r-hi{font-size:12.5px;font-weight:700;color:#c00;}
-.r-mid{font-size:12.5px;font-weight:700;color:#555;}
-.r-low{font-size:12.5px;font-weight:700;color:#888;}
-.th-label{width:110px;text-align:center;}
-.doc-footer{margin-top:28px;padding-top:8px;border-top:1px solid #bbb;display:flex;justify-content:flex-end;font-size:11px;color:#999;}
-</style></head><body>
-<div class="doc">
-  <div class="doc-header">
-    <div class="doc-header-top">
-      <div style="font-weight:800;font-size:16px;color:#1f3864;letter-spacing:.5px;">DnDn</div>
-      <div class="doc-header-meta">작성일: ${docDate}<br>작성자: ${assignee}</div>
-    </div>
-    <div class="doc-header-title">${title}</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Overview</div>
-    <table class="tbl-info">
-      <tr><th>작업 사유</th><td colspan="3">${reason}</td></tr>
-      <tr>
-        <th>대상 리소스</th><td>${resource}</td>
-        <th>AWS 계정</th><td>${accountId}</td>
-      </tr>
-      <tr>
-        <th>작업 예정일</th><td>${scheduledAt}</td>
-        <th>담당자</th><td>${assignee}</td>
-      </tr>
-    </table>
-  </div>
-
-${steps.length ? `  <div class="section">
-    <div class="section-title">1. 작업 절차</div>
-    <table class="tbl">
-      <thead><tr><th style="width:44px">단계</th><th style="width:130px">작업</th><th>내용</th><th style="width:78px">실행</th><th style="width:60px">담당</th></tr></thead>
-      <tbody>
-        ${steps.map((s, i) => `<tr>
-          <td class="td-step">${NUMS[i] ?? i+1}</td>
-          <td class="td-exec">${esc(s.name)}</td>
-          <td>${esc(s.description)}</td>
-          <td class="td-exec">${esc(s.executor ?? '')}</td>
-          <td class="td-exec">${esc(s.assignee ?? assignee)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-
-${beforeAfter.length ? `  <div class="section">
-    <div class="section-title">2. 변경 Before / After</div>
-    <table class="tbl">
-      <thead><tr><th style="width:155px">항목</th><th class="th-before" style="width:40%">Before (현재 상태)</th><th class="th-after">After (적용 후)</th></tr></thead>
-      <tbody>
-        ${beforeAfter.map(b => `<tr>
-          <td class="td-item">${esc(b.item)}</td>
-          <td class="td-before">${esc(b.before)}</td>
-          <td class="td-after">${esc(b.after)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-
-${risks.length ? `  <div class="section">
-    <div class="section-title">3. 위험도 분석</div>
-    <table class="tbl">
-      <thead><tr><th style="width:185px">위험 항목</th><th style="width:55px">수준</th><th>분석</th></tr></thead>
-      <tbody>
-        ${risks.map(r => `<tr>
-          <td class="td-risk">${esc(r.item)}</td>
-          <td style="text-align:center;vertical-align:middle"><span class="${riskClass(r.level)}">${riskLabel(r.level)}</span></td>
-          <td>${esc(r.description)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-
-  <div class="section">
-    <div class="section-title">4. 롤백 계획</div>
-    <table class="tbl">
-      <tr><th class="th-label">롤백 트리거</th><td>${esc(rollback.trigger ?? '')}</td></tr>
-      <tr><th class="th-label">롤백 방법</th><td>${esc(rollback.method ?? '')}</td></tr>
-      <tr><th class="th-label">예상 시간</th><td>${esc(rollback.estimated_time ?? '')}</td></tr>
-      <tr><th class="th-label">담당자</th><td>${esc(rollback.assignee ?? assignee)}</td></tr>
-    </table>
-  </div>
-
-  <div class="doc-footer"><span>${docDate}</span></div>
-</div>
-</body></html>`;
-  }
-
   async function generateDoc() {
     setDocState('loading');
     setTfState('blank');
@@ -369,27 +218,23 @@ ${risks.length ? `  <div class="section">
     setTfCodes(TF_FILES.map(f => f.code));
     setLogEntries([]);
     try {
-      // refDocs 순서대로 canonical을 병합해 컨텍스트로 사용
-      const mergedCanonical = refDocs.reduce<Record<string, unknown>>((acc, rd) => {
-        const c = canonicalMap[rd.no];
-        return c ? { ...acc, ...c } : acc;
-      }, {});
-      const hasCanonical = Object.keys(mergedCanonical).length > 0;
-      const sourceDoc = hasCanonical
-        ? { ...mergedCanonical, user_request: nlInput, target: nlTarget || undefined }
-        : { title: nlTarget || '작업 계획', content: nlInput, type: 'manual' };
       const res = await fetch('/api/report/workplan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_doc: sourceDoc }),
+        body: JSON.stringify({
+          target: nlTarget,
+          content: nlInput,
+          ref_doc_ids: refDocs.map(r => r.no),
+          account_id: 'default',
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-      setWorkplanData(json.data);
-      setIframeSrcdoc(renderWorkplanHtml(json.data));
+      const { job_id, html } = json.data;
+      setJobId(job_id);
+      setIframeSrcdoc(html);
       setDocState('ready');
-      // iframe 로드 후 body를 편집 가능하게 설정
       setTimeout(() => {
         const body = iframeRef.current?.contentDocument?.body;
         if (body) body.contentEditable = 'true';
@@ -404,7 +249,7 @@ ${risks.length ? `  <div class="section">
   function doAutoSave() {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
     if (!html) return;
-    localStorage.setItem(`doc-${docId}`, html);
+    localStorage.setItem(`doc-${jobId ?? 'draft'}`, html);
     const timestamp = new Date();
     setLastSaved(
       `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
@@ -417,19 +262,19 @@ ${risks.length ? `  <div class="section">
   }, []);
 
   async function saveDoc() {
-    if (docState !== 'ready' || !workplanData) { alert('저장할 계획서가 없습니다.'); return; }
+    if (docState !== 'ready' || !jobId) { alert('저장할 계획서가 없습니다.'); return; }
     setIsSaving(true);
     try {
       const currentTfFiles = generatedTfFiles.length > 0
         ? generatedTfFiles.map((f, i) => ({ name: f.name, code: tfCodes[i] ?? f.code }))
         : [];
       const html = iframeRef.current?.contentDocument?.documentElement.outerHTML ?? '';
-      const res = await fetch(`${REPORT_API_BASE}/api/save`, {
+      const res = await fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_id: 'default',
-          workplan: workplanData,
+          job_id: jobId,
           html,
           terraform_files: currentTfFiles,
         }),
@@ -437,32 +282,12 @@ ${risks.length ? `  <div class="section">
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-      const { job_id, html: htmlResult } = json.data;
-
-      // apps/api DB에 document record 생성
-      const title = String(workplanData.title ?? '작업계획서');
-      const today = new Date().toISOString().slice(0, 10);
-      await fetch(`${API_BASE}/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dev-token' },
-        body: JSON.stringify({
-          documentId: job_id,
-          title,
-          content: htmlResult?.url ?? '',
-          type: '계획서',
-          workDate: today,
-          terraform: currentTfFiles.reduce((acc: Record<string, string>, f) => ({ ...acc, [f.name]: f.code }), {}),
-          refDocIds: refDocs.map(r => r.no),
-          approvers: approvers.map((a, i) => ({ userId: a.name, seq: i + 1, type: a.type })),
-          isDraft: false,
-        }),
-      }).catch(() => { /* document 생성 실패해도 S3 저장은 완료로 처리 */ });
 
       const timestamp = new Date();
       setLastSaved(
         `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
       );
-      alert(`저장 완료 (job: ${job_id})`);
+      alert(`저장 완료 (job: ${jobId})`);
     } catch (err) {
       alert('저장 중 오류: ' + String(err));
     } finally {
@@ -474,7 +299,7 @@ ${risks.length ? `  <div class="section">
      Terraform 코드 생성
   ══════════════════════════════ */
   async function generateTerraform() {
-    if (!workplanData) return;
+    if (!jobId) return;
     setTfState('loading');
     setTfStatus('generating');
     setTfStatusText('코드 생성 중');
@@ -485,7 +310,7 @@ ${risks.length ? `  <div class="section">
       const res = await fetch('/api/terraform/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workplan: workplanData }),
+        body: JSON.stringify({ job_id: jobId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -683,7 +508,6 @@ ${risks.length ? `  <div class="section">
                 <div className="ref-doc-name">{rd.name}</div>
                 <button className="ref-doc-remove" onClick={() => {
                   setRefDocs(prev => prev.filter(r => r.no !== rd.no));
-                  setCanonicalMap(prev => { const next = { ...prev }; delete next[rd.no]; return next; });
                 }}>&times;</button>
               </div>
             ))}
