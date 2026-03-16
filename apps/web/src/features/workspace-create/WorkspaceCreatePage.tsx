@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
+import { BASE_URL } from '@/services/api';
 import './WorkspaceCreatePage.css';
 
 const POLICY_ROWS = [
@@ -85,7 +86,7 @@ export function WorkspaceCreatePage() {
     const clean = acctId.replace(/\D/g, '');
     if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
     try {
-      const res = await fetch('/api/workspaces/cfn-link', {
+      const res = await fetch(`${BASE_URL}/workspaces/cfn-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
@@ -109,14 +110,14 @@ export function WorkspaceCreatePage() {
     setAwsError('');
     setAwsTesting(true);
     try {
-      const res = await fetch('/api/workspaces/test-aws', {
+      const res = await fetch(`${BASE_URL}/workspaces/test-aws`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
       });
       const data = await res.json();
       setAwsTesting(false);
-      if (data.success) {
+      if (data.data?.success) {
         setAwsTested(true);
         setAwsError('');
       } else {
@@ -132,7 +133,7 @@ export function WorkspaceCreatePage() {
   const connectGH = async () => {
     setGhConnecting(true);
     try {
-      const res = await fetch('/api/github/auth-url');
+      const res = await fetch(`${BASE_URL}/github/auth-url`);
       const data = await res.json();
       if (!data.success) { showToast(data.error?.message || 'GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
 
@@ -168,7 +169,7 @@ export function WorkspaceCreatePage() {
         if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); setGhConnecting(false); return; }
 
         // code → access token 교환
-        const exRes = await fetch('/api/github/exchange', {
+        const exRes = await fetch(`${BASE_URL}/github/exchange`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, state }),
@@ -182,7 +183,7 @@ export function WorkspaceCreatePage() {
         setGhConnecting(false);
 
         // 조직 목록 자동 로드
-        const orgRes = await fetch('/api/github/orgs', { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
+        const orgRes = await fetch(`${BASE_URL}/github/orgs`, { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
         const orgData = await orgRes.json();
         if (orgData.success) {
           // 본인 계정도 포함
@@ -205,7 +206,7 @@ export function WorkspaceCreatePage() {
     setBranchList([]);
     if (!selectedOrg || !ghToken) return;
     try {
-      const res = await fetch(`/api/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
+      const res = await fetch(`${BASE_URL}/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
       const data = await res.json();
       if (data.success) setRepoList(data.data);
     } catch { /* ignore */ }
@@ -218,7 +219,7 @@ export function WorkspaceCreatePage() {
     setBranchList([]);
     if (!selectedRepo || !org || !ghToken) return;
     try {
-      const res = await fetch(`/api/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
+      const res = await fetch(`${BASE_URL}/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
       const data = await res.json();
       if (data.success) {
         setBranchList(data.data);
@@ -254,15 +255,26 @@ export function WorkspaceCreatePage() {
     setStep(s => s - 1);
   };
 
-  const createWorkspace = () => {
+  const createWorkspace = async () => {
     const ws = {
       alias: alias.trim() || 'Workspace-' + acctId.replace(/\D/g, '').slice(-4),
       acctId: acctId.replace(/\D/g, ''),
       githubOrg: org, repo, path: path.trim(), branch: branch || 'main',
       memo: memo.trim(), icon: selectedIcon,
     };
-    showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
-    navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
+    try {
+      const res = await fetch(`${BASE_URL}/workspaces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ws),
+      });
+      const data = await res.json();
+      if (!data.success) { showToast(data.error?.message || '생성 실패'); return; }
+      showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
+      navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
+    } catch {
+      showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
+    }
   };
 
   const cleanAcct = acctId.replace(/\D/g, '');
