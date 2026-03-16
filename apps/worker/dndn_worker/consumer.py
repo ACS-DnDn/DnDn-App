@@ -9,7 +9,12 @@ from typing import Any, Dict, Optional
 
 import boto3
 
-from dndn_worker.run_job import run_job_from_payload, validate_with_schema
+from dndn_worker.run_job import (
+    WorkerExecutionError,
+    WorkerExecutionResult,
+    run_job_from_payload,
+    validate_with_schema,
+)
 
 
 @dataclass(frozen=True)
@@ -38,9 +43,12 @@ def _delete_message(sqs_client: Any, queue_url: str, receipt_handle: str) -> Non
     sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
 
-def process_message_body(body: str, config: ConsumerConfig) -> Path:
+def process_message_body(body: str, config: ConsumerConfig) -> WorkerExecutionResult:
     payload = _parse_payload(body)
-    validate_with_schema(payload, _payload_schema_path(config.repo_root))
+    try:
+        validate_with_schema(payload, _payload_schema_path(config.repo_root))
+    except ValueError as exc:
+        raise WorkerExecutionError("INVALID_PAYLOAD", str(exc), retryable=False) from exc
     return run_job_from_payload(
         payload=payload,
         repo_root=config.repo_root,
@@ -49,7 +57,7 @@ def process_message_body(body: str, config: ConsumerConfig) -> Path:
     )
 
 
-def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: ConsumerConfig) -> Optional[Path]:
+def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: ConsumerConfig) -> Optional[WorkerExecutionResult]:
     message_id = message.get("MessageId", "<unknown>")
     receipt_handle = message.get("ReceiptHandle")
     body = message.get("Body", "")
@@ -58,8 +66,15 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         raise ValueError(f"SQS message {message_id} is missing ReceiptHandle.")
 
     try:
-        result_path = process_message_body(body, config)
-    except (json.JSONDecodeError, ValueError) as exc:
+        result = process_message_body(body, config)
+    except json.JSONDecodeError as exc:
+        print(f"[consumer] dropping non-retryable message {message_id}: INVALID_PAYLOAD: {exc}")
+        _delete_message(sqs_client, config.queue_url, receipt_handle)
+        return None
+    except WorkerExecutionError as exc:
+        if exc.retryable:
+            print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
+            raise
         print(f"[consumer] dropping non-retryable message {message_id}: {exc}")
         _delete_message(sqs_client, config.queue_url, receipt_handle)
         return None
@@ -68,8 +83,12 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         raise
 
     _delete_message(sqs_client, config.queue_url, receipt_handle)
-    print(f"[consumer] processed message {message_id}: {result_path}")
-    return result_path
+    outcome = "already processed" if result.already_processed else "processed"
+    print(
+        f"[consumer] {outcome} message {message_id}: "
+        f"{result.result_path} (retryable={result.retryable}, error_code={result.error_code})"
+    )
+    return result
 
 
 def poll_once(sqs_client: Any, config: ConsumerConfig) -> int:
