@@ -54,6 +54,7 @@ class TerraformRequest(BaseModel):
 class SaveRequest(BaseModel):
     account_id: str = "default"
     workplan: dict[str, Any]
+    html: str = ""
     terraform_files: list[dict[str, str]]  # [{ name, code }]
 
 
@@ -149,7 +150,7 @@ async def terraform_generate(req: TerraformRequest):
 async def save_to_s3(req: SaveRequest):
     try:
         result = await asyncio.to_thread(
-            save_result, req.account_id, req.workplan, req.terraform_files
+            save_result, req.account_id, req.workplan, req.html, req.terraform_files
         )
         return {"ok": True, "data": result}
     except Exception as e:

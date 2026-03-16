@@ -1,8 +1,20 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDocuments } from '@/services/document.service';
-import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
+
+interface DocItem {
+  id: string;
+  docNum: string;
+  name: string;
+  author: string;
+  date: string;
+  type: string;
+  status: string;
+  action: string | null;
+  isRead: boolean;
+}
 
 const PAGE_SIZE = 10;
 const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
@@ -23,7 +35,7 @@ function fmtShort(ds: string) {
 
 export function DocumentsPage() {
   const navigate = useNavigate();
-  const [allDocs, setAllDocs] = useState<Document[]>([]);
+  const [allDocs, setAllDocs] = useState<DocItem[]>([]);
 
   // 필터 상태
   const [searchField, setSearchField] = useState<'name' | 'author'>('name');
@@ -33,8 +45,8 @@ export function DocumentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 읽음/선택 상태
-  const [readIds, setReadIds] = useState<Set<number>>(() => new Set());
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   // 날짜 피커 상태
   const [pickStart, setPickStart] = useState<string | null>(null);
@@ -47,7 +59,12 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setAllDocs(getDocuments());
+    fetch(`${API_BASE}/documents?tab=all&pageSize=100`, {
+      headers: { 'Authorization': 'Bearer dev-token' },
+    })
+      .then(r => r.json())
+      .then(json => { if (json.success) setAllDocs(json.data.items); })
+      .catch(console.error);
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
@@ -65,7 +82,7 @@ export function DocumentsPage() {
   // 필터 적용된 문서 목록
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    let docs = allDocs.filter(d => d.action === null);
+    let docs = [...allDocs];
 
     if (q) {
       if (searchField === 'author') docs = docs.filter(d => d.author.toLowerCase().includes(q));
@@ -91,7 +108,7 @@ export function DocumentsPage() {
   const resetPage = useCallback(() => setCurrentPage(1), []);
 
   // 체크박스 핸들러
-  const toggleSelect = (id: number, checked: boolean) => {
+  const toggleSelect = (id: string, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       checked ? next.add(id) : next.delete(id);
@@ -127,7 +144,7 @@ export function DocumentsPage() {
   };
 
   // 행 클릭 → 뷰어로 이동
-  const handleRowClick = (doc: Document) => {
+  const handleRowClick = (doc: DocItem) => {
     setReadIds(prev => new Set(prev).add(doc.id));
     navigate(`/viewer/${doc.id}?from=documents`);
   };
@@ -391,7 +408,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = `${doc.date.slice(0, 4)}-DnDn-${String(doc.id).padStart(4, '0')}`;
+                const docNum = doc.docNum;
                 return (
                   <tr
                     key={doc.id}

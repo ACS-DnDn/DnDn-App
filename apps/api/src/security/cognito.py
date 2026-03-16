@@ -31,6 +31,12 @@ class LoginResult:
 
 
 @dataclass
+class ChallengeResult:
+    challenge: str  # e.g. "NEW_PASSWORD_REQUIRED"
+    session: str
+
+
+@dataclass
 class RefreshResult:
     access_token: str
     expires_in: int
@@ -77,8 +83,11 @@ def _handle_error(exc: ClientError) -> None:
 
 
 # ── 로그인 ────────────────────────────────────────────────
-def login(username: str, password: str) -> LoginResult:
-    """Cognito USER_PASSWORD_AUTH 로그인."""
+def login(username: str, password: str) -> LoginResult | ChallengeResult:
+    """Cognito USER_PASSWORD_AUTH 로그인.
+
+    초기 비밀번호(AdminCreateUser) 상태면 ChallengeResult를 반환한다.
+    """
     try:
         resp = _client().initiate_auth(
             ClientId=CLIENT_ID,
@@ -91,6 +100,38 @@ def login(username: str, password: str) -> LoginResult:
     except ClientError as e:
         _handle_error(e)
         raise  # unreachable — _handle_error always raises
+
+    # 챌린지 반환 (NEW_PASSWORD_REQUIRED 등)
+    if "ChallengeName" in resp:
+        return ChallengeResult(
+            challenge=resp["ChallengeName"],
+            session=resp["Session"],
+        )
+
+    auth = resp["AuthenticationResult"]
+    return LoginResult(
+        access_token=auth["AccessToken"],
+        refresh_token=auth["RefreshToken"],
+        id_token=auth["IdToken"],
+        expires_in=auth["ExpiresIn"],
+    )
+
+
+def respond_new_password(username: str, new_password: str, session: str) -> LoginResult:
+    """NEW_PASSWORD_REQUIRED 챌린지에 새 비밀번호로 응답."""
+    try:
+        resp = _client().respond_to_auth_challenge(
+            ClientId=CLIENT_ID,
+            ChallengeName="NEW_PASSWORD_REQUIRED",
+            Session=session,
+            ChallengeResponses={
+                "USERNAME": username,
+                "NEW_PASSWORD": new_password,
+            },
+        )
+    except ClientError as e:
+        _handle_error(e)
+        raise  # unreachable
 
     auth = resp["AuthenticationResult"]
     return LoginResult(

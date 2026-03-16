@@ -13,6 +13,7 @@ const TF_FILES = [
 ];
 
 const REPORT_API_BASE = import.meta.env.VITE_REPORT_API_BASE ?? 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
 
 interface Approver { name: string; rank: string; type: string; }
 interface PendingApprover { name: string; rank: string; type: string; }
@@ -422,24 +423,46 @@ ${risks.length ? `  <div class="section">
       const currentTfFiles = generatedTfFiles.length > 0
         ? generatedTfFiles.map((f, i) => ({ name: f.name, code: tfCodes[i] ?? f.code }))
         : [];
-      const res = await fetch('/api/save', {
+      const html = iframeRef.current?.contentDocument?.documentElement.outerHTML ?? '';
+      const res = await fetch(`${REPORT_API_BASE}/api/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_id: 'default',
           workplan: workplanData,
+          html,
           terraform_files: currentTfFiles,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-      const { job_id } = json.data;
+      const { job_id, html: htmlResult } = json.data;
+
+      // apps/api DB에 document record 생성
+      const title = String(workplanData.title ?? '작업계획서');
+      const today = new Date().toISOString().slice(0, 10);
+      await fetch(`${API_BASE}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dev-token' },
+        body: JSON.stringify({
+          documentId: job_id,
+          title,
+          content: htmlResult?.url ?? '',
+          type: '계획서',
+          workDate: today,
+          terraform: currentTfFiles.reduce((acc: Record<string, string>, f) => ({ ...acc, [f.name]: f.code }), {}),
+          refDocIds: refDocs.map(r => r.no),
+          approvers: approvers.map((a, i) => ({ userId: a.name, seq: i + 1, type: a.type })),
+          isDraft: false,
+        }),
+      }).catch(() => { /* document 생성 실패해도 S3 저장은 완료로 처리 */ });
+
       const timestamp = new Date();
       setLastSaved(
         `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
       );
-      alert(`S3 저장 완료 (job: ${job_id})`);
+      alert(`저장 완료 (job: ${job_id})`);
     } catch (err) {
       alert('저장 중 오류: ' + String(err));
     } finally {

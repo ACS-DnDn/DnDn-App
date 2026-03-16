@@ -63,8 +63,8 @@ def get_report(doc_id: str, account_id: str = "default") -> dict:
     return json.loads(resp["Body"].read())
 
 
-def save_result(account_id: str, workplan: dict, tf_files: list[dict]) -> dict:
-    """편집된 작업계획서 + Terraform 파일을 S3에 저장하고 키 + presigned URL 반환"""
+def save_result(account_id: str, workplan: dict, html: str, tf_files: list[dict]) -> dict:
+    """편집된 작업계획서 + HTML + Terraform 파일을 S3에 저장하고 키 + presigned URL 반환"""
     job_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     client = _client()
 
@@ -74,6 +74,14 @@ def save_result(account_id: str, workplan: dict, tf_files: list[dict]) -> dict:
         Key=wp_key,
         Body=json.dumps(workplan, ensure_ascii=False, indent=2),
         ContentType="application/json",
+    )
+
+    html_key = f"{account_id}/workplan/{job_id}/workplan.html"
+    client.put_object(
+        Bucket=S3_BUCKET,
+        Key=html_key,
+        Body=html.encode("utf-8"),
+        ContentType="text/html; charset=utf-8",
     )
 
     tf_results = []
@@ -96,6 +104,10 @@ def save_result(account_id: str, workplan: dict, tf_files: list[dict]) -> dict:
         "workplan": {
             "key": wp_key,
             "url": _presigned_url(client, wp_key),
+        },
+        "html": {
+            "key": html_key,
+            "url": _presigned_url(client, html_key),
         },
         "terraform_files": tf_results,
         "s3_bucket": S3_BUCKET,
