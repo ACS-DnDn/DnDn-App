@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
-import { BASE_URL } from '@/services/api';
+import { apiFetch, BASE_URL } from '@/services/api';
 import './WorkspaceCreatePage.css';
 
 const POLICY_ROWS = [
@@ -86,12 +86,10 @@ export function WorkspaceCreatePage() {
     const clean = acctId.replace(/\D/g, '');
     if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
     try {
-      const res = await fetch(`${BASE_URL}/workspaces/cfn-link`, {
+      const data = await apiFetch<{ success: boolean; data?: { url: string }; error?: { message: string } }>('/workspaces/cfn-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
       });
-      const data = await res.json();
       if (data.success) {
         window.open(data.data.url, '_blank');
       } else {
@@ -110,12 +108,10 @@ export function WorkspaceCreatePage() {
     setAwsError('');
     setAwsTesting(true);
     try {
-      const res = await fetch(`${BASE_URL}/workspaces/test-aws`, {
+      const data = await apiFetch<{ success: boolean; data?: { success: boolean; error?: string } }>('/workspaces/test-aws', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
       });
-      const data = await res.json();
       setAwsTesting(false);
       if (data.data?.success) {
         setAwsTested(true);
@@ -263,12 +259,10 @@ export function WorkspaceCreatePage() {
       memo: memo.trim(), icon: selectedIcon,
     };
     try {
-      const res = await fetch(`${BASE_URL}/workspaces`, {
+      const data = await apiFetch<{ success: boolean; error?: { message: string } }>('/workspaces', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(ws),
       });
-      const data = await res.json();
       if (!data.success) { showToast(data.error?.message || '생성 실패'); return; }
       showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
       navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
