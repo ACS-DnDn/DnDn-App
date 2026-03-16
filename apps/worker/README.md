@@ -110,13 +110,17 @@ apps/worker/
 ### 파일 설명
 #### `dndn_worker/run_job.py`
 Worker 핵심 로직입니다. 실제 수집/정규화/스키마 검증/S3 저장을 담당합니다.
+공용 실행 진입점은 아래 두 함수입니다.
+
+- `run_job_from_payload(payload: dict, ...)`
+- `run_job_from_payload_file(path, ...)`
 
 #### `dndn_worker/s3_uploader.py`
 로컬 `job_dir` 아래 산출물을 S3로 업로드하는 유틸입니다.
 
 #### `tools/run_payload.py`
 로컬에서 payload 파일 하나로 Worker를 실행할 때 사용합니다.
-개발/디버깅용 진입점입니다.
+파일을 읽은 뒤 `run_job_from_payload_file(...)` 만 호출하는 개발/디버깅용 CLI 진입점입니다.
 
 #### `tools/smoke_assume_role.py`
 AssumeRole이 실제로 되는지 빠르게 확인하는 도구입니다.
@@ -200,6 +204,10 @@ aws sts get-caller-identity
 ---
 
 ## 6. 가장 자주 쓰는 실행 방법
+
+운영/consumer 경로와 로컬 실행 경로를 같은 코드로 맞추기 위해,
+실제 job 실행은 `dndn_worker.run_job.run_job_from_payload(...)` 를 기준으로 두고
+파일 기반 실행만 `run_job_from_payload_file(...)` / `tools/run_payload.py` 로 감쌉니다.
 
 ### 6-1. WEEKLY 실행
 ```bash

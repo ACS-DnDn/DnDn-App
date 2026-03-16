@@ -1494,23 +1494,28 @@ def build_meta(payload: Dict[str, Any], time_range: Dict[str, Any]) -> Dict[str,
     return meta
 
 
-def run_job_from_payload_file(
-    payload_path: Path,
+def _contract_paths(repo_root: Path) -> Tuple[Path, Path, Path]:
+    contracts_dir = repo_root / "contracts"
+    payload_schema = contracts_dir / "payload" / "job_payload.schema.json"
+    canonical_schema = contracts_dir / "canonical_model.schema.json"
+    event_schema = contracts_dir / "event_model.schema.json"
+    return payload_schema, canonical_schema, event_schema
+
+
+def run_job_from_payload(
+    payload: Dict[str, Any],
     repo_root: Path,
     out_root: Path,
     max_cloudtrail_events: int = 500,
 ) -> Path:
     """
     End-to-end runner:
-      payload.json -> raw/ -> normalized/{canonical|event}.json
+      payload dict -> raw/ -> normalized/{canonical|event}.json
     Returns path to normalized json file.
     """
-    contracts_dir = repo_root / "contracts"
-    payload_schema = contracts_dir / "payload" / "job_payload.schema.json"
-    canonical_schema = contracts_dir / "canonical_model.schema.json"
-    event_schema = contracts_dir / "event_model.schema.json"
+    payload_schema, canonical_schema, event_schema = _contract_paths(repo_root)
 
-    payload = load_json(payload_path)
+    payload = dict(payload)
     validate_with_schema(payload, payload_schema)
 
     run_id = payload.get("run_id") or ("run-" + _sha256_bytes(os.urandom(16))[:12])
@@ -1750,3 +1755,21 @@ def run_job_from_payload_file(
 
     result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
     return _finalize_result(result_path, result, strict_upload=True)
+
+
+def run_job_from_payload_file(
+    payload_path: Path,
+    repo_root: Path,
+    out_root: Path,
+    max_cloudtrail_events: int = 500,
+) -> Path:
+    """
+    Thin file wrapper for local/CLI execution.
+    """
+    payload = load_json(payload_path)
+    return run_job_from_payload(
+        payload=payload,
+        repo_root=repo_root,
+        out_root=out_root,
+        max_cloudtrail_events=max_cloudtrail_events,
+    )
