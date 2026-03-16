@@ -187,5 +187,6 @@ Thumbs.db
 
 # Project local
 ETC/
+/out/
 *.xlsx
 *.zip
