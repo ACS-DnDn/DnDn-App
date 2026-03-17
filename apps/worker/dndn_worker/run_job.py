@@ -1177,12 +1177,17 @@ def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], a
 
 def _weekly_ce_dates(payload: Dict[str, Any]) -> Tuple[str, str]:
     tr = payload["time_range"]
+    tz_name = tr.get("timezone") or KST_TZ
+    if ZoneInfo is None:
+        tzinfo = timezone(timedelta(hours=9))
+    else:
+        tzinfo = ZoneInfo(tz_name)
     start_dt = _parse_dt(tr["start"])
     end_dt = _parse_dt(tr["end"])
     if start_dt.tzinfo is None:
-        start_dt = start_dt.replace(tzinfo=timezone.utc)
+        start_dt = start_dt.replace(tzinfo=tzinfo)
     if end_dt.tzinfo is None:
-        end_dt = end_dt.replace(tzinfo=timezone.utc)
+        end_dt = end_dt.replace(tzinfo=tzinfo)
 
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
@@ -1322,10 +1327,11 @@ def build_weekly_cloudwatch_extensions(
                 if not token:
                     break
 
+            safe_region = _safe_fs_name(region)
             raw_uri = _write_cloudwatch_raw(
                 raw_dir,
                 payload,
-                f"describe_alarms_{region}.json",
+                f"describe_alarms_{safe_region}.json",
                 {
                     "MetricAlarms": metric_alarms,
                     "CompositeAlarms": composite_alarms,
