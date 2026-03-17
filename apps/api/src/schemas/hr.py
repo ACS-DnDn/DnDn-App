@@ -41,7 +41,6 @@ class HrUserCreateRequest(BaseModel):
     position: str | None = None
     departmentId: str | None = None
     role: str = "member"          # hr | leader | member
-    tempPassword: str
 
 
 class HrUserUpdateRequest(BaseModel):
@@ -51,9 +50,6 @@ class HrUserUpdateRequest(BaseModel):
     departmentId: str | None = None
     role: str | None = None       # 역할 변경 시 Cognito 그룹도 변경
 
-
-class HrResetPasswordRequest(BaseModel):
-    newPassword: str
 
 
 # ── 부서 ──────────────────────────────────────────────────

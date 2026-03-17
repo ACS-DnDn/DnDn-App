@@ -12,7 +12,6 @@ from apps.api.src.schemas.hr import (
     HrUserResponse,
     HrUserCreateRequest,
     HrUserUpdateRequest,
-    HrResetPasswordRequest,
 )
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.security.cognito import (
@@ -53,9 +52,9 @@ def _to_response(user: User) -> HrUserResponse:
 @router.get("", response_model=SuccessResponse[list[HrUserResponse]])
 async def list_users(
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    users = db.query(User).order_by(User.name).all()
+    users = db.query(User).filter(User.company_id == current_user.company_id).order_by(User.name).all()
     return SuccessResponse(data=[_to_response(u) for u in users])
 
 
@@ -77,14 +76,14 @@ async def get_user(
 async def create_user(
     req: HrUserCreateRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
     if req.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="INVALID_ROLE")
 
     # 1. Cognito 사용자 생성
     try:
-        username = admin_create_user(req.email, req.name, req.tempPassword)
+        username = admin_create_user(req.email, req.name)
         admin_set_group(username, req.role)
     except CognitoError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
@@ -99,6 +98,7 @@ async def create_user(
         employee_no=req.employeeNo,
         position=req.position,
         department_id=req.departmentId,
+        company_id=current_user.company_id,
     )
     db.add(user)
     db.commit()
