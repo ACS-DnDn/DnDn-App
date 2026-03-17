@@ -8,13 +8,20 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Date,
+    enum,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
+import enum
 
 # app/database.py 에서 만들어둔 Base 객체를 가져옵니다.
 from apps.report.src.database import Base
+
+
+class JobType(str, enum.Enum):
+    plan = "plan"
+    terraform = "terraform"
 
 
 class ReportJob(Base):
@@ -25,6 +32,7 @@ class ReportJob(Base):
 
     status = Column(String(20), nullable=False)
 
+    job_type = Column(enum(JobType), nullable=False)
     document_id = Column(String(36), nullable=True)
     content_url = Column(String(255), nullable=True)
     title = Column(String(255), nullable=True)
