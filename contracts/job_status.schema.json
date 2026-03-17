@@ -1,0 +1,119 @@
+{
+  "$id": "https://dndn.example/contracts/job_status.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DnDn Worker Job Status",
+  "description": "Platform-level job status contract for worker execution tracking and idempotency control.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "job_type",
+    "status",
+    "attempt",
+    "requested_at"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 8
+    },
+    "job_type": {
+      "type": "string",
+      "enum": [
+        "WEEKLY",
+        "EVENT"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "already_processed": {
+      "type": "boolean",
+      "description": "True when the platform treats this run_id as already completed and skips duplicate execution."
+    },
+    "executor_id": {
+      "type": "string",
+      "description": "Worker pod, container, or host identifier that currently owns the execution."
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_json_s3_key": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "retryable",
+          "finished_at"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "RUNNING"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "started_at"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "SUCCEEDED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "started_at",
+          "finished_at"
+        ]
+      }
+    }
+  ]
+}

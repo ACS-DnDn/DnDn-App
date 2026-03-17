@@ -100,3 +100,17 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 - 동일 `run_id` 재수신 시, worker는 기존 로컬 결과 파일이 있으면 `already_processed=True` 로 즉시 반환합니다.
 - 이 기준은 동일 worker 인스턴스/로컬 볼륨 범위의 멱등성입니다.
 - 분산 환경 전역 멱등성은 별도 저장소 또는 락 전략이 필요합니다.
+
+## 플랫폼 job 상태 기준
+
+worker 실행 상태는 플랫폼 관점에서 아래 네 상태를 기준으로 추적하는 것을 권장합니다.
+
+- `QUEUED`: payload가 생성되었고 아직 worker가 점유하지 않음
+- `RUNNING`: worker가 현재 실행 중
+- `SUCCEEDED`: 결과 JSON 생성 및 최종 저장 완료
+- `FAILED`: 실행 실패
+
+권장 매핑:
+- `already_processed=True` 는 플랫폼 상태상 중복 실행을 막기 위한 `SUCCEEDED` 재확인으로 취급
+- `retryable=True` 인 `FAILED` 는 재시도 후보
+- `retryable=False` 인 `FAILED` 는 운영자 확인 또는 입력 수정 대상
