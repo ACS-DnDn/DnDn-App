@@ -78,6 +78,14 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 - `CONFIG_NOT_SUPPORTED`  
   해당 resource_type이 Config에서 조회 불가
 
+## Access Analyzer
+
+- `ACCESS_ANALYZER_LIST_ANALYZERS_FAILED`
+  Access Analyzer analyzer 목록 조회 실패
+
+- `ACCESS_ANALYZER_UNEXPECTED`
+  Access Analyzer 수집 중 예상하지 못한 예외 발생
+
 ---
 
 ## 저장/검증
