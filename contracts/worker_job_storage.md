@@ -4,7 +4,7 @@
 
 목표:
 - 멀티 pod 환경에서 같은 `run_id` 중복 실행 방지
-- API / Worker / 운영 시스템이 같은 실행 상태를 공유
+- Producer / Worker / API / 운영 시스템이 같은 실행 상태를 공유
 - `job_status.schema.json` 계약을 실제 저장 구조와 연결
 
 ---
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS worker_jobs (
     error_code VARCHAR(64) NULL COMMENT '실패 시 표준 에러 코드',
     message TEXT NULL COMMENT '디버깅용 상태 메시지',
     executor_id VARCHAR(128) NULL COMMENT 'worker pod/container 식별자',
-    source_json_s3_key VARCHAR(255) NULL COMMENT '성공 시 생성된 canonical/event json S3 key',
+    source_json_s3_key VARCHAR(1024) NULL COMMENT '성공 시 생성된 canonical/event json S3 key',
     requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'job 생성 시각',
     started_at TIMESTAMP NULL DEFAULT NULL COMMENT 'worker 실행 시작 시각',
     finished_at TIMESTAMP NULL DEFAULT NULL COMMENT 'worker 실행 종료 시각',
@@ -75,20 +75,83 @@ SUCCEEDED -> SUCCEEDED (중복 run_id 재수신 시 already_processed=true)
 
 ---
 
-## 4. 읽고 쓰는 주체
+## 4. 역할별 책임
 
-### API / Scheduler
-- 새 job 생성 시 `worker_jobs.status = QUEUED`
-- payload를 SQS에 publish
-- 상태 조회 API에서 `worker_jobs` 를 읽음
+먼저 용어를 정리하면:
 
-### Worker
+- `Job Producer` 는 별도 서버 이름이 아니라 **worker job 등록 역할 이름**입니다
+- 현재 구현 기준에서는 **API가 이 역할을 담당**합니다
+- Scheduler / Event trigger handler 는 필요 시 API의 job 생성 경로를 호출하는 방식으로 연동합니다
+
+즉, 현재 구조를 가장 단순하게 표현하면 아래와 같습니다.
+
+- API = job registration 주체
+- Worker = job execution 주체
+- Report / 후속 시스템 = 성공 결과 소비 주체
+
+### 4-1. Job Producer
+Job Producer는 worker job 등록을 시작하는 역할입니다.
+
+가능한 producer:
+- API
+- Scheduler
+- Event trigger handler
+
+책임:
+- `run_id` 생성 또는 검증
+- `worker_jobs.status = QUEUED` row 생성
+- payload에 같은 `run_id`를 넣어 SQS publish
+
+중요:
+- producer는 여러 개일 수 있지만, job 등록 규칙은 하나여야 합니다
+- 즉 각 producer가 직접 제각각 구현하기보다 공용 job registration 경로를 공유하는 것이 좋습니다
+
+현재 구현 기준 권장:
+- 별도 Job Producer 서버를 두지 않고 API가 단일 job registration 주체를 담당합니다
+- Scheduler와 Event trigger handler는 직접 DB/SQS를 다루기보다 API의 job 생성 경로를 호출합니다
+
+### 4-2. API
+API는 현재 구현에서 job registration을 담당하는 주체이자 상태 조회 주체입니다.
+
+책임:
+- 즉시 실행 요청을 producer 규칙에 맞게 등록
+- Scheduler / Event trigger handler가 위임한 job 생성 요청 처리
+- `run_id` 생성
+- `worker_jobs` row 생성
+- payload 생성 및 SQS publish
+- `worker_jobs` 상태 조회 API 제공
+- 프론트/운영 시스템에 현재 상태 전달
+
+### 4-3. Worker
 - 메시지 수신 후 `run_id` 로 상태 조회
 - `RUNNING` 또는 `SUCCEEDED` 면 중복 실행 차단
 - 실행 점유 성공 시 `RUNNING` 으로 전이
 - 종료 시 `SUCCEEDED` / `FAILED` 로 업데이트
 
-### Report / 후속 시스템
+점유 전이는 원자적으로 처리해야 합니다.
+멀티 pod 환경에서는 단순 조회 후 업데이트만으로는 동시 점유 경쟁이 발생할 수 있으므로,
+아래처럼 조건부 업데이트 또는 `SELECT ... FOR UPDATE` 기반 규칙을 사용해야 합니다.
+
+예시:
+
+```sql
+UPDATE worker_jobs
+SET
+    status = 'RUNNING',
+    executor_id = :executor_id,
+    started_at = NOW(),
+    attempt = attempt + 1
+WHERE run_id = :run_id
+  AND status IN ('QUEUED', 'FAILED')
+  AND (status <> 'FAILED' OR retryable = TRUE);
+```
+
+원칙:
+- `rows_affected = 1` 인 경우에만 점유 성공으로 간주합니다
+- `rows_affected = 0` 이면 이미 다른 worker가 점유했거나 재시도 불가 상태로 간주합니다
+- 점유 성공 이후에만 실제 AWS 수집과 S3 업로드를 시작합니다
+
+### 4-4. Report / 후속 시스템
 - `SUCCEEDED` 상태와 `source_json_s3_key` 를 기준으로 후속 처리
 
 ---
@@ -107,10 +170,12 @@ SUCCEEDED -> SUCCEEDED (중복 run_id 재수신 시 already_processed=true)
 
 권장 흐름:
 
-1. API가 `worker_jobs` row 생성 (`QUEUED`)
-2. worker가 실행 후 `SUCCEEDED` 로 업데이트
-3. 성공 시 `source_jsons` row 생성
-4. `worker_jobs.source_json_s3_key` 와 `source_jsons.source_json_s3_key` 를 맞춰 연결
+1. API가 `run_id` 를 만든다
+2. API가 `worker_jobs` row 생성 (`QUEUED`)
+3. API가 같은 `run_id` 를 포함한 payload를 SQS에 publish
+4. worker가 실행 후 `SUCCEEDED` 로 업데이트
+5. 성공 시 `source_jsons` row 생성
+6. `worker_jobs.source_json_s3_key` 와 `source_jsons.source_json_s3_key` 를 맞춰 연결
 
 ---
 
