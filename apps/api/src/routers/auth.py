@@ -100,7 +100,7 @@ async def get_current_user(
             id=cognito_user_id,
             email=email if email else f"{username}@placeholder.com",
             name=username,
-            role="user",
+            role="member",
         )
         db.add(user)
         db.commit()
