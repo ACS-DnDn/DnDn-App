@@ -1126,6 +1126,16 @@ def _write_access_analyzer_raw(raw_dir: Path, payload: Dict[str, Any], filename:
     return _s3_uri(bucket, f"{prefix}/raw/access_analyzer/{filename}")
 
 
+def _count_access_analyzer_field(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, dict):
+        return len(value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1
+
+
 def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], account_id: str, arn: Optional[str] = None) -> Dict[str, Any]:
     ref: Dict[str, Any] = {
         "resource_type": resource_type,
@@ -1301,9 +1311,9 @@ def _serialize_access_analyzer_finding(finding: Dict[str, Any]) -> Dict[str, Any
         "resource": finding.get("resource"),
         "resource_owner_account": finding.get("resourceOwnerAccount"),
         "is_public": finding.get("isPublic"),
-        "principal_count": len(finding.get("principal") or []),
-        "action_count": len(finding.get("action") or []),
-        "source_count": len(finding.get("sources") or []),
+        "principal_count": _count_access_analyzer_field(finding.get("principal")),
+        "action_count": _count_access_analyzer_field(finding.get("action")),
+        "source_count": _count_access_analyzer_field(finding.get("sources")),
         "created_at": _to_kst_iso(finding["createdAt"]) if isinstance(finding.get("createdAt"), datetime) else None,
         "updated_at": _to_kst_iso(finding["updatedAt"]) if isinstance(finding.get("updatedAt"), datetime) else None,
         "error": finding.get("error"),
