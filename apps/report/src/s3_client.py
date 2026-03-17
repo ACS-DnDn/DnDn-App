@@ -2,7 +2,8 @@ import boto3
 import json
 import os
 import uuid
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone, timedelta
 
 S3_BUCKET = os.getenv("S3_BUCKET", "dndn-reports")
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
@@ -118,11 +119,57 @@ def list_reports(account_id: str = "default") -> list[dict]:
     return items
 
 
-def get_report(doc_id: str, account_id: str = "default") -> dict:
+def get_report(doc_id: str, workspace_id: str = "default") -> dict:
     """S3에서 보고서 canonical JSON 조회"""
-    key = f"{account_id}/{REPORTS_PREFIX}/{doc_id}.json"
+    key = f"{workspace_id}/{REPORTS_PREFIX}/{doc_id}.json"
     resp = _client().get_object(Bucket=S3_BUCKET, Key=key)
     return json.loads(resp["Body"].read())
+
+
+_MCP_CACHE_PREFIX = "_mcp_docs_cache"
+_MCP_CACHE_TTL_HOURS = 24
+
+
+def get_mcp_docs_cache(query: str) -> str | None:
+    """S3에서 MCP 문서 캐시 조회. TTL 초과 또는 없으면 None 반환"""
+    key = f"{_MCP_CACHE_PREFIX}/{hashlib.md5(query.encode()).hexdigest()}.json"
+    try:
+        resp = _client().get_object(Bucket=S3_BUCKET, Key=key)
+        data = json.loads(resp["Body"].read())
+        cached_at = datetime.fromisoformat(data["cached_at"])
+        if datetime.now(timezone.utc) - cached_at < timedelta(
+            hours=_MCP_CACHE_TTL_HOURS
+        ):
+            return data["content"]
+        return None  # TTL 초과
+    except Exception:
+        return None  # 캐시 없음 또는 오류
+
+
+def set_mcp_docs_cache(query: str, content: str) -> None:
+    """S3에 MCP 문서 캐시 저장"""
+    key = f"{_MCP_CACHE_PREFIX}/{hashlib.md5(query.encode()).hexdigest()}.json"
+    try:
+        _client().put_object(
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=json.dumps(
+                {
+                    "query": query,
+                    "content": content,
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            ),
+            ContentType="application/json",
+        )
+    except Exception:
+        pass  # 캐시 저장 실패는 무시
+
+
+def get_presigned_url(key: str) -> str:
+    """S3 key에 대한 presigned URL 반환"""
+    return _presigned_url(_client(), key)
 
 
 def get_workplan(job_id: str, account_id: str = "default") -> dict:
@@ -132,7 +179,13 @@ def get_workplan(job_id: str, account_id: str = "default") -> dict:
     return json.loads(resp["Body"].read())
 
 
-def save_result(account_id: str, workplan: dict, html: str, tf_files: list[dict], job_id: str | None = None) -> dict:
+def save_result(
+    account_id: str,
+    workplan: dict,
+    html: str,
+    tf_files: list[dict],
+    job_id: str | None = None,
+) -> dict:
     """편집된 작업계획서 + HTML + Terraform 파일을 S3에 저장하고 키 + presigned URL 반환"""
     if not job_id:
         job_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
@@ -163,11 +216,13 @@ def save_result(account_id: str, workplan: dict, html: str, tf_files: list[dict]
             Body=f["code"],
             ContentType="text/plain",
         )
-        tf_results.append({
-            "name": f["name"],
-            "key": tf_key,
-            "url": _presigned_url(client, tf_key),
-        })
+        tf_results.append(
+            {
+                "name": f["name"],
+                "key": tf_key,
+                "url": _presigned_url(client, tf_key),
+            }
+        )
 
     return {
         "job_id": job_id,
