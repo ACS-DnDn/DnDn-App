@@ -54,8 +54,8 @@ AssumeRole 기반 IAM 설정과 검증 절차를 정리합니다.
 - Worker가 실제로 호출하는 AWS 읽기 권한만 허용
 
 템플릿 파일:
-- [customer_trust_policy.json](/Users/mh/Desktop/DnDn-App/apps/worker/iam_templates/customer_trust_policy.json)
-- [customer_permissions_policy.json](/Users/mh/Desktop/DnDn-App/apps/worker/iam_templates/customer_permissions_policy.json)
+- [customer_trust_policy.json](iam_templates/customer_trust_policy.json)
+- [customer_permissions_policy.json](iam_templates/customer_permissions_policy.json)
 
 ---
 
@@ -157,8 +157,8 @@ python apps/worker/tools/smoke_cloudtrail.py \
 - CloudTrail / Config 단계에서 고객 계정 권한 부족으로 수집이 불가능
 
 관련 기준:
-- [na_rules.md](/Users/mh/Desktop/DnDn-App/contracts/na_rules.md)
-- [error_codes.md](/Users/mh/Desktop/DnDn-App/contracts/error_codes.md)
+- [na_rules.md](../../contracts/na_rules.md)
+- [error_codes.md](../../contracts/error_codes.md)
 
 예:
 - Config recorder 비활성 -> `NA(SERVICE_DISABLED)`

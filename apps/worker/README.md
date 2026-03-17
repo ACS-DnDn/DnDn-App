@@ -606,7 +606,7 @@ Worker는 고객사 계정 연동을 위해 AssumeRole을 사용합니다.
 이를 위해 `iam_templates/` 와 `render_iam_templates.py` 를 제공합니다.
 
 운영용 온보딩 절차와 권한 표는 별도 문서에 정리했습니다.
-- [IAM_ONBOARDING.md](/Users/mh/Desktop/DnDn-App/apps/worker/IAM_ONBOARDING.md)
+- [IAM_ONBOARDING.md](IAM_ONBOARDING.md)
 
 ### 10-1. 템플릿 렌더링
 ```bash
