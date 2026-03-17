@@ -35,7 +35,8 @@
     },
     "attempt": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0,
+      "description": "Number of execution claims completed so far. QUEUED jobs may start at 0 before the first worker claim."
     },
     "retryable": {
       "type": "boolean"

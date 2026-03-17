@@ -1,0 +1,10 @@
+{
+  "run_id": "01J0EXAMPLEULID1234",
+  "job_type": "WEEKLY",
+  "status": "RUNNING",
+  "attempt": 1,
+  "executor_id": "worker-pod-7f69d7d84d-abc12",
+  "requested_at": "2026-03-17T09:00:00+09:00",
+  "started_at": "2026-03-17T09:00:04+09:00",
+  "message": "worker acquired job and started collection"
+}
