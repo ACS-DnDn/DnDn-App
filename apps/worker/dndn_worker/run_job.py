@@ -1431,7 +1431,13 @@ def build_weekly_access_analyzer_extensions(
                 str(e),
             )
 
-    findings.sort(key=lambda f: (str(f.get("severity", "")), str(f.get("resource_type", "")), str(f.get("id", ""))))
+    findings.sort(
+        key=lambda f: (
+            0 if f.get("is_public") else 1,
+            str(f.get("resource_type", "")),
+            str(f.get("id", "")),
+        )
+    )
 
     resource_type_counts: Dict[str, int] = {}
     public_count = 0
