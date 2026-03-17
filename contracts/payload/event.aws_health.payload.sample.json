@@ -6,7 +6,7 @@
     "ap-northeast-2"
   ],
   "assume_role": {
-    "role_arn": "arn:aws:iam::123456789012:role/DnDnCollectorRole",
+    "role_arn": "arn:aws:iam::123456789012:role/DnDnCollectorReadRole",
     "external_id": "dndn-prod"
   },
   "event_time": "2026-03-09T09:00:00+09:00",

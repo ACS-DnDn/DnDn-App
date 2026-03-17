@@ -19,7 +19,8 @@ DnDn의 **Worker** 는 AWS 계정에서 변경 이력과 리소스 상태를 수
 
 Worker는 DnDn에서 아래 흐름을 담당합니다.
 
-1. API/스케줄러/EventBridge가 Worker에 payload를 전달
+1. API가 Worker payload를 생성하고 전달한다
+   스케줄러/EventBridge 계열 트리거는 현재 구현 기준으로 API의 job 생성 경로를 통해 Worker 실행으로 연결된다
 2. Worker가 대상 AWS 계정(필요시 AssumeRole)으로 접근
 3. CloudTrail / Config / 이벤트 trigger 정보를 수집
 4. 결과를 표준 포맷(JSON)으로 정리
@@ -603,6 +604,9 @@ WEEKLY 실행 시 Worker는 주간 점검 항목을 수집해서 `extensions.adv
 
 Worker는 고객사 계정 연동을 위해 AssumeRole을 사용합니다.
 이를 위해 `iam_templates/` 와 `render_iam_templates.py` 를 제공합니다.
+
+운영용 온보딩 절차와 권한 표는 별도 문서에 정리했습니다.
+- [IAM_ONBOARDING.md](/Users/mh/Desktop/DnDn-App/apps/worker/IAM_ONBOARDING.md)
 
 ### 10-1. 템플릿 렌더링
 ```bash
