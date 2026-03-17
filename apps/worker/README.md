@@ -2,6 +2,9 @@
 
 DnDn의 **Worker** 는 AWS 계정에서 변경 이력과 리소스 상태를 수집하고, 이를 **표준 JSON 결과물**로 정규화하여 S3에 저장하는 백엔드 실행 엔진입니다.
 
+현재 구조에서 Worker는 단순 라이브러리가 아니라,
+**신호(payload)를 받으면 최종 결과 JSON을 생산하는 독립 실행 서비스**를 목표로 합니다.
+
 쉽게 말하면 Worker는 다음 역할을 합니다.
 
 - **입력**: `contracts/payload/*.json` 형태의 작업 요청(payload)
@@ -24,6 +27,8 @@ Worker는 DnDn에서 아래 흐름을 담당합니다.
 6. 이후 B 파트(Report)가 이 JSON과 raw evidence를 사용해 보고서, 계획서, evidence zip을 생성
 
 즉, Worker는 **“수집 → 정규화 → 저장”** 의 중심입니다.
+운영에서는 SQS consumer로 계속 실행되고,
+로컬에서는 payload 파일 기반으로 동일 로직을 실행합니다.
 
 ---
 
@@ -325,7 +330,7 @@ docker run --rm \
   -e DNDN_WORKER_MAX_EVENTS=500 \
   -e DNDN_WORKER_WAIT_TIME_SECONDS=20 \
   -e DNDN_WORKER_MAX_MESSAGES=1 \
-  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$HOME/.aws:/home/worker/.aws:ro" \
   dndn-worker:local
 ```
 
@@ -341,7 +346,7 @@ python -m dndn_worker.consumer --repo-root /app --out /tmp/dndn-out
 docker run --rm \
   -e AWS_REGION=ap-northeast-2 \
   -e DNDN_WORKER_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/123456789012/dndn-worker \
-  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$HOME/.aws:/home/worker/.aws:ro" \
   dndn-worker:local \
   --once
 ```
