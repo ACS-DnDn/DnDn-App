@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any
 import os
+import uuid
 import asyncio
 import logging
+from datetime import datetime, timezone
 from functools import partial
 
 from dotenv import load_dotenv
@@ -17,7 +19,7 @@ from .ai_generator import (
     generate_health_event_report,
 )
 from .terraform_generator import generate_terraform_code
-from .s3_client import save_result, save_report_html, list_reports, get_report, get_workplan
+from .s3_client import save_result, save_report, save_report_html, get_presigned_url, list_reports, get_report, get_workplan
 
 logger = logging.getLogger(__name__)
 
@@ -125,15 +127,49 @@ async def health_event_report(req: ReportRequest):
 
 
 # ── 주간 보고서 ────────────────────────────────────────────
+class WeeklyReportRequest(BaseModel):
+    target: str = ""
+    content: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    account_id: str = "default"
+
+
 @app.post("/api/report/weekly")
-async def weekly_report(req: ReportRequest):
-    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+async def weekly_report(req: WeeklyReportRequest):
+    doc_id = f"weekly-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+
+    canonical = {
+        "meta": {
+            "type": "WEEKLY",
+            "run_id": doc_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "account_id": req.account_id,
+            "period": {"start": req.period_start, "end": req.period_end},
+            "title": req.target,
+        },
+        "content": req.content,
+    }
+
     try:
-        html = await asyncio.to_thread(generate_weekly_report, req.target, req.content, ctx)
-        return {"ok": True, "data": html}
+        await asyncio.to_thread(save_report, doc_id, canonical, req.account_id)
     except Exception as e:
-        logger.error("weekly_report 오류: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="내부 서버 오류")
+        logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="보고서 저장 실패")
+
+    try:
+        html = await asyncio.to_thread(generate_weekly_report, req.target, req.content, canonical)
+    except Exception as e:
+        logger.error("weekly_report: AI 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
+
+    try:
+        html_key = await asyncio.to_thread(save_report_html, doc_id, html, req.account_id)
+        html_url = await asyncio.to_thread(get_presigned_url, html_key)
+        return {"ok": True, "data": {"doc_id": doc_id, "html_url": html_url}}
+    except Exception as e:
+        logger.error("weekly_report: HTML 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="HTML 저장 실패")
 
 
 # ── 작업계획서 생성 (target + content + refDocIds → HTML) ──

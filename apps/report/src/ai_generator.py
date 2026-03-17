@@ -5,7 +5,6 @@ import threading
 import time
 import os
 import shutil
-import functools
 
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")  # Legacy
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")  # us 전용
@@ -121,17 +120,22 @@ EVENT_SEARCH_MAP = {
 }
 
 
-@functools.lru_cache(maxsize=50)
 def _fetch_aws_docs_by_query(query: str) -> str:
-    """쿼리 직접 지정해서 AWS Documentation MCP 조회 (lru_cache 캐싱)"""
+    """쿼리 직접 지정해서 AWS Documentation MCP 조회 (S3 캐시 24h TTL)"""
     if not query:
         return ""
+    from .s3_client import get_mcp_docs_cache, set_mcp_docs_cache
+    cached = get_mcp_docs_cache(query)
+    if cached is not None:
+        print(f"[MCP] S3 캐시 HIT: '{query}'")
+        return cached
     mcp = AWSDocsMCPClient()
     try:
         mcp.start()
         result = mcp.call_tool("search_documentation", {"search_phrase": query})
         docs = result if result else ""
         print(f"[MCP] AWS 문서 조회 완료: '{query}' ({len(docs)}자)")
+        set_mcp_docs_cache(query, docs)
         return docs
     except Exception as e:
         print(f"[MCP] AWS 문서 조회 실패 (계속 진행): {e}")
@@ -203,6 +207,116 @@ def _detect_event_info(data: dict) -> tuple[str, str]:
 
 
 # ─────────────────────────────────────────────────
+# 공통 HTML 템플릿 CSS (DnDn 디자인 시스템)
+# ─────────────────────────────────────────────────
+
+_BASE_CSS = """
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 13px; line-height: 1.65; color: #1a1a1a; background: #f4f6f9; }
+.doc { background: #fff; max-width: 860px; margin: 32px auto; padding: 36px 44px 52px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-radius: 4px; }
+.doc-header { display: flex; flex-direction: column; gap: 10px; padding-bottom: 10px; border-bottom: 3px solid #1f3864; margin-bottom: 20px; }
+.doc-header-top { display: flex; justify-content: space-between; align-items: center; }
+.doc-header-logo { height: 28px; width: auto; display: block; }
+.doc-header-title { font-size: 23px; font-weight: 800; color: #1f3864; text-align: center; line-height: 1.4; }
+.doc-header-meta { text-align: right; font-size: 11px; color: #666; line-height: 1.75; }
+.section { margin-bottom: 20px; }
+.section-title { background: #1f3864; color: #fff; font-size: 12.5px; font-weight: 700; padding: 6px 12px; letter-spacing: 0.3px; margin-bottom: 7px; }
+.sub-title { font-size: 12px; font-weight: 700; color: #333; margin: 14px 0 8px; padding-left: 2px; }
+.sub-heading { background: #edf0f7; color: #1f3864; font-size: 12px; font-weight: 700; padding: 5px 10px; margin: 16px 0 7px; border-left: 3px solid #1f3864; }
+.tbl-info { width: 100%; border-collapse: collapse; border: 1px solid #bbb; margin-bottom: 22px; }
+.tbl-info th { padding: 7px 11px; background: #d4dae6; font-size: 12.5px; font-weight: 600; color: #1f3864; text-align: center; border: 1px solid #bbb; white-space: nowrap; vertical-align: middle; width: 110px; }
+.tbl-info td { padding: 7px 11px; border: 1px solid #bbb; color: #1a1a1a; vertical-align: middle; font-size: 12.5px; text-align: center; }
+.tbl-info .td-main { font-weight: 700; font-size: 13px; }
+.tbl { width: 100%; border-collapse: collapse; border: 1px solid #bbb; font-size: 12.5px; }
+.tbl th { padding: 7px 11px; background: #d4dae6; font-weight: 600; color: #1f3864; border: 1px solid #bbb; text-align: center; vertical-align: middle; white-space: nowrap; }
+.tbl td { padding: 7px 11px; border: 1px solid #bbb; color: #1a1a1a; vertical-align: top; line-height: 1.65; }
+.tbl tbody tr:nth-child(even) td:not(.td-item):not(.td-step):not(.td-risk) { background: #fafafa; }
+.td-item { font-weight: 600; color: #1a1a1a; width: 155px; background: #f0f0f0 !important; text-align: center !important; vertical-align: middle !important; }
+.th-before { color: #a00 !important; }
+.th-after  { color: #197340 !important; }
+.td-before { color: #a00; text-align: center; vertical-align: middle; }
+.td-after  { color: #197340; font-weight: 600; text-align: center; vertical-align: middle; }
+.th-label { width: 110px; text-align: center !important; }
+.td-time { font-family: SFMono-Regular, Consolas, monospace; font-size: 12px; white-space: nowrap; text-align: center; vertical-align: middle; }
+.td-type { font-weight: 600; color: #333; vertical-align: middle; text-align: center; }
+.td-step { font-weight: 600; color: #1a1a1a; background: #f0f0f0; text-align: center !important; vertical-align: middle !important; }
+.td-exec { text-align: center; font-size: 12px; }
+.td-risk { text-align: center; font-weight: 600; color: #1a1a1a; background: #f0f0f0; vertical-align: middle; }
+.r-hi  { font-size: 12.5px; font-weight: 700; color: #c00; }
+.r-mid { font-size: 12.5px; font-weight: 700; color: #555; }
+.r-low { font-size: 12.5px; font-weight: 700; color: #888; }
+.na-box { padding: 10px 14px; background: #f9f9f9; border: 1px solid #ddd; border-left: 3px solid #aaa; font-size: 12px; color: #777; }
+.doc ul, .doc ol { padding-left: 0; list-style-position: inside; margin: 6px 0 10px; }
+.doc li { margin-bottom: 4px; line-height: 1.65; font-size: 12.5px; }
+code { font-family: SFMono-Regular, Consolas, Menlo, monospace; font-size: 11.5px; background: #f4f4f4; border: 1px solid #ddd; padding: 0 4px; border-radius: 2px; }
+.note { font-size: 11.5px; color: #666; margin-top: 6px; line-height: 1.65; }
+.doc-footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #bbb; display: flex; justify-content: flex-end; font-size: 11px; color: #999; }
+.tbl-summary { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+.tbl-summary td { width: 25%; padding: 10px 12px; border: 1px solid #ddd; vertical-align: middle; text-align: center; }
+.s-label { font-size: 12.5px; color: #888; margin-bottom: 4px; }
+.s-value { font-size: 16px; font-weight: 800; color: #1f3864; line-height: 1.2; }
+.s-value.red { color: #c00; }
+.s-value.orange { color: #c05800; }
+.cost-up   { color: #c00; font-weight: 600; }
+.cost-down { color: #197340; font-weight: 600; }
+.cost-sum td { font-weight: 700; background: #f5f5f5 !important; }
+.st-crit   { color: #c00; font-weight: 700; }
+.st-high   { color: #c05800; font-weight: 700; }
+.st-med    { color: #9a7000; font-weight: 600; }
+.st-low    { color: #888; font-weight: 600; }
+.st-ok     { color: #197340; font-weight: 600; }
+.st-warn   { color: #9a7000; font-weight: 600; }
+.st-danger { color: #c00; font-weight: 700; }
+.st-skip   { color: #888; font-weight: 600; }
+@media print { body { font-size: 11px; } .doc { padding: 0; max-width: 100%; } }
+""".strip()
+
+_STYLE_RULES = """
+HTML 구조 규칙 (반드시 준수):
+- <html>, <head>, <body>, <style> 태그 없이 콘텐츠만 출력
+- 최상위 래퍼: <div class="doc">
+- 헤더:
+    <div class="doc-header">
+      <div class="doc-header-top">
+        <div style="font-size:18px;font-weight:900;color:#1f3864;">DnDn</div>
+        <div class="doc-header-meta">문서번호: XXX<br>작성일: YYYY.MM.DD</div>
+      </div>
+      <div class="doc-header-title">제목</div>
+    </div>
+- Overview(기본 정보): <div class="section"><div class="section-title">Overview</div><table class="tbl-info">...</table></div>
+- 일반 섹션: <div class="section"><div class="section-title">N. 섹션명</div>...</div>
+- 서브헤딩: <div class="sub-heading">소제목</div>
+- 정보 테이블 (th/td 교차): <table class="tbl-info"><tbody><tr><th>라벨</th><td>값</td><th>라벨</th><td>값</td></tr></tbody></table>
+- 일반 테이블: <table class="tbl"><thead><tr><th>컬럼</th></tr></thead><tbody><tr><td>값</td></tr></tbody></table>
+- 위험도 분석 테이블 행: <tr><td class="td-risk">항목명</td><td style="text-align:center;vertical-align:middle;"><span class="r-hi">상</span></td><td>설명</td></tr>
+- 작업 절차 테이블 행: <tr><td class="td-step">①</td><td class="td-exec">단계명</td><td>내용</td><td class="td-exec">담당</td></tr>
+- Before/After 행: <tr><td class="td-item">항목</td><td class="td-before">이전</td><td class="td-after">이후</td></tr>  (헤더: <th class="th-before">변경 전</th><th class="th-after">변경 후</th>)
+- 상태 텍스트: <span class="st-crit">위험</span> / <span class="st-high">상</span> / <span class="st-ok">정상</span> / <span class="st-warn">주의</span>
+- 심각도: <span class="r-hi">상</span> / <span class="r-mid">중</span> / <span class="r-low">하</span>
+- KPI 카드: <table class="tbl-summary"><tbody><tr><td><div class="s-label">지표명</div><div class="s-value">값</div></td></tr></tbody></table>
+- code 태그: <code>리소스ID</code>
+- 푸터: <div class="doc-footer"><span>문서번호 &nbsp;/&nbsp; 날짜</span></div>
+"""
+
+
+def _wrap_html(title: str, body: str) -> str:
+    """Claude가 생성한 body 콘텐츠를 완전한 HTML 문서로 래핑"""
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{title}</title>
+<style>
+{_BASE_CSS}
+</style>
+</head>
+<body>
+{body.strip()}
+</body>
+</html>"""
+
+
+# ─────────────────────────────────────────────────
 # Bedrock 공통 호출
 # ─────────────────────────────────────────────────
 
@@ -262,21 +376,20 @@ def generate_event_report(target: str, content: str, context: dict | None = None
         if ctx else ""
     )
 
-    system = """
+    system = f"""
 당신은 AWS 인프라 보안 이벤트 분석 전문가입니다.
-이벤트 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 보고서를 생성하세요.
+이벤트 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 보고서 콘텐츠를 생성하세요.
 
-규칙:
-1. 완전한 HTML 문서(<html>~</html>)를 반환하세요
-2. 인라인 CSS로 깔끔하게 스타일링하세요 (외부 파일 금지)
-3. 필수 섹션: 이벤트 개요, 영향 분석, 원인 분석, 권장 조치, 참고 문서
-   — 이벤트 성격에 따라 필요한 섹션을 자유롭게 추가하세요 (예: 관련 CVE, 영향 리소스 목록, 조치 체크리스트 등)
-4. 영어 텍스트는 자연스러운 한국어로 번역하세요
-5. HTML 외 다른 텍스트는 절대 포함하지 마세요
+{_STYLE_RULES}
+
+콘텐츠 규칙:
+1. 필수 섹션: Overview(기본정보), 이벤트 개요, 이벤트 타임라인, 영향 분석, 권장 조치
+2. 이벤트 성격에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 관련 CVE 목록, 영향 리소스 상세, 조치 체크리스트, 원인 분석 등)
+3. 영어 텍스트는 자연스러운 한국어로 번역하세요
 """.strip()
 
     user = f"""
-다음 이벤트 정보를 분석하여 HTML 보고서를 생성하세요.
+다음 이벤트 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
 이벤트 대상: {target}
 이벤트 내용: {content}
@@ -284,7 +397,8 @@ def generate_event_report(target: str, content: str, context: dict | None = None
 {aws_docs_section}
 """.strip()
 
-    return call_claude(system, user)
+    title = target or "이벤트 보고서"
+    return _wrap_html(title, call_claude(system, user))
 
 
 def generate_weekly_report(target: str, content: str, context: dict | None = None) -> str:
@@ -310,21 +424,20 @@ def generate_weekly_report(target: str, content: str, context: dict | None = Non
         if ctx else ""
     )
 
-    system = """
+    system = f"""
 당신은 AWS 인프라 주간 보고서 생성 전문가입니다.
-보고 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 주간 보고서를 생성하세요.
+보고 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 주간 보고서 콘텐츠를 생성하세요.
 
-규칙:
-1. 완전한 HTML 문서(<html>~</html>)를 반환하세요
-2. 인라인 CSS로 깔끔하게 스타일링하세요 (외부 파일 금지)
-3. 필수 섹션: 주간 요약, 주요 변경사항, 조치 항목(우선순위별), 전체 위험도, 참고 문서
-   — 이번 주 데이터에 따라 필요한 섹션을 자유롭게 추가하세요 (예: 비용 이상 감지, 성능 지표, 보안 이벤트 요약 등)
-4. AWS Well-Architected 가이드 내용을 조치 항목에 반영하세요
-5. HTML 외 다른 텍스트는 절대 포함하지 마세요
+{_STYLE_RULES}
+
+콘텐츠 규칙:
+1. 필수 섹션: Overview(기본정보/KPI카드), 변경 현황, 변경 타임라인, 보안 Findings, 비용 영향, 액션 아이템
+2. 데이터에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 성능 현황, 컴플라이언스, 내결함성, 서비스 한도, Evidence Index 등)
+3. AWS Well-Architected 가이드 내용을 조치 항목에 반영하세요
 """.strip()
 
     user = f"""
-다음 정보를 분석하여 주간 보고서 HTML을 생성하세요.
+다음 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
 보고 대상: {target}
 보고 내용: {content}
@@ -332,7 +445,8 @@ def generate_weekly_report(target: str, content: str, context: dict | None = Non
 {wa_docs_section}
 """.strip()
 
-    return call_claude(system, user)
+    title = target or "주간 보고서"
+    return _wrap_html(title, call_claude(system, user))
 
 
 def generate_work_plan(target: str, content: str, context: dict | None = None) -> str:
@@ -361,21 +475,20 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
         if ctx else ""
     )
 
-    system = """
+    system = f"""
 당신은 AWS 인프라 작업계획서 생성 전문가입니다.
-작업 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 작업계획서를 생성하세요.
+작업 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 작업계획서 콘텐츠를 생성하세요.
 
-규칙:
-1. 완전한 HTML 문서(<html>~</html>)를 반환하세요
-2. 인라인 CSS로 깔끔하게 스타일링하세요 (외부 파일 금지)
-3. 필수 섹션: 개요(작업명/대상/담당자/예정일), 작업 단계(최대 6단계), 변경 전/후, 위험 분석, 롤백 계획
+{_STYLE_RULES}
+
+콘텐츠 규칙:
+1. 필수 섹션: 개요(작업명/대상/담당자/예정일), 작업 단계(최대 6단계), 변경 전/후, 위험 분석, 롤백 계획
    — 작업 성격에 따라 필요한 섹션을 자유롭게 추가하세요 (예: 사전 점검 항목, 영향 범위, 승인 이력 등)
-4. 작업 단계는 번호 매겨서 간결하게 (CLI 명령어 포함 금지)
-5. HTML 외 다른 텍스트는 절대 포함하지 마세요
+2. 작업 단계는 번호 매겨서 간결하게 (CLI 명령어 포함 금지)
 """.strip()
 
     user = f"""
-다음 작업 정보를 분석하여 작업계획서 HTML을 생성하세요.
+다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
 작업 대상: {target}
 작업 내용: {content}
@@ -383,7 +496,8 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
 {aws_docs_section}
 """.strip()
 
-    return call_claude(system, user)
+    title = target or "작업계획서"
+    return _wrap_html(title, call_claude(system, user))
 
 
 def generate_health_event_report(target: str, content: str, context: dict | None = None) -> str:
@@ -419,21 +533,20 @@ def generate_health_event_report(target: str, content: str, context: dict | None
         if ctx else ""
     )
 
-    system = """
+    system = f"""
 당신은 AWS 인프라 운영 전문가입니다.
-AWS Health 이벤트 정보와 AWS 공식 문서를 분석하여 한국어 HTML 이벤트 보고서를 생성하세요.
+AWS Health 이벤트 정보와 AWS 공식 문서를 분석하여 한국어 HTML 이벤트 보고서 콘텐츠를 생성하세요.
 
-규칙:
-1. 완전한 HTML 문서(<html>~</html>)를 반환하세요
-2. 인라인 CSS로 깔끔하게 스타일링하세요 (외부 파일 금지)
-3. 필수 섹션: 이벤트 개요(문서번호/제목/감지일시), 타임라인, 이벤트 상세, 권장 조치(최소 3단계)
-   — 이벤트 유형에 따라 필요한 섹션을 자유롭게 추가하세요 (예: 영향 리소스 목록, 유사 사례, 조치 체크리스트 등)
-4. UTC 시각은 KST(+9시간)로 변환하세요
-5. HTML 외 다른 텍스트는 절대 포함하지 마세요
+{_STYLE_RULES}
+
+콘텐츠 규칙:
+1. 필수 섹션: Overview(기본정보), 이벤트 개요, 이벤트 타임라인, 이벤트 상세, 권장 조치(최소 3단계)
+2. 이벤트 유형에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 영향 리소스 목록, 유사 사례, 조치 체크리스트 등)
+3. UTC 시각은 KST(+9시간)로 변환하세요
 """.strip()
 
     user = f"""
-다음 AWS Health 이벤트 정보를 분석하여 이벤트 보고서 HTML을 생성하세요.
+다음 AWS Health 이벤트 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
 이벤트 대상: {target}
 이벤트 내용: {content}
@@ -441,7 +554,8 @@ AWS Health 이벤트 정보와 AWS 공식 문서를 분석하여 한국어 HTML 
 {aws_docs_section}
 """.strip()
 
-    return call_claude(system, user)
+    title = f"AWS Health 이벤트 보고서 — {target or service or '이벤트'}"
+    return _wrap_html(title, call_claude(system, user))
 
 
 if __name__ == "__main__":

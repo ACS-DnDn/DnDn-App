@@ -137,6 +137,9 @@ export function ReportSettingsPage() {
   const [evtSettings, setEvtSettings] = useState({ ...settings.eventSettings });
   const [openDescs, setOpenDescs] = useState<Set<string>>(new Set());
 
+  /* 생성 로딩 */
+  const [generating, setGenerating] = useState(false);
+
   /* 토스트 */
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -228,10 +231,32 @@ export function ReportSettingsPage() {
   }
 
   /* 현황 보고서 생성 */
-  function generateNow() {
+  async function generateNow() {
     if (!summaryStart || !summaryEnd) { showToast('기간을 선택해주세요.'); return; }
     if (summaryStart > summaryEnd) { showToast('시작일시가 종료일시보다 클 수 없습니다.'); return; }
-    showToast('현황보고서 생성을 요청했습니다.');
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/report/weekly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: reportTitle,
+          content: `보고 기간: ${summaryStart} ~ ${summaryEnd}`,
+          period_start: summaryStart,
+          period_end: summaryEnd,
+          account_id: 'default',
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const json = await res.json();
+      const htmlUrl: string = json?.data?.html_url;
+      if (htmlUrl) window.open(htmlUrl, '_blank', 'noopener');
+      showToast('현황보고서가 생성되었습니다.');
+    } catch {
+      showToast('보고서 생성에 실패했습니다.');
+    } finally {
+      setGenerating(false);
+    }
   }
 
   /* 섹션 전환 시 breadcrumb */
@@ -288,9 +313,9 @@ export function ReportSettingsPage() {
                   <input type="datetime-local" className="fi-dt" value={summaryEnd} onChange={e => setSummaryEnd(e.target.value)} />
                 </div>
               </div>
-              <button className="btn-gen" onClick={generateNow}>
+              <button className="btn-gen" onClick={generateNow} disabled={generating}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 8h10M8 3v10" /></svg>
-                보고서 생성
+                {generating ? '생성 중...' : '보고서 생성'}
               </button>
             </div>
 
