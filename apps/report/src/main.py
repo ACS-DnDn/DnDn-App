@@ -10,7 +10,12 @@ from functools import partial
 from dotenv import load_dotenv
 load_dotenv()
 
-from .ai_generator import generate_event_report, generate_weekly_report, generate_work_plan, generate_health_event_report
+from .ai_generator import (
+    generate_event_report,
+    generate_weekly_report,
+    generate_work_plan,
+    generate_health_event_report,
+)
 from .terraform_generator import generate_terraform_code
 from .s3_client import save_result, save_report_html, list_reports, get_report, get_workplan
 
@@ -217,6 +222,43 @@ async def render_report(req: RenderRequest):
     except Exception as e:
         logger.error("render_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+
+
+# ── 기존 S3 JSON으로 HTML 일괄 생성 (html 없는 것만) ──────
+@app.post("/api/reports/render-pending")
+async def render_pending(account_id: str = "default"):
+    """S3에 JSON은 있지만 HTML이 없는 보고서를 일괄 렌더링"""
+    try:
+        items = await asyncio.to_thread(list_reports, account_id)
+    except Exception as e:
+        logger.error("render_pending: 목록 조회 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="보고서 목록 조회 실패")
+
+    pending = [it for it in items if it.get("type") == "report" and not it.get("html_key")]
+    if not pending:
+        return {"ok": True, "data": {"rendered": 0, "skipped": 0}}
+
+    rendered, failed = 0, 0
+    for item in pending:
+        doc_id = item["doc_id"]
+        try:
+            canonical = await asyncio.to_thread(get_report, doc_id, account_id)
+            meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
+            if meta_type == "WEEKLY":
+                fn = partial(generate_weekly_report, "", "", canonical)
+            elif meta_type == "HEALTH":
+                fn = partial(generate_health_event_report, "", "", canonical)
+            else:
+                fn = partial(generate_event_report, "", "", canonical)
+            html = await asyncio.to_thread(fn)
+            await asyncio.to_thread(save_report_html, doc_id, html, account_id)
+            rendered += 1
+            logger.info("render_pending: 완료 %s", doc_id)
+        except Exception as e:
+            logger.error("render_pending: 실패 %s: %s", doc_id, e, exc_info=True)
+            failed += 1
+
+    return {"ok": True, "data": {"rendered": rendered, "failed": failed}}
 
 
 @app.get("/health")
