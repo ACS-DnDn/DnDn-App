@@ -101,11 +101,11 @@ def _process(account_id: str, doc_id: str):
 
     meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
     if meta_type == "WEEKLY":
-        html = generate_weekly_report("", "", canonical)
+        html = generate_weekly_report(canonical)
     elif meta_type == "HEALTH":
-        html = generate_health_event_report("", "", canonical)
+        html = generate_health_event_report(canonical)
     else:
-        html = generate_event_report("", "", canonical)
+        html = generate_event_report(canonical)
 
     save_report_html(doc_id, html, account_id)
     logger.info("HTML 저장 완료: %s", doc_id)

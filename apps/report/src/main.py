@@ -132,10 +132,13 @@ async def _merge_context(ref_doc_ids: list[str], workspace_id: str) -> dict[str,
 @app.post("/api/report/event")
 async def event_report(req: ReportRequest):
     ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+    canonical = {
+        "meta": {"type": "EVENT", "title": req.target, "account_id": req.account_id},
+        "content": req.content,
+        **ctx,
+    }
     try:
-        html = await asyncio.to_thread(
-            generate_event_report, req.target, req.content, ctx
-        )
+        html = await asyncio.to_thread(generate_event_report, canonical)
         return {"ok": True, "data": html}
     except Exception as e:
         logger.error("event_report 오류: %s", e, exc_info=True)
@@ -146,10 +149,13 @@ async def event_report(req: ReportRequest):
 @app.post("/api/report/health-event")
 async def health_event_report(req: ReportRequest):
     ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+    canonical = {
+        "meta": {"type": "HEALTH", "title": req.target, "account_id": req.account_id},
+        "content": req.content,
+        **ctx,
+    }
     try:
-        html = await asyncio.to_thread(
-            generate_health_event_report, req.target, req.content, ctx
-        )
+        html = await asyncio.to_thread(generate_health_event_report, canonical)
         return {"ok": True, "data": html}
     except Exception as e:
         logger.error("health_event_report 오류: %s", e, exc_info=True)
@@ -180,9 +186,7 @@ async def weekly_report(req: WeeklyReportRequest):
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
     try:
-        html = await asyncio.to_thread(
-            generate_weekly_report, req.target, req.content, canonical
-        )
+        html = await asyncio.to_thread(generate_weekly_report, canonical)
     except Exception as e:
         logger.error("weekly_report: AI 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
@@ -312,11 +316,13 @@ async def render_report(req: RenderRequest):
         )
 
     try:
-        meta_type = canonical.get("meta", {}).get("type", "EVENT")
+        meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
         if meta_type == "WEEKLY":
-            fn = partial(generate_weekly_report, "", "", canonical)
+            fn = partial(generate_weekly_report, canonical)
+        elif meta_type == "HEALTH":
+            fn = partial(generate_health_event_report, canonical)
         else:
-            fn = partial(generate_event_report, "", "", canonical)
+            fn = partial(generate_event_report, canonical)
         html = await asyncio.to_thread(fn)
     except Exception as e:
         logger.error("render_report: AI 생성 실패: %s", e, exc_info=True)

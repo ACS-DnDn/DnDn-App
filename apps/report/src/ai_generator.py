@@ -368,65 +368,92 @@ def call_claude(system_prompt: str, user_content: str) -> str:
 # ─────────────────────────────────────────────────
 
 
-def generate_event_report(
-    target: str, content: str, context: dict | None = None
-) -> str:
-    """SecurityHub 이벤트 보고서 HTML 생성 (MCP AWS 문서 참조)
+def generate_event_report(canonical: dict) -> str:
+    """SecurityHub / 일반 이벤트 보고서 HTML 생성 (MCP AWS 문서 참조)
 
     Args:
-        target: 이벤트 대상 (리소스명, 서비스명 등)
-        content: 이벤트 내용 설명
-        context: ref_doc_ids로 병합된 canonical 컨텍스트 (선택)
+        canonical: S3에 저장된 canonical JSON dict
+            - meta.title / meta.run_id : 문서 제목
+            - resources[].extensions.aws_health : AWS Health 이벤트 정보
+            - resources[].extensions.actionability : 조치 가능성 분석
+            - resources[].extensions.securityhub_finding : SecurityHub Finding
+            - content : 이벤트 내용 설명 (선택)
     """
-    ctx = context or {}
+    meta = canonical.get("meta", {})
+    title = meta.get("title") or meta.get("run_id") or "이벤트 보고서"
 
-    event_code, service = _detect_event_info(ctx)
+    # extension fields
+    resources = canonical.get("resources", [{}])
+    first_ext = resources[0].get("extensions", {}) if resources else {}
+    aws_health = first_ext.get("aws_health", {})
+    actionability = first_ext.get("actionability", {})
+    securityhub_finding = first_ext.get("securityhub_finding", {})
+
+    event_code = aws_health.get("event_type_code", "")
+    service = aws_health.get("service", "")
     aws_docs = _fetch_aws_docs(event_code, service)
+
+    ext_section = ""
+    if aws_health:
+        ext_section += f"\n## AWS Health 이벤트\n{json.dumps(aws_health, ensure_ascii=False, indent=2)}\n"
+    if actionability:
+        ext_section += f"\n## 조치 가능성 분석\n{json.dumps(actionability, ensure_ascii=False, indent=2)}\n"
+    if securityhub_finding:
+        ext_section += f"\n## SecurityHub Finding\n{json.dumps(securityhub_finding, ensure_ascii=False, indent=2)}\n"
     aws_docs_section = (
         f"\n## AWS 공식 문서 (MCP 실시간 조회)\n{aws_docs}\n" if aws_docs else ""
     )
-    context_section = (
-        f"\n## 참고 컨텍스트 (이전 보고서)\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n"
-        if ctx
-        else ""
+    canonical_section = (
+        f"\n## Canonical JSON (전체)\n{json.dumps(canonical, ensure_ascii=False, indent=2)}\n"
     )
 
     system = f"""
 당신은 AWS 인프라 보안 이벤트 분석 전문가입니다.
-이벤트 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 보고서 콘텐츠를 생성하세요.
+이벤트 canonical JSON을 분석하여 한국어 HTML 보고서 콘텐츠를 생성하세요.
 
 {_STYLE_RULES}
 
 콘텐츠 규칙:
 1. 필수 섹션: Overview(기본정보), 이벤트 개요, 이벤트 타임라인, 영향 분석, 권장 조치
-2. 이벤트 성격에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 관련 CVE 목록, 영향 리소스 상세, 조치 체크리스트, 원인 분석 등)
-3. 영어 텍스트는 자연스러운 한국어로 번역하세요
+2. aws_health / actionability / securityhub_finding 데이터가 있으면 별도 섹션으로 상세히 표현하세요
+3. 이벤트 성격에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 관련 CVE 목록, 영향 리소스 상세, 조치 체크리스트)
+4. 영어 텍스트는 자연스러운 한국어로 번역하세요
 """.strip()
 
     user = f"""
-다음 이벤트 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
-
-이벤트 대상: {target}
-이벤트 내용: {content}
-{context_section}
+다음 이벤트 canonical JSON을 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+{ext_section}
+{canonical_section}
 {aws_docs_section}
 """.strip()
 
-    title = target or "이벤트 보고서"
     return _wrap_html(title, call_claude(system, user))
 
 
-def generate_weekly_report(
-    target: str, content: str, context: dict | None = None
-) -> str:
+def generate_weekly_report(canonical: dict) -> str:
     """주간 보고서 HTML 생성 (MCP AWS Well-Architected 문서 참조)
 
     Args:
-        target: 보고 대상 (기간, 서비스명 등)
-        content: 보고 내용 설명
-        context: ref_doc_ids로 병합된 canonical 컨텍스트 (선택)
+        canonical: S3에 저장된 canonical JSON dict
+            - meta.title / meta.period : 제목 및 기간
+            - extensions.advisor_checks / advisor_rollup : AWS Trusted Advisor
+            - extensions.access_analyzer_findings / access_analyzer_rollup
+            - extensions.cost_explorer_summary / cost_explorer_groups
+            - extensions.cloudwatch_alarms / cloudwatch_rollup
     """
-    ctx = context or {}
+    meta = canonical.get("meta", {})
+    title = meta.get("title") or "주간 보고서"
+    period = meta.get("period", {})
+    ext = canonical.get("extensions", {})
+
+    advisor_checks = ext.get("advisor_checks", [])
+    advisor_rollup = ext.get("advisor_rollup", {})
+    access_analyzer_findings = ext.get("access_analyzer_findings", [])
+    access_analyzer_rollup = ext.get("access_analyzer_rollup", {})
+    cost_explorer_summary = ext.get("cost_explorer_summary", {})
+    cost_explorer_groups = ext.get("cost_explorer_groups", [])
+    cloudwatch_alarms = ext.get("cloudwatch_alarms", [])
+    cloudwatch_rollup = ext.get("cloudwatch_rollup", {})
 
     print("[MCP] 주간 보고서용 AWS Well-Architected 문서 조회 중...")
     wa_docs = _fetch_aws_docs_by_query(
@@ -437,34 +464,53 @@ def generate_weekly_report(
         if wa_docs
         else ""
     )
-    context_section = (
-        f"\n## 참고 컨텍스트 (이전 보고서)\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n"
-        if ctx
-        else ""
-    )
+
+    ext_section = ""
+    if advisor_rollup or advisor_checks:
+        ext_section += f"\n## Trusted Advisor 요약\n{json.dumps(advisor_rollup, ensure_ascii=False, indent=2)}\n"
+        if advisor_checks:
+            ext_section += f"### 체크 항목 ({len(advisor_checks)}건)\n{json.dumps(advisor_checks[:20], ensure_ascii=False, indent=2)}\n"
+    if access_analyzer_rollup or access_analyzer_findings:
+        ext_section += f"\n## Access Analyzer 요약\n{json.dumps(access_analyzer_rollup, ensure_ascii=False, indent=2)}\n"
+        if access_analyzer_findings:
+            ext_section += f"### Findings ({len(access_analyzer_findings)}건)\n{json.dumps(access_analyzer_findings[:20], ensure_ascii=False, indent=2)}\n"
+    if cost_explorer_summary:
+        ext_section += f"\n## 비용 요약\n{json.dumps(cost_explorer_summary, ensure_ascii=False, indent=2)}\n"
+        if cost_explorer_groups:
+            ext_section += f"### 서비스별 비용\n{json.dumps(cost_explorer_groups[:30], ensure_ascii=False, indent=2)}\n"
+    if cloudwatch_rollup or cloudwatch_alarms:
+        ext_section += f"\n## CloudWatch 알람 요약\n{json.dumps(cloudwatch_rollup, ensure_ascii=False, indent=2)}\n"
+        if cloudwatch_alarms:
+            ext_section += f"### 알람 목록 ({len(cloudwatch_alarms)}건)\n{json.dumps(cloudwatch_alarms[:20], ensure_ascii=False, indent=2)}\n"
+
+    canonical_section = f"\n## Canonical JSON (전체)\n{json.dumps(canonical, ensure_ascii=False, indent=2)}\n"
 
     system = f"""
 당신은 AWS 인프라 주간 보고서 생성 전문가입니다.
-보고 대상과 내용, 참고 컨텍스트를 분석하여 한국어 HTML 주간 보고서 콘텐츠를 생성하세요.
+canonical JSON 데이터를 분석하여 한국어 HTML 주간 보고서 콘텐츠를 생성하세요.
 
 {_STYLE_RULES}
 
 콘텐츠 규칙:
-1. 필수 섹션: Overview(기본정보/KPI카드), 변경 현황, 변경 타임라인, 보안 Findings, 비용 영향, 액션 아이템
-2. 데이터에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 성능 현황, 컴플라이언스, 내결함성, 서비스 한도, Evidence Index 등)
-3. AWS Well-Architected 가이드 내용을 조치 항목에 반영하세요
+1. 필수 섹션: Overview(기본정보/KPI카드), 변경 현황, 보안 Findings, 비용 현황, 액션 아이템
+2. 제공된 데이터가 있는 항목은 반드시 전용 섹션으로 표현하세요:
+   - Trusted Advisor → 서비스 한도/비용 최적화/보안 권고 테이블
+   - Access Analyzer → IAM 접근 분석 섹션
+   - Cost Explorer → 서비스별 비용 증감 테이블 (cost-up/cost-down 클래스 활용)
+   - CloudWatch 알람 → 알람 상태 현황 테이블
+3. AWS Well-Architected 가이드 내용을 액션 아이템에 반영하세요
+4. KPI 카드에는 총비용, 알람 건수, Findings 건수, 기간 표시
 """.strip()
 
     user = f"""
-다음 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+다음 주간 보고서 canonical JSON을 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
-보고 대상: {target}
-보고 내용: {content}
-{context_section}
+보고 기간: {period.get('start', '')} ~ {period.get('end', '')}
+{ext_section}
+{canonical_section}
 {wa_docs_section}
 """.strip()
 
-    title = target or "주간 보고서"
     return _wrap_html(title, call_claude(system, user))
 
 
@@ -523,28 +569,25 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
     return _wrap_html(title, call_claude(system, user))
 
 
-def generate_health_event_report(
-    target: str, content: str, context: dict | None = None
-) -> str:
+def generate_health_event_report(canonical: dict) -> str:
     """AWS Health 이벤트 보고서 HTML 생성 (MCP AWS 문서 참조)
 
     Args:
-        target: 이벤트 대상 (서비스명, 리소스명 등)
-        content: 이벤트 내용 (AWS Health raw JSON 또는 설명)
-        context: ref_doc_ids로 병합된 canonical 컨텍스트 (선택)
+        canonical: S3에 저장된 canonical JSON dict
+            - meta.title / meta.run_id : 문서 제목
+            - resources[].extensions.aws_health : AWS Health 이벤트 상세
+            - resources[].extensions.actionability : 조치 가능성 분석
     """
-    ctx = context or {}
+    meta = canonical.get("meta", {})
 
-    # content가 JSON 문자열이면 파싱하여 eventTypeCode/service 추출
-    raw: dict = {}
-    if isinstance(content, str):
-        try:
-            raw = json.loads(content)
-        except (json.JSONDecodeError, TypeError):
-            pass
+    resources = canonical.get("resources", [{}])
+    first_ext = resources[0].get("extensions", {}) if resources else {}
+    aws_health = first_ext.get("aws_health", {})
+    actionability = first_ext.get("actionability", {})
 
-    event_type_code = raw.get("detail", {}).get("eventTypeCode", "")
-    service = raw.get("detail", {}).get("service", "") or target
+    event_type_code = aws_health.get("event_type_code", "")
+    service = aws_health.get("service", "")
+    title_candidate = meta.get("title") or service or "이벤트"
 
     print(
         f"[MCP] Health 이벤트 보고서용 AWS 문서 조회 중... ({event_type_code or service})"
@@ -556,34 +599,35 @@ def generate_health_event_report(
         else ""
     )
 
-    context_section = (
-        f"\n## 참고 컨텍스트 (이전 보고서)\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n"
-        if ctx
-        else ""
-    )
+    ext_section = ""
+    if aws_health:
+        ext_section += f"\n## AWS Health 이벤트 상세\n{json.dumps(aws_health, ensure_ascii=False, indent=2)}\n"
+    if actionability:
+        ext_section += f"\n## 조치 가능성 분석\n{json.dumps(actionability, ensure_ascii=False, indent=2)}\n"
+
+    canonical_section = f"\n## Canonical JSON (전체)\n{json.dumps(canonical, ensure_ascii=False, indent=2)}\n"
 
     system = f"""
 당신은 AWS 인프라 운영 전문가입니다.
-AWS Health 이벤트 정보와 AWS 공식 문서를 분석하여 한국어 HTML 이벤트 보고서 콘텐츠를 생성하세요.
+AWS Health 이벤트 canonical JSON과 AWS 공식 문서를 분석하여 한국어 HTML 이벤트 보고서 콘텐츠를 생성하세요.
 
 {_STYLE_RULES}
 
 콘텐츠 규칙:
 1. 필수 섹션: Overview(기본정보), 이벤트 개요, 이벤트 타임라인, 이벤트 상세, 권장 조치(최소 3단계)
-2. 이벤트 유형에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 영향 리소스 목록, 유사 사례, 조치 체크리스트 등)
-3. UTC 시각은 KST(+9시간)로 변환하세요
+2. actionability 데이터가 있으면 조치 우선순위 섹션으로 표현하세요
+3. 이벤트 유형에 따라 1~2개 섹션을 자유롭게 추가하세요 (예: 영향 리소스 목록, 조치 체크리스트)
+4. UTC 시각은 KST(+9시간)로 변환하세요
 """.strip()
 
     user = f"""
-다음 AWS Health 이벤트 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
-
-이벤트 대상: {target}
-이벤트 내용: {content}
-{context_section}
+다음 AWS Health 이벤트 canonical JSON을 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+{ext_section}
+{canonical_section}
 {aws_docs_section}
 """.strip()
 
-    title = f"AWS Health 이벤트 보고서 — {target or service or '이벤트'}"
+    title = f"AWS Health 이벤트 보고서 — {title_candidate}"
     return _wrap_html(title, call_claude(system, user))
 
 
@@ -594,6 +638,10 @@ if __name__ == "__main__":
         Path(__file__).parent.parent / "ui/src/data/health-eks-version-eol.json"
     )
     raw_json = json.loads(sample_path.read_text())
+    canonical = {
+        "meta": {"type": "HEALTH", "title": "EKS"},
+        "resources": [{"extensions": {"aws_health": raw_json.get("detail", raw_json)}}],
+    }
     print("=== Health 이벤트 보고서 생성 테스트 (MCP) ===")
-    result = generate_health_event_report("EKS", json.dumps(raw_json))
+    result = generate_health_event_report(canonical)
     print(result)
