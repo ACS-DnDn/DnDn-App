@@ -432,6 +432,21 @@ WEEKLY 결과에서는 Access Analyzer finding도 `extensions` 아래에 넣을 
 
 ---
 
+### 6-5. weekly Cost Explorer / CloudWatch
+WEEKLY 결과에서는 비용 요약과 CloudWatch alarm 요약도 `extensions` 아래에 넣을 수 있습니다.
+
+예:
+- `extensions.cost_explorer_collection_status`
+- `extensions.cost_explorer_groups`
+- `extensions.cost_explorer_summary`
+- `extensions.cloudwatch_collection_status`
+- `extensions.cloudwatch_alarms`
+- `extensions.cloudwatch_rollup`
+
+이 확장 역시 core schema를 유지한 채 주간 보고서의 비용/운영 섹션을 보강하는 용도로 사용합니다.
+
+---
+
 ## 7. contracts를 실제로 어떻게 쓰나
 
 ### A(Worker)
