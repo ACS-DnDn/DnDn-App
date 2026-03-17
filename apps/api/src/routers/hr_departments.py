@@ -14,16 +14,10 @@ from apps.api.src.schemas.hr import (
     DepartmentSetLeaderRequest,
 )
 from apps.api.src.routers.auth import get_current_user
+from apps.api.src.routers.hr_deps import require_hr
 from apps.api.src.security.cognito import admin_set_group, CognitoError
 
 router = APIRouter(prefix="/hr/departments", tags=["HR - Departments"])
-
-
-# ── HR 전용 접근 제한 ──────────────────────────────────────
-async def require_hr(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "hr":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR_ONLY")
-    return current_user
 
 
 def _to_node(dept: Department) -> DepartmentNode:

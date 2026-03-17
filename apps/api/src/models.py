@@ -55,6 +55,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(50), primary_key=True)
+    cognito_sub = Column(String(50), unique=True, nullable=True, index=True)  # Cognito sub (첫 로그인 시 채워짐)
     email = Column(String(100), unique=True, index=True, nullable=False)
     name = Column(String(50), nullable=False)
     role = Column(String(20), default="member")  # hr | leader | member

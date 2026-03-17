@@ -5,19 +5,6 @@ from __future__ import annotations
 from pydantic import BaseModel, EmailStr
 
 
-# ── 공통 ──────────────────────────────────────────────────
-
-class UserSummary(BaseModel):
-    id: str
-    employeeNo: str | None
-    name: str
-    position: str | None
-    role: str  # hr | leader | member
-
-    class Config:
-        from_attributes = True
-
-
 # ── 사원 ──────────────────────────────────────────────────
 
 class HrUserResponse(BaseModel):
@@ -49,7 +36,6 @@ class HrUserUpdateRequest(BaseModel):
     position: str | None = None
     departmentId: str | None = None
     role: str | None = None       # 역할 변경 시 Cognito 그룹도 변경
-
 
 
 # ── 부서 ──────────────────────────────────────────────────

@@ -6,33 +6,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Department
+from apps.api.src.models import User
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.hr import (
     HrUserResponse,
     HrUserCreateRequest,
     HrUserUpdateRequest,
 )
-from apps.api.src.routers.auth import get_current_user
+import uuid
+
+from apps.api.src.routers.hr_deps import require_hr
+
 from apps.api.src.security.cognito import (
     admin_create_user,
     admin_delete_user,
     admin_reset_user_password,
     admin_set_group,
-    admin_get_groups,
     CognitoError,
 )
 
 router = APIRouter(prefix="/hr/users", tags=["HR - Users"])
 
 VALID_ROLES = {"hr", "leader", "member"}
-
-
-# ── HR 전용 접근 제한 ──────────────────────────────────────
-async def require_hr(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "hr":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR_ONLY")
-    return current_user
 
 
 def _to_response(user: User) -> HrUserResponse:
@@ -88,10 +83,9 @@ async def create_user(
     except CognitoError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
-    # 2. DB 저장 (Cognito sub는 첫 로그인 시 get_current_user가 채움)
-    #    여기서는 email을 임시 id로 사용, 실제 sub는 로그인 후 갱신됨
+    # 2. DB 저장 (cognito_sub는 첫 로그인 시 get_current_user가 채움)
     user = User(
-        id=req.email,           # 로그인 후 Cognito sub(UUID)로 자동 갱신
+        id=str(uuid.uuid4()),
         email=req.email,
         name=req.name,
         role=req.role,
