@@ -1089,7 +1089,7 @@ def _advisor_stage_failed(code: str, message: str) -> Dict[str, Any]:
     return {"status": "FAILED", "error_code": code, "message": message}
 
 
-def _advisor_na_from_client_error(e: ClientError) -> Optional[Tuple[str, str]]:
+def _na_from_client_error(e: ClientError) -> Optional[Tuple[str, str]]:
     code = _client_error_code(e)
     if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
         return ("PERMISSION_DENIED", f"{code}: {e}")
@@ -1114,6 +1114,26 @@ def _write_advisor_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, ob
     bucket = payload["s3"]["bucket"]
     prefix = payload["s3"]["prefix"].rstrip("/")
     return _s3_uri(bucket, f"{prefix}/raw/advisor/{filename}")
+
+
+def _write_access_analyzer_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    aa_dir = raw_dir / "access_analyzer"
+    _ensure_dir(aa_dir)
+    path = aa_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/access_analyzer/{filename}")
+
+
+def _count_access_analyzer_field(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, dict):
+        return len(value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1
 
 
 def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], account_id: str, arn: Optional[str] = None) -> Dict[str, Any]:
@@ -1168,7 +1188,7 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1202,7 +1222,7 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1251,7 +1271,7 @@ def build_weekly_advisor_extensions(
                         "evidence": {"raw_s3_uri": uri},
                     })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1279,6 +1299,162 @@ def build_weekly_advisor_extensions(
             "total_checks": len(checks),
             "severity_counts": sev_counts,
             "category_counts": cat_counts,
+        },
+    }
+
+
+def _serialize_access_analyzer_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": finding.get("id"),
+        "status": finding.get("status"),
+        "resource_type": finding.get("resourceType"),
+        "resource": finding.get("resource"),
+        "resource_owner_account": finding.get("resourceOwnerAccount"),
+        "is_public": finding.get("isPublic"),
+        "principal_count": _count_access_analyzer_field(finding.get("principal")),
+        "action_count": _count_access_analyzer_field(finding.get("action")),
+        "source_count": _count_access_analyzer_field(finding.get("sources")),
+        "created_at": _to_kst_iso(finding["createdAt"]) if isinstance(finding.get("createdAt"), datetime) else None,
+        "updated_at": _to_kst_iso(finding["updatedAt"]) if isinstance(finding.get("updatedAt"), datetime) else None,
+        "error": finding.get("error"),
+    }
+
+
+def build_weekly_access_analyzer_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+    *,
+    max_findings_per_analyzer: int = 100,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    findings: List[Dict[str, Any]] = []
+    collection: Dict[str, Any] = {}
+    total_analyzers = 0
+
+    for region in payload.get("regions") or []:
+        try:
+            client = session.client("accessanalyzer", region_name=region)
+            analyzers: List[Dict[str, Any]] = []
+            token = None
+            while True:
+                kwargs: Dict[str, Any] = {"maxResults": 100}
+                if token:
+                    kwargs["nextToken"] = token
+                resp = client.list_analyzers(**kwargs)
+                analyzers.extend(resp.get("analyzers", []) or [])
+                token = resp.get("nextToken")
+                if not token:
+                    break
+
+            raw_uri = _write_access_analyzer_raw(
+                raw_dir,
+                payload,
+                f"list_analyzers_{region}.json",
+                {"analyzers": analyzers},
+            )
+            active_analyzers = [
+                analyzer
+                for analyzer in analyzers
+                if str(analyzer.get("status") or "").upper() == "ACTIVE"
+            ]
+            total_analyzers += len(active_analyzers)
+            collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_ok(
+                raw_s3_uri=raw_uri,
+                analyzer_count=len(active_analyzers),
+            )
+
+            for analyzer in active_analyzers:
+                analyzer_name = analyzer.get("name") or "unknown-analyzer"
+                analyzer_arn = analyzer.get("arn")
+                if not analyzer_arn:
+                    continue
+
+                region_findings: List[Dict[str, Any]] = []
+                token = None
+                while len(region_findings) < max_findings_per_analyzer:
+                    kwargs = {
+                        "analyzerArn": analyzer_arn,
+                        "maxResults": min(100, max_findings_per_analyzer - len(region_findings)),
+                    }
+                    if token:
+                        kwargs["nextToken"] = token
+                    resp = client.list_findings(**kwargs)
+                    region_findings.extend(resp.get("findings", []) or [])
+                    token = resp.get("nextToken")
+                    if not token:
+                        break
+
+                findings_uri = _write_access_analyzer_raw(
+                    raw_dir,
+                    payload,
+                    f"list_findings_{region}_{_safe_fs_name(analyzer_name)}.json",
+                    {
+                        "analyzer": {
+                            "arn": analyzer_arn,
+                            "name": analyzer_name,
+                            "type": analyzer.get("type"),
+                            "status": analyzer.get("status"),
+                        },
+                        "findings": region_findings,
+                    },
+                )
+                collection[f"access_analyzer.list_findings.{region}.{analyzer_name}"] = _advisor_stage_ok(
+                    raw_s3_uri=findings_uri,
+                    finding_count=len(region_findings),
+                )
+
+                for finding in region_findings:
+                    item = _serialize_access_analyzer_finding(finding)
+                    item["region"] = region
+                    item["analyzer_name"] = analyzer_name
+                    item["analyzer_type"] = analyzer.get("type")
+                    item["evidence"] = {"raw_s3_uri": findings_uri}
+                    findings.append({k: v for k, v in item.items() if v is not None})
+
+        except ClientError as e:
+            na = _na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_na(na_reason, message)
+            else:
+                code = _client_error_code(e)
+                collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_failed(
+                    "ACCESS_ANALYZER_LIST_ANALYZERS_FAILED",
+                    f"{code}: {e}",
+                )
+        except Exception as e:
+            collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_failed(
+                "ACCESS_ANALYZER_UNEXPECTED",
+                str(e),
+            )
+
+    findings.sort(
+        key=lambda f: (
+            0 if f.get("is_public") else 1,
+            str(f.get("resource_type", "")),
+            str(f.get("id", "")),
+        )
+    )
+
+    resource_type_counts: Dict[str, int] = {}
+    public_count = 0
+    for finding in findings:
+        r_type = str(finding.get("resource_type") or "UNKNOWN")
+        resource_type_counts[r_type] = resource_type_counts.get(r_type, 0) + 1
+        if finding.get("is_public") is True:
+            public_count += 1
+
+    return {
+        "access_analyzer_collection_status": collection,
+        "access_analyzer_findings": findings,
+        "access_analyzer_rollup": {
+            "analyzer_count": total_analyzers,
+            "finding_count": len(findings),
+            "public_finding_count": public_count,
+            "resource_type_counts": resource_type_counts,
         },
     }
 
@@ -1795,6 +1971,7 @@ def run_job_from_payload(
 
     extensions = build_event_source_extensions(payload, trigger_resource_refs)
     extensions.update(build_weekly_advisor_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_access_analyzer_extensions(session, payload, raw_dir))
 
     result = {
         "meta": build_meta(payload, time_range),

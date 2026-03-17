@@ -420,6 +420,18 @@ WEEKLY 결과에서는 운영 점검 결과를 `extensions.advisor_checks[]`에 
 
 ---
 
+### 6-4. weekly Access Analyzer findings
+WEEKLY 결과에서는 Access Analyzer finding도 `extensions` 아래에 넣을 수 있습니다.
+
+예:
+- `extensions.access_analyzer_collection_status`
+- `extensions.access_analyzer_findings`
+- `extensions.access_analyzer_rollup`
+
+이 확장은 core schema를 깨지 않고 접근/권한 리스크를 추가하는 용도로 사용합니다.
+
+---
+
 ## 7. contracts를 실제로 어떻게 쓰나
 
 ### A(Worker)
