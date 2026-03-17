@@ -86,6 +86,20 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 - `ACCESS_ANALYZER_UNEXPECTED`
   Access Analyzer 수집 중 예상하지 못한 예외 발생
 
+## Cost Explorer / CloudWatch
+
+- `COST_EXPLORER_GET_COST_AND_USAGE_FAILED`
+  Cost Explorer 비용 조회 실패
+
+- `COST_EXPLORER_UNEXPECTED`
+  Cost Explorer 수집 중 예상하지 못한 예외 발생
+
+- `CLOUDWATCH_DESCRIBE_ALARMS_FAILED`
+  CloudWatch alarm 조회 실패
+
+- `CLOUDWATCH_UNEXPECTED`
+  CloudWatch 수집 중 예상하지 못한 예외 발생
+
 ---
 
 ## 저장/검증

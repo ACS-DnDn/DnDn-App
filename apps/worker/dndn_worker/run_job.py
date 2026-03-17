@@ -508,6 +508,12 @@ def _artifact_kind_from_path(rel_path: str) -> str:
         return "config_snapshot"
     if parts[:2] == ["raw", "advisor"]:
         return "advisor_raw"
+    if parts[:2] == ["raw", "access_analyzer"]:
+        return "access_analyzer_raw"
+    if parts[:2] == ["raw", "cost_explorer"]:
+        return "cost_explorer_raw"
+    if parts[:2] == ["raw", "cloudwatch"]:
+        return "cloudwatch_raw"
     if parts[:2] == ["normalized"]:
         return "normalized_result"
     return "artifact"
@@ -1126,6 +1132,26 @@ def _write_access_analyzer_raw(raw_dir: Path, payload: Dict[str, Any], filename:
     return _s3_uri(bucket, f"{prefix}/raw/access_analyzer/{filename}")
 
 
+def _write_cost_explorer_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    ce_dir = raw_dir / "cost_explorer"
+    _ensure_dir(ce_dir)
+    path = ce_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/cost_explorer/{filename}")
+
+
+def _write_cloudwatch_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    cw_dir = raw_dir / "cloudwatch"
+    _ensure_dir(cw_dir)
+    path = cw_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/cloudwatch/{filename}")
+
+
 def _count_access_analyzer_field(value: Any) -> int:
     if value is None:
         return 0
@@ -1147,6 +1173,242 @@ def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], a
     if arn:
         ref["arn"] = arn
     return ref
+
+
+def _weekly_ce_dates(payload: Dict[str, Any]) -> Tuple[str, str]:
+    tr = payload["time_range"]
+    tz_name = tr.get("timezone") or KST_TZ
+    if ZoneInfo is None:
+        tzinfo = timezone(timedelta(hours=9))
+    else:
+        tzinfo = ZoneInfo(tz_name)
+    start_dt = _parse_dt(tr["start"])
+    end_dt = _parse_dt(tr["end"])
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=tzinfo)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=tzinfo)
+
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+    if end_dt.time() != datetime.min.time():
+        end_date = (end_dt + timedelta(days=1)).date().isoformat()
+    return start_date, end_date
+
+
+def build_weekly_cost_explorer_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    start_date, end_date = _weekly_ce_dates(payload)
+    try:
+        ce = session.client("ce", region_name="us-east-1")
+        pages: List[Dict[str, Any]] = []
+        token = None
+        while True:
+            kwargs: Dict[str, Any] = {
+                "TimePeriod": {"Start": start_date, "End": end_date},
+                "Granularity": "DAILY",
+                "Metrics": ["UnblendedCost"],
+                "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+            }
+            if token:
+                kwargs["NextPageToken"] = token
+            resp = ce.get_cost_and_usage(**kwargs)
+            pages.append(resp)
+            token = resp.get("NextPageToken")
+            if not token:
+                break
+
+        raw_uri = _write_cost_explorer_raw(
+            raw_dir,
+            payload,
+            "get_cost_and_usage.json",
+            {"pages": pages},
+        )
+
+        by_service: Dict[str, float] = {}
+        unit = "USD"
+        for page in pages:
+            for period in page.get("ResultsByTime", []) or []:
+                for group in period.get("Groups", []) or []:
+                    keys = group.get("Keys", []) or []
+                    service = keys[0] if keys else "UNKNOWN"
+                    metric = (group.get("Metrics") or {}).get("UnblendedCost") or {}
+                    amount = float(metric.get("Amount") or 0)
+                    unit = metric.get("Unit") or unit
+                    by_service[service] = by_service.get(service, 0.0) + amount
+
+        groups = [
+            {
+                "service": service,
+                "amount": round(amount, 6),
+                "unit": unit,
+            }
+            for service, amount in sorted(by_service.items(), key=lambda x: (-x[1], x[0]))
+        ]
+
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_ok(
+                    raw_s3_uri=raw_uri,
+                    group_count=len(groups),
+                )
+            },
+            "cost_explorer_groups": groups,
+            "cost_explorer_summary": {
+                "total_unblended_cost": round(sum(by_service.values()), 6),
+                "unit": unit,
+                "service_count": len(groups),
+                "start_date": start_date,
+                "end_date_exclusive": end_date,
+            },
+        }
+    except ClientError as e:
+        na = _na_from_client_error(e)
+        if na is not None:
+            na_reason, message = na
+            return {
+                "cost_explorer_collection_status": {
+                    "ce.get_cost_and_usage": _advisor_stage_na(na_reason, message)
+                }
+            }
+        code = _client_error_code(e)
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_failed(
+                    "COST_EXPLORER_GET_COST_AND_USAGE_FAILED",
+                    f"{code}: {e}",
+                )
+            }
+        }
+    except Exception as e:
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_failed(
+                    "COST_EXPLORER_UNEXPECTED",
+                    str(e),
+                )
+            }
+        }
+
+
+def build_weekly_cloudwatch_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    collection: Dict[str, Any] = {}
+    alarms: List[Dict[str, Any]] = []
+    total_alarm_count = 0
+    state_counts: Dict[str, int] = {}
+
+    for region in payload.get("regions") or []:
+        try:
+            cw = session.client("cloudwatch", region_name=region)
+            metric_alarms: List[Dict[str, Any]] = []
+            composite_alarms: List[Dict[str, Any]] = []
+            token = None
+            while True:
+                kwargs: Dict[str, Any] = {"MaxRecords": 100}
+                if token:
+                    kwargs["NextToken"] = token
+                resp = cw.describe_alarms(**kwargs)
+                metric_alarms.extend(resp.get("MetricAlarms", []) or [])
+                composite_alarms.extend(resp.get("CompositeAlarms", []) or [])
+                token = resp.get("NextToken")
+                if not token:
+                    break
+
+            safe_region = _safe_fs_name(region)
+            raw_uri = _write_cloudwatch_raw(
+                raw_dir,
+                payload,
+                f"describe_alarms_{safe_region}.json",
+                {
+                    "MetricAlarms": metric_alarms,
+                    "CompositeAlarms": composite_alarms,
+                },
+            )
+            total_count = len(metric_alarms) + len(composite_alarms)
+            total_alarm_count += total_count
+            collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_ok(
+                raw_s3_uri=raw_uri,
+                alarm_count=total_count,
+            )
+
+            for alarm in metric_alarms:
+                state = alarm.get("StateValue") or "UNKNOWN"
+                state_counts[state] = state_counts.get(state, 0) + 1
+                if state != "ALARM":
+                    continue
+                alarms.append(
+                    {
+                        "region": region,
+                        "alarm_name": alarm.get("AlarmName"),
+                        "alarm_type": "METRIC",
+                        "state_value": state,
+                        "state_reason": alarm.get("StateReason"),
+                        "namespace": alarm.get("Namespace"),
+                        "metric_name": alarm.get("MetricName"),
+                        "evaluation_periods": alarm.get("EvaluationPeriods"),
+                        "threshold": alarm.get("Threshold"),
+                        "comparison_operator": alarm.get("ComparisonOperator"),
+                        "evidence": {"raw_s3_uri": raw_uri},
+                    }
+                )
+
+            for alarm in composite_alarms:
+                state = alarm.get("StateValue") or "UNKNOWN"
+                state_counts[state] = state_counts.get(state, 0) + 1
+                if state != "ALARM":
+                    continue
+                alarms.append(
+                    {
+                        "region": region,
+                        "alarm_name": alarm.get("AlarmName"),
+                        "alarm_type": "COMPOSITE",
+                        "state_value": state,
+                        "state_reason": alarm.get("StateReason"),
+                        "alarm_rule": alarm.get("AlarmRule"),
+                        "evidence": {"raw_s3_uri": raw_uri},
+                    }
+                )
+
+        except ClientError as e:
+            na = _na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_na(na_reason, message)
+            else:
+                code = _client_error_code(e)
+                collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_failed(
+                    "CLOUDWATCH_DESCRIBE_ALARMS_FAILED",
+                    f"{code}: {e}",
+                )
+        except Exception as e:
+            collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_failed(
+                "CLOUDWATCH_UNEXPECTED",
+                str(e),
+            )
+
+    alarms.sort(key=lambda a: (str(a.get("region", "")), str(a.get("alarm_name", ""))))
+    return {
+        "cloudwatch_collection_status": collection,
+        "cloudwatch_alarms": alarms,
+        "cloudwatch_rollup": {
+            "alarm_count": total_alarm_count,
+            "active_alarm_count": len(alarms),
+            "state_counts": state_counts,
+        },
+    }
 
 
 def build_weekly_advisor_extensions(
@@ -1972,6 +2234,8 @@ def run_job_from_payload(
     extensions = build_event_source_extensions(payload, trigger_resource_refs)
     extensions.update(build_weekly_advisor_extensions(session, payload, raw_dir))
     extensions.update(build_weekly_access_analyzer_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_cost_explorer_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_cloudwatch_extensions(session, payload, raw_dir))
 
     result = {
         "meta": build_meta(payload, time_range),

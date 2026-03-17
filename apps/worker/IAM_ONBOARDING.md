@@ -24,17 +24,21 @@ AssumeRole 기반 IAM 설정과 검증 절차를 정리합니다.
 | 미연결 EBS 볼륨 점검 | `ec2:DescribeVolumes` | 선택 | advisor checks 사용 시 |
 | RDS 백업/Multi-AZ 점검 | `rds:DescribeDBInstances` | 선택 | advisor checks 사용 시 |
 | Access Analyzer analyzer / finding 조회 | `access-analyzer:ListAnalyzers`, `access-analyzer:ListFindings` | 선택 | WEEKLY Access Analyzer 사용 시 |
+| Cost Explorer 비용 조회 | `ce:GetCostAndUsage` | 선택 | WEEKLY 비용 요약 사용 시 |
+| CloudWatch alarm 조회 | `cloudwatch:DescribeAlarms` | 선택 | WEEKLY 운영 경보 요약 사용 시 |
 
 현재 템플릿 기준:
 - 필수 권한: CloudTrail + Config
 - 운영 점검까지 사용할 경우: EC2 / RDS 조회 권한 포함
 - Access Analyzer 확장까지 사용할 경우: Access Analyzer 조회 권한 포함
+- 비용/운영 요약까지 사용할 경우: Cost Explorer / CloudWatch 조회 권한 포함
 
 주의:
 - Security Hub, AWS Health 이벤트는 현재 Worker가 **payload 기반 이벤트 정보** 를 받아 처리하는 경로가 중심입니다
 - 즉 현재 MVP 기준으로는 고객 계정 Role에 Security Hub / Health 조회 권한을 기본 필수로 두지 않습니다
 - Access Analyzer는 현재 WEEKLY 확장으로 직접 조회를 사용하므로, 해당 기능을 켜면 관련 권한이 필요합니다
-- 추후 Worker가 Security Hub / Health / Cost Explorer / CloudWatch API를 직접 조회하게 되면 권한 표를 추가 갱신해야 합니다
+- Cost Explorer / CloudWatch도 현재 WEEKLY 확장으로 직접 조회를 사용하므로, 해당 기능을 켜면 관련 권한이 필요합니다
+- 추후 Worker가 Security Hub / Health API를 직접 조회하게 되면 권한 표를 추가 갱신해야 합니다
 
 ---
 
@@ -207,7 +211,6 @@ python apps/worker/tools/smoke_cloudtrail.py \
 아래 기능이 실제 수집 API 호출로 추가되면 이 문서를 같이 갱신해야 합니다.
 
 - Security Hub 직접 조회
-- Cost Explorer 직접 조회
-- CloudWatch 직접 조회
+- AWS Health 직접 조회
 
 즉, 권한 정책은 Worker 기능 확장과 항상 같이 버전 관리해야 합니다.
