@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS worker_jobs (
     run_id VARCHAR(128) NOT NULL COMMENT '플랫폼 전역 dedupe 기준 ID',
     job_type VARCHAR(20) NOT NULL COMMENT 'WEEKLY 또는 EVENT',
     status VARCHAR(20) NOT NULL COMMENT 'QUEUED, RUNNING, SUCCEEDED, FAILED',
-    attempt INT NOT NULL DEFAULT 1 COMMENT '현재 실행 시도 횟수',
+    attempt INT NOT NULL DEFAULT 0 COMMENT '실행 시작 시 증가하는 시도 횟수',
     retryable BOOLEAN NULL COMMENT '재시도 가능 여부',
     already_processed BOOLEAN NOT NULL DEFAULT FALSE COMMENT '이미 처리된 run_id 여부',
     error_code VARCHAR(64) NULL COMMENT '실패 시 표준 에러 코드',
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS worker_jobs (
 설명:
 - `run_id` 는 전역 멱등성 기준입니다
 - `status` 는 `job_status.schema.json` 의 enum과 동일하게 유지합니다
-- `attempt` 는 재시도 횟수 추적용입니다
+- `attempt` 는 실제 실행을 점유할 때마다 증가하는 시도 횟수입니다
 - `executor_id` 는 어떤 pod가 job을 점유했는지 추적합니다
 - `source_json_s3_key` 는 성공 후 `source_jsons` 와 연결할 때 사용합니다
 
@@ -150,6 +150,7 @@ WHERE run_id = :run_id
 - `rows_affected = 1` 인 경우에만 점유 성공으로 간주합니다
 - `rows_affected = 0` 이면 이미 다른 worker가 점유했거나 재시도 불가 상태로 간주합니다
 - 점유 성공 이후에만 실제 AWS 수집과 S3 업로드를 시작합니다
+- `attempt` 는 `QUEUED` 생성 시점이 아니라 `RUNNING` 점유 성공 시점에 증가합니다
 
 ### 4-4. Report / 후속 시스템
 - `SUCCEEDED` 상태와 `source_json_s3_key` 를 기준으로 후속 처리
