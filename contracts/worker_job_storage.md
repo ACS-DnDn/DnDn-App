@@ -44,13 +44,17 @@ CREATE TABLE IF NOT EXISTS worker_jobs (
     requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'job 생성 시각',
     started_at TIMESTAMP NULL DEFAULT NULL COMMENT 'worker 실행 시작 시각',
     finished_at TIMESTAMP NULL DEFAULT NULL COMMENT 'worker 실행 종료 시각',
-    UNIQUE KEY uk_worker_jobs_run_id (run_id)
+    UNIQUE KEY uk_worker_jobs_run_id (run_id),
+    CONSTRAINT chk_worker_jobs_type
+        CHECK (job_type IN ('WEEKLY', 'EVENT')),
+    CONSTRAINT chk_worker_jobs_status
+        CHECK (status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED'))
 ) ENGINE=InnoDB COMMENT='worker 실행 상태 및 멱등성 관리 테이블';
 ```
 
 설명:
 - `run_id` 는 전역 멱등성 기준입니다
-- `status` 는 `job_status.schema.json` 의 enum과 동일하게 유지합니다
+- `job_type`, `status` 는 `job_status.schema.json` 의 enum과 동일한 값을 DB 제약으로 강제합니다
 - `attempt` 는 실제 실행을 점유할 때마다 증가하는 시도 횟수입니다
 - `executor_id` 는 어떤 pod가 job을 점유했는지 추적합니다
 - `source_json_s3_key` 는 성공 후 `source_jsons` 와 연결할 때 사용합니다
@@ -102,6 +106,11 @@ Job Producer는 worker job 등록을 시작하는 역할입니다.
 - `worker_jobs.status = QUEUED` row 생성
 - payload에 같은 `run_id`를 넣어 SQS publish
 
+중복 등록 원칙:
+- `run_id` 또는 별도 dedupe 기준으로 기존 row가 이미 존재하면 새 row를 만들지 않습니다
+- 중복 등록이 감지되면 SQS에 다시 publish 하지 않고 기존 `run_id` 와 상태를 반환합니다
+- 같은 요청에 대해 producer마다 다른 등록 결과가 나오지 않도록 공용 registration 규칙을 사용해야 합니다
+
 중요:
 - producer는 여러 개일 수 있지만, job 등록 규칙은 하나여야 합니다
 - 즉 각 producer가 직접 제각각 구현하기보다 공용 job registration 경로를 공유하는 것이 좋습니다
@@ -121,6 +130,11 @@ API는 현재 구현에서 job registration을 담당하는 주체이자 상태 
 - payload 생성 및 SQS publish
 - `worker_jobs` 상태 조회 API 제공
 - 프론트/운영 시스템에 현재 상태 전달
+
+등록 규칙:
+- `worker_jobs` 생성이 성공한 경우에만 SQS publish 를 수행합니다
+- `uk_worker_jobs_run_id` 충돌 시에는 새 publish 대신 기존 job 상태를 조회해 반환합니다
+- 즉, API는 "새 job 생성" 또는 "기존 job 반환" 중 하나로 동작해야 합니다
 
 ### 4-3. Worker
 - 메시지 수신 후 `run_id` 로 상태 조회
@@ -173,7 +187,7 @@ WHERE run_id = :run_id
 
 1. API가 `run_id` 를 만든다
 2. API가 `worker_jobs` row 생성 (`QUEUED`)
-3. API가 같은 `run_id` 를 포함한 payload를 SQS에 publish
+3. `run_id` 중복이 없을 때만 API가 같은 `run_id` 를 포함한 payload를 SQS에 publish
 4. worker가 실행 후 `SUCCEEDED` 로 업데이트
 5. 성공 시 `source_jsons` row 생성
 6. `worker_jobs.source_json_s3_key` 와 `source_jsons.source_json_s3_key` 를 맞춰 연결
