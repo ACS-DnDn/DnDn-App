@@ -5,7 +5,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from apps.api.src.database import engine
 from apps.api.src.models import Base
-from apps.api.src.routers import auth, dashboard, documents, github, org, report_settings, reports, workspaces, hr_users, hr_departments, slack
+from apps.api.src.routers import (
+    auth,
+    dashboard,
+    documents,
+    github,
+    org,
+    report_settings,
+    reports,
+    workspaces,
+    hr_users,
+    hr_departments,
+    slack,
+)
 
 # 1. MariaDB에 테이블 자동 생성 (models.py에 정의된 규격대로)
 # 주의: 이미 테이블이 있으면 덮어쓰지 않습니다. (실무에서는 Alembic 같은 마이그레이션 툴 사용)
@@ -23,7 +35,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 예: ["http://localhost:3000"]
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

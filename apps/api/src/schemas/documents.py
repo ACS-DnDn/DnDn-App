@@ -18,7 +18,7 @@ class DocumentSubmitRequest(BaseModel):
     type: str
     work_date: Optional[date] = Field(None, alias="workDate")
     terraform: Optional[Dict[str, Any]] = None  # JSON 객체를 받기 위해 Dict 사용
-    refDocIds: Optional[List[str]] = []
+    refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
     isDraft: bool
 
