@@ -153,7 +153,8 @@ async def get_documents(
         to_dt = to_dt.replace(hour=23, minute=59, second=59)
         query = query.filter(Document.created_at <= to_dt)
 
-    # 7. 전체 개수 구하기
+    # 7. 전체 개수 구하기 (JOIN 시 문서 중복 방지)
+    query = query.distinct()
     total_count = query.count()
 
     # 8. 정렬 및 페이징
@@ -581,8 +582,8 @@ async def mark_all_documents_as_read(
         # 혹시라도 프론트엔드에서 이상한 탭 이름을 보내면 차단
         raise HTTPException(status_code=400, detail="INVALID_TAB")
 
-    # DB에서 해당하는 문서 ID들만 싹 뽑아옵니다.
-    target_docs = query.all()
+    # DB에서 해당하는 문서 ID들만 싹 뽑아옵니다. (JOIN 시 문서 중복 방지)
+    target_docs = query.distinct().all()
     target_doc_ids = [str(doc.id) for doc in target_docs]
 
     # 조건에 맞는 문서가 하나도 없다면 바로 성공 리턴
