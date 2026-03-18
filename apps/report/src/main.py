@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Any
 import os
@@ -57,7 +58,7 @@ app.add_middleware(
 
 def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
     try:
-        update_job_status(job_id, "running")
+        update_job_status(job_id, "generating")
 
         generate_work_plan(req.target, req.content, ctx)
 
@@ -65,7 +66,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
 
     except Exception as e:
         logger.error("work_plan AI 생성 오류: %s", e, exc_info=True)
-        update_job_status(job_id, "error")
+        update_job_status(job_id, "failed")
 
 
 def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
@@ -284,13 +285,29 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
 
 
 # ── 작업계획서 생성 (target + content + refDocIds → HTML) ──
-@app.post("/todo/documents/generate/plan")
+@app.post("/todo/documents/generate/plan", status_code=202)
 async def work_plan(req: WorkPlanRequest):
+
+    if not req.target:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "MISSING_TARGET", "message": "target은 필수입니다."}},
+        )
+    if not req.content:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "MISSING_CONTENT", "message": "content는 필수입니다."}},
+        )
+    if not req.workspace_id:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "INVALID_WORKSPACE", "message": "workspaceId는 필수입니다."}},
+        )
 
     job_id = str(uuid.uuid4())
     create_job(req.workspace_id, job_id)
 
-    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+    ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
 
     asyncio.create_task(asyncio.to_thread(_run_work_plan, job_id, req, ctx))
 
@@ -303,24 +320,18 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
 
     # 1. documentId 검증
     if not req.document_id:
-        return {
-            "success": False,
-            "error": {
-                "code": "INVALID_DOCUMENT",
-                "message": "documentId는 필수입니다.",
-            },
-        }
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "INVALID_DOCUMENT", "message": "documentId는 필수입니다."}},
+        )
 
     # 2. repo 설정
     repo = req.repo_name or GITHUB_REPO
     if not repo:
-        return {
-            "success": False,
-            "error": {
-                "code": "INVALID_REPO",
-                "message": "GITHUB_REPO가 설정되지 않았습니다.",
-            },
-        }
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": {"code": "AI_UNAVAILABLE", "message": "GITHUB_REPO가 설정되지 않았습니다."}},
+        )
 
     # 3. job 생성
     job_id = str(uuid.uuid4())
@@ -350,10 +361,10 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
     job = get_job(db, job_id)
 
     if not job:
-        return {
-            "success": False,
-            "error": {"code": "JOB_NOT_FOUND", "message": "존재하지 않는 jobId"},
-        }
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": {"code": "JOB_NOT_FOUND", "message": "존재하지 않는 jobId"}},
+        )
 
     data = {"jobId": job.job_id, "status": job.status}
 

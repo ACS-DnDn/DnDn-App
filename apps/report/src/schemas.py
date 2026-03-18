@@ -1,5 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Any
+
+
+def _to_camel(s: str) -> str:
+    parts = s.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
 
 
 class ReportRequest(BaseModel):
@@ -10,12 +15,20 @@ class ReportRequest(BaseModel):
     account_id: str = "default"
 
 
-WorkPlanRequest = ReportRequest  # alias
+class WorkPlanRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    workspace_id: str | None = None
+    target: str | None = None
+    content: str | None = None
+    ref_doc_ids: list[str] = []
 
 
 class TerraformRequest(BaseModel):
-    workspace_id: str
-    document_id: str
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    document_id: str | None = None
+    workspace_id: str | None = None
     job_id: str | None = None
     workplan: dict[str, Any] | None = None
     repo_name: str | None = None
