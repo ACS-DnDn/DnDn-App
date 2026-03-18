@@ -18,8 +18,12 @@ async def get_org_members(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 일단 모든 유저를 가져옵니다.
-    users = db.query(User).all()
+    # 1. 현재 사용자와 같은 회사에 속한 유저만 가져옵니다.
+    users = (
+        db.query(User)
+        .filter(User.company_id == current_user.company_id)
+        .all()
+    )
 
     # 2. 부서별로 사람들을 모아둘 딕셔너리 준비
     dept_groups = defaultdict(list)
