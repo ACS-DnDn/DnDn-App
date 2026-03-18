@@ -311,6 +311,7 @@ consumer 동작:
 - JSON 파싱
 - payload schema 검증
 - `run_job_from_payload(...)` 호출
+- `visibility_timeout` 이 설정된 경우 처리 중 heartbeat로 메시지 visibility 연장
 - `retryable=False` 결과/예외면 delete
 - `retryable=True` 예외면 delete 하지 않고 재시도 대상으로 남김
 - 같은 `run_id` 재수신으로 `already_processed=True` 가 오면 delete
@@ -359,6 +360,7 @@ consumer 실행 시 주로 아래 env를 사용합니다.
 - `DNDN_WORKER_MAX_EVENTS`: job당 최대 CloudTrail event 수
 - `DNDN_WORKER_WAIT_TIME_SECONDS`: SQS long polling wait time
 - `DNDN_WORKER_MAX_MESSAGES`: poll당 최대 수신 메시지 수
+- `DNDN_WORKER_HEARTBEAT_INTERVAL_SECONDS`: 처리 중 visibility timeout 연장 heartbeat 주기. `0`이면 `visibility_timeout` 기준으로 자동 계산
 - `AWS_REGION` 또는 `AWS_DEFAULT_REGION`: boto3 기본 리전
 - AWS credential chain 관련 env 또는 IAM role: 컨테이너/런타임에서 boto3가 사용하는 기본 인증 정보
 
@@ -379,6 +381,7 @@ consumer 실행 시 주로 아래 env를 사용합니다.
 
 - SQS redrive policy(DLQ)로 최대 수신 횟수 제한
 - visibility timeout은 평균 job 실행 시간보다 길게 설정
+- job 실행 시간이 길거나 편차가 크면 heartbeat를 켜서 visibility timeout을 주기적으로 연장
 - `DNDN_WORKER_MAX_MESSAGES=1` 부터 시작해 안정화 후 조정
 - retryable 실패는 CloudWatch/SQS metric 기반 알림 연결
 
