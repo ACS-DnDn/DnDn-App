@@ -32,6 +32,18 @@ from apps.api.src.security.slack_oauth import send_message, SlackError
 
 _S3_BUCKET = os.getenv("S3_BUCKET", "")
 _AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+_S3_CLIENT = None
+
+
+def _get_s3_client():
+    """
+    Lazily initialize and cache a boto3 S3 client at module level
+    to avoid repeated client creation overhead.
+    """
+    global _S3_CLIENT
+    if _S3_CLIENT is None:
+        _S3_CLIENT = boto3.client("s3", region_name=_AWS_REGION)
+    return _S3_CLIENT
 
 
 def _s3_get_text(key: str) -> str | None:
@@ -39,7 +51,7 @@ def _s3_get_text(key: str) -> str | None:
     if not key or not _S3_BUCKET:
         return None
     try:
-        s3 = boto3.client("s3", region_name=_AWS_REGION)
+        s3 = _get_s3_client()
         obj = s3.get_object(Bucket=_S3_BUCKET, Key=key)
         return obj["Body"].read().decode("utf-8")
     except ClientError:
