@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
+// TODO: pending 배지 카운트 — getDashboard() API 연동 후 실제 값으로 교체
 import { dashboardData } from '@/mocks';
 
 interface SidebarProps {
@@ -74,7 +75,7 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
 export function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark, toggle } = useTheme();
 
   const logoSrc = isDark && session.company.logoDarkUrl

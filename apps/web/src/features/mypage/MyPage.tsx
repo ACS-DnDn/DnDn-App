@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import './MyPage.css';
 
 const AUTH_LABELS: Record<string, string> = { leader: '리더', user: '사용자', auditor: '감사자' };
@@ -14,7 +14,7 @@ const CHANNELS = [
 ];
 
 export function MyPage() {
-  const { session } = useAuth();
+  const session = useSession();
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [slackConnected, setSlackConnected] = useState(false);
   const [slackNotifOn, setSlackNotifOn] = useState(true);
