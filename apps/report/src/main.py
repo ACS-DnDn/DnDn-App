@@ -31,7 +31,7 @@ from .s3_client import (
     get_workplan,
 )
 from .makejob import *
-from .models import ReportJob
+from .models import ReportJob, Document
 from .database import *
 
 logger = logging.getLogger(__name__)
@@ -130,41 +130,107 @@ async def _merge_context(ref_doc_ids: list[str], workspace_id: str) -> dict[str,
 
 # ── 이벤트 보고서 ──────────────────────────────────────────
 @app.post("/api/report/event")
-async def event_report(req: ReportRequest):
+async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
+    doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     canonical = {
         "meta": {"type": "EVENT", "title": req.target, "account_id": req.account_id},
         "content": req.content,
         **ctx,
     }
+
+    try:
+        json_key = await asyncio.to_thread(
+            save_report, doc_id, canonical, req.account_id
+        )
+    except Exception as e:
+        logger.error("event_report: JSON 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="보고서 저장 실패")
+
     try:
         html = await asyncio.to_thread(generate_event_report, canonical)
-        return {"ok": True, "data": html}
     except Exception as e:
-        logger.error("event_report 오류: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="내부 서버 오류")
+        logger.error("event_report: AI 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
+
+    try:
+        html_key = await asyncio.to_thread(
+            save_report_html, doc_id, html, req.account_id
+        )
+        html_url = await asyncio.to_thread(get_presigned_url, html_key)
+    except Exception as e:
+        logger.error("event_report: HTML 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="HTML 저장 실패")
+
+    doc = Document(
+        id=doc_id,
+        title=req.target or doc_id,
+        type="이벤트보고서",
+        html_key=html_key,
+        json_key=json_key,
+        ref_doc_ids=req.ref_doc_ids or None,
+        workspace_id=req.workspace_id,
+        status="done",
+    )
+    db.add(doc)
+    db.commit()
+
+    return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
 
 # ── Health 이벤트 보고서 ───────────────────────────────────
 @app.post("/api/report/health-event")
-async def health_event_report(req: ReportRequest):
+async def health_event_report(req: ReportRequest, db: Session = Depends(get_db)):
+    doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     ctx = await _merge_context(req.ref_doc_ids, req.account_id)
     canonical = {
         "meta": {"type": "HEALTH", "title": req.target, "account_id": req.account_id},
         "content": req.content,
         **ctx,
     }
+
+    try:
+        json_key = await asyncio.to_thread(
+            save_report, doc_id, canonical, req.account_id
+        )
+    except Exception as e:
+        logger.error("health_event_report: JSON 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="보고서 저장 실패")
+
     try:
         html = await asyncio.to_thread(generate_health_event_report, canonical)
-        return {"ok": True, "data": html}
     except Exception as e:
-        logger.error("health_event_report 오류: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="내부 서버 오류")
+        logger.error("health_event_report: AI 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
+
+    try:
+        html_key = await asyncio.to_thread(
+            save_report_html, doc_id, html, req.account_id
+        )
+        html_url = await asyncio.to_thread(get_presigned_url, html_key)
+    except Exception as e:
+        logger.error("health_event_report: HTML 저장 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="HTML 저장 실패")
+
+    doc = Document(
+        id=doc_id,
+        title=req.target or doc_id,
+        type="이벤트보고서",
+        html_key=html_key,
+        json_key=json_key,
+        ref_doc_ids=req.ref_doc_ids or None,
+        workspace_id=req.workspace_id,
+        status="done",
+    )
+    db.add(doc)
+    db.commit()
+
+    return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
 
 # ── 주간 보고서 ────────────────────────────────────────────
 @app.post("/api/report/weekly")
-async def weekly_report(req: WeeklyReportRequest):
+async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db)):
     doc_id = f"weekly-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
 
     canonical = {
@@ -180,7 +246,9 @@ async def weekly_report(req: WeeklyReportRequest):
     }
 
     try:
-        await asyncio.to_thread(save_report, doc_id, canonical, req.account_id)
+        json_key = await asyncio.to_thread(
+            save_report, doc_id, canonical, req.account_id
+        )
     except Exception as e:
         logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
@@ -196,14 +264,27 @@ async def weekly_report(req: WeeklyReportRequest):
             save_report_html, doc_id, html, req.account_id
         )
         html_url = await asyncio.to_thread(get_presigned_url, html_key)
-        return {"ok": True, "data": {"doc_id": doc_id, "html_url": html_url}}
     except Exception as e:
         logger.error("weekly_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
 
+    doc = Document(
+        id=doc_id,
+        title=req.target or doc_id,
+        type="주간보고서",
+        html_key=html_key,
+        json_key=json_key,
+        workspace_id=req.account_id,
+        status="done",
+    )
+    db.add(doc)
+    db.commit()
+
+    return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
+
 
 # ── 작업계획서 생성 (target + content + refDocIds → HTML) ──
-@app.post("/documents/generate/plan")
+@app.post("/todo/documents/generate/plan")
 async def work_plan(req: WorkPlanRequest):
 
     job_id = str(uuid.uuid4())
@@ -217,7 +298,7 @@ async def work_plan(req: WorkPlanRequest):
 
 
 # ── 테라폼 코드 생성 ───────────────────────────────────────
-@app.post("/documents/generate/terraform", status_code=202)
+@app.post("/todo/documents/generate/terraform", status_code=202)
 async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db)):
 
     # 1. documentId 검증
@@ -263,7 +344,7 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
 
 
 # ─────────────────폴링─────────────────
-@app.get("/documents/generate/{job_id}")
+@app.get("/todo/documents/generate/{job_id}")
 async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
 
     job = get_job(db, job_id)

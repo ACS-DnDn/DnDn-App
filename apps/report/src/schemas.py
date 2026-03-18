@@ -14,8 +14,10 @@ WorkPlanRequest = ReportRequest  # alias
 
 
 class TerraformRequest(BaseModel):
+    workspace_id: str
+    document_id: str
     job_id: str | None = None
-    workplan: dict[str, Any] | None = None  # 직접 전달 (하위 호환)
+    workplan: dict[str, Any] | None = None
     repo_name: str | None = None
     github_token: str | None = None
 
@@ -30,11 +32,6 @@ class SaveRequest(BaseModel):
 class RenderRequest(BaseModel):
     doc_id: str
     account_id: str = "default"
-
-
-class TerraformRequest(BaseModel):
-    workspace_id: str
-    document_id: str
 
 
 class WeeklyReportRequest(BaseModel):
