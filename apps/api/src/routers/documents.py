@@ -24,9 +24,19 @@ from apps.api.src.schemas.documents import (
     RefDocMetaItem,
     RefDocumentDetailResponse,
 )
+from apps.api.src.security.slack_oauth import send_message, SlackError
 
 # 프론트엔드는 /documents 로 요청합니다.
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
+
+def _notify(user: User, text: str) -> None:
+    """Slack 알림 발송 — 실패해도 메인 플로우에 영향 없음."""
+    if user and user.slack_access_token and user.slack_notify:
+        try:
+            send_message(user.slack_access_token, user.slack_channel or "general", text)
+        except SlackError:
+            pass
 
 
 @router.get("", response_model=SuccessResponse[DocumentArchiveResponse])
@@ -225,7 +235,16 @@ async def submit_document(
     db.commit()
     db.refresh(doc)
 
-    # 8. 명세서에 맞는 응답 반환
+    # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
+    if not req.isDraft:
+        first_approver_id = next(
+            (a.userId for a in req.approvers if a.seq == 1), None
+        )
+        if first_approver_id:
+            first_approver = db.query(User).filter(User.id == first_approver_id).first()
+            _notify(first_approver, f"📋 결재 요청: [{doc.type}] {doc.title}")
+
+    # 9. 명세서에 맞는 응답 반환
     return DocumentSubmitResponse(
         id=str(doc.id), docNum=str(doc.id)[:8], status=doc.status  # UUID 앞 8자리
     )
@@ -297,7 +316,14 @@ async def approve_document(
     # 6. DB 최종 반영
     db.commit()
 
-    # 7. 공통 응답 규격으로 리턴
+    # 7. Slack 알림
+    if next_approval:
+        next_user = db.query(User).filter(User.id == next_approval.user_id).first()
+        _notify(next_user, f"📋 결재 요청: [{doc.type}] {doc.title}")
+    else:
+        _notify(doc.author, f"✅ 결재 완료: [{doc.type}] {doc.title}")
+
+    # 8. 공통 응답 규격으로 리턴
     return SuccessResponse(data=DocumentStatusResponse(newStatus=new_status))
 
 
@@ -342,7 +368,10 @@ async def reject_document(
     # 6. DB 최종 반영
     db.commit()
 
-    # 7. 공통 응답 규격으로 리턴 (상태는 무조건 rejected)
+    # 7. 작성자에게 Slack 알림
+    _notify(doc.author, f"❌ 반려: [{doc.type}] {doc.title} — {req.comment}")
+
+    # 8. 공통 응답 규격으로 리턴 (상태는 무조건 rejected)
     return SuccessResponse(data=DocumentStatusResponse(newStatus="rejected"))
 
 
