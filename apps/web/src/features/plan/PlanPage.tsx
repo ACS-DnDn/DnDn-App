@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
-import { orgData, docData, ALL_DOCS, wsAccounts } from '@/mocks';
-import type { DocDataItem } from '@/mocks';
+import { apiFetch } from '@/services/api';
+import { getDocuments } from '@/services/document.service';
+import type { Document } from '@/mocks';
+import type { OrgDept } from '@/mocks';
 import './PlanPage.css';
 
 /* ── Terraform 기본값 (API 실패 시 fallback) ── */
@@ -13,8 +15,8 @@ const TF_FILES = [
 ];
 
 
-interface Approver { name: string; rank: string; type: string; }
-interface PendingApprover { name: string; rank: string; type: string; }
+interface Approver { id: string; name: string; rank: string; type: string; }
+interface PendingApprover { id: string; name: string; rank: string; type: string; }
 interface RefDoc { no: string; name: string; }
 interface LogEntry { time: string; msg: string; type: string; tab: number; }
 
@@ -28,7 +30,7 @@ function now() {
 export function PlanPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark } = useTheme();
 
   /* ── left panel state ── */
@@ -41,10 +43,9 @@ export function PlanPage() {
   const [docState, setDocState] = useState<'blank' | 'loading' | 'ready'>('blank');
   const docTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [docId] = useState(() => Date.now());
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [isSaving, setIsSaving] = useState(false);
 
   /* ── right panel state ── */
   const [tfState, setTfState] = useState<'blank' | 'loading' | 'ready'>('blank');
@@ -57,7 +58,8 @@ export function PlanPage() {
   const validationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   /* ── API 연동 state ── */
-  const [iframeSrcdoc, setIframeSrcdoc] = useState<string | null>(null);
+  const [draftDocumentId, setDraftDocumentId] = useState<string | null>(null);
+  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
   const logPanelRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +69,23 @@ export function PlanPage() {
   const [orgSelected, setOrgSelected] = useState<Set<string>>(new Set());
   const [pendingApprovers, setPendingApprovers] = useState<PendingApprover[]>([]);
   const [apvSearch, setApvSearch] = useState('');
+
+  /* ── 실제 API 데이터 state ── */
+  const [orgData, setOrgData] = useState<OrgDept[]>([]);
+  const [docList, setDocList] = useState<Document[]>([]);
+  const [ws, setWs] = useState<{ id: string; alias: string; acctId: string } | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ data: OrgDept[] }>('/org/members')
+      .then(res => setOrgData(res.data))
+      .catch(() => {});
+    getDocuments({ pageSize: 100 })
+      .then(res => setDocList(res.items))
+      .catch(() => {});
+    apiFetch<{ success: boolean; data: { items: { id: string; alias: string; acctId: string }[] } }>('/workspaces')
+      .then(res => setWs(res.data.items[0] ?? null))
+      .catch(() => {});
+  }, []);
 
   /* ── doc popup state ── */
   const [docPopupOpen, setDocPopupOpen] = useState(false);
@@ -81,13 +100,13 @@ export function PlanPage() {
   useEffect(() => {
     const refDocId = searchParams.get('refDocId');
     if (!refDocId) return;
-    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId, 10));
+    const doc = docList.find(d => d.id === refDocId);
     if (!doc) return;
     setRefDocs(prev => {
-      if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;
-      return [...prev, { no: `ref-${doc.id}`, name: `${doc.icon} ${doc.name}` }];
+      if (prev.some(r => r.no === doc.id)) return prev;
+      return [...prev, { no: doc.id, name: `${doc.icon} ${doc.name}` }];
     });
-  }, [searchParams]);
+  }, [searchParams, docList]);
 
   /* ── scroll log panel ── */
   useEffect(() => {
@@ -138,9 +157,8 @@ export function PlanPage() {
     const newPending = [...pendingApprovers];
     orgSelected.forEach(name => {
       if (newPending.some(p => p.name === name)) return;
-      let rank = '';
-      orgData.forEach(dept => { const m = dept.members.find(mm => mm.name === name); if (m) rank = m.rank; });
-      newPending.push({ name, rank, type: '결재' });
+      const member = orgData.flatMap(d => d.members).find(m => m.name === name);
+      newPending.push({ id: member?.id ?? '', name, rank: member?.rank ?? '', type: '결재' });
     });
     setPendingApprovers(newPending);
     setOrgSelected(new Set());
@@ -155,7 +173,7 @@ export function PlanPage() {
   }
 
   function saveApprovers() {
-    setApprovers(prev => [...prev, ...pendingApprovers.map(p => ({ name: p.name, rank: p.rank, type: p.type }))]);
+    setApprovers(prev => [...prev, ...pendingApprovers.map(p => ({ id: p.id, name: p.name, rank: p.rank, type: p.type }))]);
     setApvPopupOpen(false);
   }
 
@@ -186,7 +204,7 @@ export function PlanPage() {
     setDocPage(1);
   }
 
-  const filteredDocs: DocDataItem[] = docData.filter(d => {
+  const filteredDocs = docList.filter(d => {
     if (!docFilterQ) return true;
     const val = docFilterField === 'author' ? d.author : d.name;
     return val.toLowerCase().includes(docFilterQ);
@@ -195,13 +213,13 @@ export function PlanPage() {
   const totalDocPages = Math.max(1, Math.ceil(filteredDocs.length / DOC_PAGE_SIZE));
   const currentPageDocs = filteredDocs.slice((docPage - 1) * DOC_PAGE_SIZE, docPage * DOC_PAGE_SIZE);
 
-  async function saveDocPopup() {
+  function saveDocPopup() {
     if (!selectedDocNo) return;
-    const d = docData.find(x => x.no === selectedDocNo);
+    const d = docList.find(x => x.id === selectedDocNo);
     if (!d) return;
     setRefDocs(prev => {
-      if (prev.some(r => r.no === d.no)) return prev;
-      return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
+      if (prev.some(r => r.no === d.id)) return prev;
+      return [...prev, { no: d.id, name: `${d.id} — ${d.name}` }];
     });
     setDocPopupOpen(false);
   }
@@ -209,6 +227,23 @@ export function PlanPage() {
   /* ══════════════════════════════
      계획서 생성
   ══════════════════════════════ */
+  async function pollJob(jobId: string): Promise<Record<string, unknown>> {
+    for (let i = 0; i < 60; i++) {
+      await new Promise<void>(r => setTimeout(r, 1000));
+      const res = await fetch(`/todo/documents/generate/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const { status, result, error } = (json.data ?? json) as {
+        status: string;
+        result?: Record<string, unknown>;
+        error?: { message: string };
+      };
+      if (status === 'done') return result ?? {};
+      if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
+    }
+    throw new Error('타임아웃: 60초 초과');
+  }
+
   async function generateDoc() {
     setDocState('loading');
     setTfState('blank');
@@ -217,28 +252,25 @@ export function PlanPage() {
     setGeneratedTfFiles([]);
     setTfCodes(TF_FILES.map(f => f.code));
     setLogEntries([]);
+    setDraftDocumentId(null);
     try {
-      const res = await fetch('/api/report/workplan', {
+      const res = await fetch('/todo/documents/generate/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          workspaceId: ws?.id,
           target: nlTarget,
           content: nlInput,
-          ref_doc_ids: refDocs.map(r => r.no),
-          account_id: 'default',
+          ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-      const { job_id, html } = json.data;
-      setJobId(job_id);
-      setIframeSrcdoc(html);
+      const { jobId } = json.data ?? json;
+      const result = await pollJob(jobId);
+      setDraftDocumentId(result.documentId as string);
+      setIframeSrc(result.contentUrl as string);
       setDocState('ready');
-      setTimeout(() => {
-        const body = iframeRef.current?.contentDocument?.body;
-        if (body) body.contentEditable = 'true';
-      }, 300);
     } catch (err) {
       console.error('workplan API error:', err);
       setDocState('blank');
@@ -249,7 +281,7 @@ export function PlanPage() {
   function doAutoSave() {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
     if (!html) return;
-    localStorage.setItem(`doc-${jobId ?? 'draft'}`, html);
+    localStorage.setItem(`doc-${docId}`, html);
     const timestamp = new Date();
     setLastSaved(
       `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
@@ -262,36 +294,26 @@ export function PlanPage() {
   }, []);
 
   async function saveDoc() {
-    if (docState !== 'ready' || !jobId) { alert('저장할 계획서가 없습니다.'); return; }
-    setIsSaving(true);
+    if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
+    if (approvers.length === 0) { alert('결재자를 1명 이상 지정해 주세요.'); return; }
+
     try {
-      const currentTfFiles = generatedTfFiles.length > 0
-        ? generatedTfFiles.map((f, i) => ({ name: f.name, code: tfCodes[i] ?? f.code }))
-        : [];
-      const html = iframeRef.current?.contentDocument?.documentElement.outerHTML ?? '';
-      const res = await fetch('/api/save', {
+      const terraformObj = Object.fromEntries(generatedTfFiles.map(f => [f.name, f.code]));
+      const res = await apiFetch<{ id: string; docNum: string; status: string }>('/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account_id: 'default',
-          job_id: jobId,
-          html,
-          terraform_files: currentTfFiles,
+          documentId: draftDocumentId,
+          type: 'plan',
+          terraform: generatedTfFiles.length > 0 ? terraformObj : undefined,
+          refDocIds: refDocs.map(rd => rd.no),
+          approvers: approvers.map((a, i) => ({ userId: a.id, seq: i + 1, type: a.type })),
+          isDraft: false,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-
-      const timestamp = new Date();
-      setLastSaved(
-        `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
-      );
-      alert(`저장 완료 (job: ${jobId})`);
+      navigate(`/viewer/${res.id}`);
     } catch (err) {
-      alert('저장 중 오류: ' + String(err));
-    } finally {
-      setIsSaving(false);
+      console.error('결재 상신 실패:', err);
+      alert('결재 상신에 실패했습니다. 다시 시도해 주세요.');
     }
   }
 
@@ -299,7 +321,7 @@ export function PlanPage() {
      Terraform 코드 생성
   ══════════════════════════════ */
   async function generateTerraform() {
-    if (!jobId) return;
+    if (!draftDocumentId) return;
     setTfState('loading');
     setTfStatus('generating');
     setTfStatusText('코드 생성 중');
@@ -307,34 +329,23 @@ export function PlanPage() {
     addLog('작업 계획서 분석 중...', 'muted', 0);
     addLog('Terraform 코드 생성 중...', 'run', 0);
     try {
-      const res = await fetch('/api/terraform/generate', {
+      const res = await fetch('/todo/documents/generate/terraform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_id: jobId }),
+        body: JSON.stringify({ documentId: draftDocumentId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      if (!json.ok) throw new Error(json.detail ?? 'API 오류');
-      // backend returns { filename, content } — normalize to { name, code }
-      const rawFiles: Record<string, string>[] = json.data.files ?? [];
-      const files = rawFiles.map(f => ({
-        name: f.name ?? f.filename ?? 'main.tf',
-        code: f.code ?? f.content ?? '',
-      }));
+      const { jobId } = json.data ?? json;
+      const result = await pollJob(jobId);
+      const rawFiles = (result.files as Record<string, string>) ?? {};
+      const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
       if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
-      const checkov = json.data.checkov ?? {};
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));
       setTfTab(0);
       setTfState('ready');
       files.forEach((f, i) => addLog(`${f.name} 생성 완료`, 'ok', i));
-      const passed = checkov.summary?.passed ?? 0;
-      const failed = checkov.summary?.failed ?? 0;
-      if (failed > 0) {
-        addLog(`Checkov: ${passed} passed / ${failed} failed`, 'info', 0);
-      } else if (passed > 0) {
-        addLog(`Checkov: 보안 검증 통과 (${passed} passed)`, 'ok', 0);
-      }
       setTfStatus('ok');
       setTfStatusText('생성 완료');
     } catch (err) {
@@ -447,8 +458,6 @@ export function PlanPage() {
   /* ══════════════════════════════
      RENDER
   ══════════════════════════════ */
-  const ws = wsAccounts[0];
-
   return (
     <>
       {/* ── Plan 전용 topnav (사이드바 없음) ── */}
@@ -548,9 +557,9 @@ export function PlanPage() {
           {lastSaved && <span className="auto-save-label">마지막 저장 {lastSaved}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <button className="btn-tf" disabled={docState !== 'ready' || tfState === 'loading'} onClick={generateTerraform}>Terraform 코드 생성</button>
-            <button className="plan-btn-save" onClick={saveDoc} disabled={isSaving || docState !== 'ready'}>
+            <button className="plan-btn-save" onClick={saveDoc}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 10l4 4 8-9"/></svg>
-              {isSaving ? 'S3 저장 중...' : '결재 상신'}
+              결재 상신
             </button>
           </div>
         </div>
@@ -579,7 +588,7 @@ export function PlanPage() {
             <iframe
               ref={iframeRef}
               className="plan-iframe"
-              {...(iframeSrcdoc ? { srcDoc: iframeSrcdoc } : { src: '/mock/plan-sample.html' })}
+              {...(iframeSrc ? { src: iframeSrc } : { src: '/mock/plan-sample.html' })}
               onLoad={() => {
                 const doc = iframeRef.current?.contentDocument;
                 if (doc) {
@@ -774,8 +783,8 @@ export function PlanPage() {
             {currentPageDocs.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>검색 결과가 없습니다.</div>
             ) : currentPageDocs.map(d => (
-              <div key={d.no} className={`doc-popup-item${selectedDocNo === d.no ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.no ? null : d.no)}>
-                <div className="doc-item-no">{d.no}</div>
+              <div key={d.id} className={`doc-popup-item${selectedDocNo === d.id ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.id ? null : d.id)}>
+                <div className="doc-item-no">{d.id}</div>
                 <div className="doc-item-name">{d.name}</div>
                 <div className="doc-item-author">{d.author}</div>
                 <div className="doc-item-date">{d.date}</div>

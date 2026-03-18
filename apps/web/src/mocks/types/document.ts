@@ -3,7 +3,8 @@ export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed';
 export type DocAction = 'approve' | 'rejected' | null;
 
 export interface Document {
-  id: number;
+  id: string;
+  docNum?: string;
   name: string;
   author: string;
   date: string;
@@ -12,6 +13,9 @@ export interface Document {
   action: DocAction;
   icon: string;
   workspace: string;
+  content?: string;
+  terraform?: Record<string, string>;
+  refDocIds?: string[];
 }
 
 export interface RefDocMeta {

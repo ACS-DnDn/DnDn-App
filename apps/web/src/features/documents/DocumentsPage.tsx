@@ -1,23 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getDocuments } from '@/services/document.service';
+import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
-const REPORT_API_BASE = import.meta.env.VITE_REPORT_API_BASE ?? 'http://localhost:8000';
-
-interface DocItem {
-  id: string;
-  docNum: string;
-  name: string;
-  author: string;
-  date: string;
-  type: string;
-  status: string;
-  html_url: string | null;
-}
-
 const PAGE_SIZE = 10;
-const STATUS_LABELS: Record<string, string> = { done: '완료', pending: '생성 중' };
-const TYPE_LABELS: Record<string, string> = { report: '현황보고서', workplan: '작업계획서' };
+const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
+const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '현황보고서', '이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
   const parts = d.split(' ');
@@ -34,7 +23,7 @@ function fmtShort(ds: string) {
 
 export function DocumentsPage() {
   const navigate = useNavigate();
-  const [allDocs, setAllDocs] = useState<DocItem[]>([]);
+  const [allDocs, setAllDocs] = useState<Document[]>([]);
 
   // 필터 상태
   const [searchField, setSearchField] = useState<'name' | 'author'>('name');
@@ -58,24 +47,7 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(`${REPORT_API_BASE}/api/reports`)
-      .then(r => r.json())
-      .then(json => {
-        if (json.ok && Array.isArray(json.data)) {
-          const docs: DocItem[] = json.data.map((item: Record<string, unknown>) => ({
-            id: item.doc_id as string,
-            docNum: (item.doc_id as string).slice(0, 20),
-            name: item.type === 'workplan' ? '작업계획서' : '현황/이벤트 보고서',
-            author: '시스템',
-            date: ((item.last_modified as string) ?? '').replace('T', ' ').slice(0, 16),
-            type: item.type as string,
-            status: item.html_url ? 'done' : 'pending',
-            html_url: (item.html_url as string | null) ?? null,
-          }));
-          setAllDocs(docs);
-        }
-      })
-      .catch(console.error);
+    getDocuments({ pageSize: 200 }).then(({ items }) => setAllDocs(items)).catch(console.error);
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
@@ -93,7 +65,7 @@ export function DocumentsPage() {
   // 필터 적용된 문서 목록
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    let docs = [...allDocs];
+    let docs = allDocs.filter(d => d.action === null);
 
     if (q) {
       if (searchField === 'author') docs = docs.filter(d => d.author.toLowerCase().includes(q));
@@ -154,14 +126,10 @@ export function DocumentsPage() {
     setSelectedIds(new Set());
   };
 
-  // 행 클릭 → HTML presigned URL 새 탭 열기 (없으면 뷰어로 이동)
-  const handleRowClick = (doc: DocItem) => {
+  // 행 클릭 → 뷰어로 이동
+  const handleRowClick = (doc: Document) => {
     setReadIds(prev => new Set(prev).add(doc.id));
-    if (doc.html_url) {
-      window.open(doc.html_url, '_blank', 'noopener');
-    } else {
-      navigate(`/viewer/${doc.id}?from=documents`);
-    }
+    navigate(`/viewer/${doc.id}?from=documents`);
   };
 
   // 날짜 피커
@@ -399,8 +367,9 @@ export function DocumentsPage() {
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); resetPage(); }}>
                       <option value="">유형</option>
-                      <option value="workplan">작업계획서</option>
-                      <option value="report">현황/이벤트 보고서</option>
+                      <option value="계획서">작업계획서</option>
+                      <option value="주간보고서">현황보고서</option>
+                      <option value="이벤트보고서">이벤트보고서</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
@@ -412,7 +381,8 @@ export function DocumentsPage() {
                     <select className="th-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}>
                       <option value="">상태</option>
                       <option value="done">완료</option>
-                      <option value="pending">생성 중</option>
+                      <option value="rejected">반려</option>
+                      <option value="failed">실패</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
@@ -421,7 +391,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = doc.docNum;
+                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 return (
                   <tr
                     key={doc.id}

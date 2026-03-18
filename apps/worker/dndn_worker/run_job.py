@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -22,6 +23,30 @@ except ImportError:  # pragma: no cover
 
 
 KST_TZ = "Asia/Seoul"
+
+
+@dataclass(frozen=True)
+class WorkerExecutionResult:
+    run_id: str
+    result_path: Path
+    job_type: str
+    retryable: bool = False
+    already_processed: bool = False
+    error_code: Optional[str] = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error_code is None
+
+
+class WorkerExecutionError(Exception):
+    def __init__(self, error_code: str, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.retryable = retryable
+
+    def __str__(self) -> str:
+        return f"{self.error_code}: {super().__str__()}"
 
 
 def _json_default(o):
@@ -208,10 +233,12 @@ def _evidence_uris(payload: Dict[str, Any]) -> Dict[str, Any]:
     norm_prefix = _s3_uri(bucket, f"{prefix}/normalized/")
     # Optional: where the job payload itself was stored
     job_payload_uri = _s3_uri(bucket, f"{prefix}/raw/meta/job_payload.json")
+    index_uri = _s3_uri(bucket, f"{prefix}/raw/index.json")
     return {
         "raw_prefix_s3_uri": raw_prefix,
         "normalized_prefix_s3_uri": norm_prefix,
         "job_payload_s3_uri": job_payload_uri,
+        "index_s3_uri": index_uri,
     }
 
 
@@ -406,6 +433,131 @@ def _write_config_snapshot_artifacts(
         uris["after_s3_uri"] = _s3_uri(bucket, f"{prefix}/raw/config/{safe_key}/after.json")
 
     return uris
+
+
+def _trigger_artifact_filename(trigger: Dict[str, Any]) -> str:
+    detail_type = str(trigger.get("detail_type") or "")
+    logical_source = str(
+        trigger.get("logical_source")
+        or trigger.get("origin_kind")
+        or trigger.get("upstream_source")
+        or trigger.get("source")
+        or ""
+    ).upper()
+
+    if detail_type == "AWS Health Event" or logical_source == "AWS_HEALTH":
+        return "aws_health_event.json"
+    if detail_type == "Security Hub Findings - Imported" or logical_source == "SECURITYHUB":
+        return "securityhub_finding.json"
+    if logical_source in {"MANUAL", "API"}:
+        return "manual_trigger.json"
+    return "eventbridge.json"
+
+
+def _trigger_artifact_payload(trigger: Dict[str, Any]) -> Optional[Any]:
+    for key in ("raw_event", "event", "detail", "finding", "health"):
+        value = trigger.get(key)
+        if value is not None:
+            return value
+    if trigger:
+        return trigger
+    return None
+
+
+def _write_trigger_artifact(
+    raw_dir: Path,
+    payload: Dict[str, Any],
+) -> Optional[str]:
+    if payload.get("type") != "EVENT":
+        return None
+
+    trigger = payload.get("trigger")
+    if not isinstance(trigger, dict):
+        return None
+
+    artifact_payload = _trigger_artifact_payload(trigger)
+    if artifact_payload is None:
+        return None
+
+    trigger_dir = raw_dir / "trigger"
+    _ensure_dir(trigger_dir)
+
+    filename = _trigger_artifact_filename(trigger)
+    path = trigger_dir / filename
+    dump_json(path, artifact_payload)
+
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/trigger/{filename}")
+
+
+def _artifact_kind_from_path(rel_path: str) -> str:
+    parts = rel_path.split("/")
+    if rel_path == "raw/index.json":
+        return "artifact_index"
+    if rel_path == "raw/meta/job_payload.json":
+        return "job_payload"
+    if parts[:2] == ["raw", "trigger"]:
+        return "trigger"
+    if parts[:2] == ["raw", "cloudtrail"]:
+        return "cloudtrail_lookup" if rel_path.endswith("lookup_events.jsonl") else "cloudtrail_event"
+    if parts[:2] == ["raw", "config"]:
+        return "config_snapshot"
+    if parts[:2] == ["raw", "advisor"]:
+        return "advisor_raw"
+    if parts[:2] == ["raw", "access_analyzer"]:
+        return "access_analyzer_raw"
+    if parts[:2] == ["raw", "cost_explorer"]:
+        return "cost_explorer_raw"
+    if parts[:2] == ["raw", "cloudwatch"]:
+        return "cloudwatch_raw"
+    if parts[:2] == ["normalized"]:
+        return "normalized_result"
+    return "artifact"
+
+
+def _write_artifact_index(job_dir: Path, payload: Dict[str, Any]) -> Path:
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].strip("/")
+
+    files: List[Dict[str, Any]] = []
+    for p in sorted(job_dir.rglob("*")):
+        if p.is_dir():
+            continue
+        if p.name == ".DS_Store" or p.name.startswith("._"):
+            continue
+        rel = p.relative_to(job_dir).as_posix()
+        files.append(
+            {
+                "category": rel.split("/", 1)[0],
+                "kind": _artifact_kind_from_path(rel),
+                "path": rel,
+                "s3_uri": _s3_uri(bucket, f"{prefix}/{rel}" if prefix else rel),
+            }
+        )
+
+    index_rel = "raw/index.json"
+    files.append(
+        {
+            "category": "raw",
+            "kind": "artifact_index",
+            "path": index_rel,
+            "s3_uri": _s3_uri(bucket, f"{prefix}/{index_rel}" if prefix else index_rel),
+        }
+    )
+
+    index_doc = {
+        "run_id": payload.get("run_id"),
+        "type": payload.get("type"),
+        "bucket": bucket,
+        "prefix": prefix,
+        "files": files,
+    }
+
+    index_path = job_dir / index_rel
+    _ensure_dir(index_path.parent)
+    dump_json(index_path, index_doc)
+    return index_path
 
 
 def enrich_resources_with_config(
@@ -940,7 +1092,7 @@ def _advisor_stage_failed(code: str, message: str) -> Dict[str, Any]:
     return {"status": "FAILED", "error_code": code, "message": message}
 
 
-def _advisor_na_from_client_error(e: ClientError) -> Optional[Tuple[str, str]]:
+def _na_from_client_error(e: ClientError) -> Optional[Tuple[str, str]]:
     code = _client_error_code(e)
     if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
         return ("PERMISSION_DENIED", f"{code}: {e}")
@@ -967,6 +1119,46 @@ def _write_advisor_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, ob
     return _s3_uri(bucket, f"{prefix}/raw/advisor/{filename}")
 
 
+def _write_access_analyzer_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    aa_dir = raw_dir / "access_analyzer"
+    _ensure_dir(aa_dir)
+    path = aa_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/access_analyzer/{filename}")
+
+
+def _write_cost_explorer_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    ce_dir = raw_dir / "cost_explorer"
+    _ensure_dir(ce_dir)
+    path = ce_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/cost_explorer/{filename}")
+
+
+def _write_cloudwatch_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    cw_dir = raw_dir / "cloudwatch"
+    _ensure_dir(cw_dir)
+    path = cw_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/cloudwatch/{filename}")
+
+
+def _count_access_analyzer_field(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, dict):
+        return len(value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1
+
+
 def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], account_id: str, arn: Optional[str] = None) -> Dict[str, Any]:
     ref: Dict[str, Any] = {
         "resource_type": resource_type,
@@ -978,6 +1170,242 @@ def _resource_ref(resource_type: str, resource_id: str, region: Optional[str], a
     if arn:
         ref["arn"] = arn
     return ref
+
+
+def _weekly_ce_dates(payload: Dict[str, Any]) -> Tuple[str, str]:
+    tr = payload["time_range"]
+    tz_name = tr.get("timezone") or KST_TZ
+    if ZoneInfo is None:
+        tzinfo = timezone(timedelta(hours=9))
+    else:
+        tzinfo = ZoneInfo(tz_name)
+    start_dt = _parse_dt(tr["start"])
+    end_dt = _parse_dt(tr["end"])
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=tzinfo)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=tzinfo)
+
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+    if end_dt.time() != datetime.min.time():
+        end_date = (end_dt + timedelta(days=1)).date().isoformat()
+    return start_date, end_date
+
+
+def build_weekly_cost_explorer_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    start_date, end_date = _weekly_ce_dates(payload)
+    try:
+        ce = session.client("ce", region_name="us-east-1")
+        pages: List[Dict[str, Any]] = []
+        token = None
+        while True:
+            kwargs: Dict[str, Any] = {
+                "TimePeriod": {"Start": start_date, "End": end_date},
+                "Granularity": "DAILY",
+                "Metrics": ["UnblendedCost"],
+                "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+            }
+            if token:
+                kwargs["NextPageToken"] = token
+            resp = ce.get_cost_and_usage(**kwargs)
+            pages.append(resp)
+            token = resp.get("NextPageToken")
+            if not token:
+                break
+
+        raw_uri = _write_cost_explorer_raw(
+            raw_dir,
+            payload,
+            "get_cost_and_usage.json",
+            {"pages": pages},
+        )
+
+        by_service: Dict[str, float] = {}
+        unit = "USD"
+        for page in pages:
+            for period in page.get("ResultsByTime", []) or []:
+                for group in period.get("Groups", []) or []:
+                    keys = group.get("Keys", []) or []
+                    service = keys[0] if keys else "UNKNOWN"
+                    metric = (group.get("Metrics") or {}).get("UnblendedCost") or {}
+                    amount = float(metric.get("Amount") or 0)
+                    unit = metric.get("Unit") or unit
+                    by_service[service] = by_service.get(service, 0.0) + amount
+
+        groups = [
+            {
+                "service": service,
+                "amount": round(amount, 6),
+                "unit": unit,
+            }
+            for service, amount in sorted(by_service.items(), key=lambda x: (-x[1], x[0]))
+        ]
+
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_ok(
+                    raw_s3_uri=raw_uri,
+                    group_count=len(groups),
+                )
+            },
+            "cost_explorer_groups": groups,
+            "cost_explorer_summary": {
+                "total_unblended_cost": round(sum(by_service.values()), 6),
+                "unit": unit,
+                "service_count": len(groups),
+                "start_date": start_date,
+                "end_date_exclusive": end_date,
+            },
+        }
+    except ClientError as e:
+        na = _na_from_client_error(e)
+        if na is not None:
+            na_reason, message = na
+            return {
+                "cost_explorer_collection_status": {
+                    "ce.get_cost_and_usage": _advisor_stage_na(na_reason, message)
+                }
+            }
+        code = _client_error_code(e)
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_failed(
+                    "COST_EXPLORER_GET_COST_AND_USAGE_FAILED",
+                    f"{code}: {e}",
+                )
+            }
+        }
+    except Exception as e:
+        return {
+            "cost_explorer_collection_status": {
+                "ce.get_cost_and_usage": _advisor_stage_failed(
+                    "COST_EXPLORER_UNEXPECTED",
+                    str(e),
+                )
+            }
+        }
+
+
+def build_weekly_cloudwatch_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    collection: Dict[str, Any] = {}
+    alarms: List[Dict[str, Any]] = []
+    total_alarm_count = 0
+    state_counts: Dict[str, int] = {}
+
+    for region in payload.get("regions") or []:
+        try:
+            cw = session.client("cloudwatch", region_name=region)
+            metric_alarms: List[Dict[str, Any]] = []
+            composite_alarms: List[Dict[str, Any]] = []
+            token = None
+            while True:
+                kwargs: Dict[str, Any] = {"MaxRecords": 100}
+                if token:
+                    kwargs["NextToken"] = token
+                resp = cw.describe_alarms(**kwargs)
+                metric_alarms.extend(resp.get("MetricAlarms", []) or [])
+                composite_alarms.extend(resp.get("CompositeAlarms", []) or [])
+                token = resp.get("NextToken")
+                if not token:
+                    break
+
+            safe_region = _safe_fs_name(region)
+            raw_uri = _write_cloudwatch_raw(
+                raw_dir,
+                payload,
+                f"describe_alarms_{safe_region}.json",
+                {
+                    "MetricAlarms": metric_alarms,
+                    "CompositeAlarms": composite_alarms,
+                },
+            )
+            total_count = len(metric_alarms) + len(composite_alarms)
+            total_alarm_count += total_count
+            collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_ok(
+                raw_s3_uri=raw_uri,
+                alarm_count=total_count,
+            )
+
+            for alarm in metric_alarms:
+                state = alarm.get("StateValue") or "UNKNOWN"
+                state_counts[state] = state_counts.get(state, 0) + 1
+                if state != "ALARM":
+                    continue
+                alarms.append(
+                    {
+                        "region": region,
+                        "alarm_name": alarm.get("AlarmName"),
+                        "alarm_type": "METRIC",
+                        "state_value": state,
+                        "state_reason": alarm.get("StateReason"),
+                        "namespace": alarm.get("Namespace"),
+                        "metric_name": alarm.get("MetricName"),
+                        "evaluation_periods": alarm.get("EvaluationPeriods"),
+                        "threshold": alarm.get("Threshold"),
+                        "comparison_operator": alarm.get("ComparisonOperator"),
+                        "evidence": {"raw_s3_uri": raw_uri},
+                    }
+                )
+
+            for alarm in composite_alarms:
+                state = alarm.get("StateValue") or "UNKNOWN"
+                state_counts[state] = state_counts.get(state, 0) + 1
+                if state != "ALARM":
+                    continue
+                alarms.append(
+                    {
+                        "region": region,
+                        "alarm_name": alarm.get("AlarmName"),
+                        "alarm_type": "COMPOSITE",
+                        "state_value": state,
+                        "state_reason": alarm.get("StateReason"),
+                        "alarm_rule": alarm.get("AlarmRule"),
+                        "evidence": {"raw_s3_uri": raw_uri},
+                    }
+                )
+
+        except ClientError as e:
+            na = _na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_na(na_reason, message)
+            else:
+                code = _client_error_code(e)
+                collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_failed(
+                    "CLOUDWATCH_DESCRIBE_ALARMS_FAILED",
+                    f"{code}: {e}",
+                )
+        except Exception as e:
+            collection[f"cloudwatch.describe_alarms.{region}"] = _advisor_stage_failed(
+                "CLOUDWATCH_UNEXPECTED",
+                str(e),
+            )
+
+    alarms.sort(key=lambda a: (str(a.get("region", "")), str(a.get("alarm_name", ""))))
+    return {
+        "cloudwatch_collection_status": collection,
+        "cloudwatch_alarms": alarms,
+        "cloudwatch_rollup": {
+            "alarm_count": total_alarm_count,
+            "active_alarm_count": len(alarms),
+            "state_counts": state_counts,
+        },
+    }
 
 
 def build_weekly_advisor_extensions(
@@ -1019,7 +1447,7 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"ec2.describe_addresses.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1053,7 +1481,7 @@ def build_weekly_advisor_extensions(
                     "evidence": {"raw_s3_uri": uri},
                 })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"ec2.describe_volumes.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1102,7 +1530,7 @@ def build_weekly_advisor_extensions(
                         "evidence": {"raw_s3_uri": uri},
                     })
         except ClientError as e:
-            na = _advisor_na_from_client_error(e)
+            na = _na_from_client_error(e)
             if na is not None:
                 na_reason, message = na
                 collection[f"rds.describe_db_instances.{region}"] = _advisor_stage_na(na_reason, message)
@@ -1130,6 +1558,162 @@ def build_weekly_advisor_extensions(
             "total_checks": len(checks),
             "severity_counts": sev_counts,
             "category_counts": cat_counts,
+        },
+    }
+
+
+def _serialize_access_analyzer_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": finding.get("id"),
+        "status": finding.get("status"),
+        "resource_type": finding.get("resourceType"),
+        "resource": finding.get("resource"),
+        "resource_owner_account": finding.get("resourceOwnerAccount"),
+        "is_public": finding.get("isPublic"),
+        "principal_count": _count_access_analyzer_field(finding.get("principal")),
+        "action_count": _count_access_analyzer_field(finding.get("action")),
+        "source_count": _count_access_analyzer_field(finding.get("sources")),
+        "created_at": _to_kst_iso(finding["createdAt"]) if isinstance(finding.get("createdAt"), datetime) else None,
+        "updated_at": _to_kst_iso(finding["updatedAt"]) if isinstance(finding.get("updatedAt"), datetime) else None,
+        "error": finding.get("error"),
+    }
+
+
+def build_weekly_access_analyzer_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+    *,
+    max_findings_per_analyzer: int = 100,
+) -> Dict[str, Any]:
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    findings: List[Dict[str, Any]] = []
+    collection: Dict[str, Any] = {}
+    total_analyzers = 0
+
+    for region in payload.get("regions") or []:
+        try:
+            client = session.client("accessanalyzer", region_name=region)
+            analyzers: List[Dict[str, Any]] = []
+            token = None
+            while True:
+                kwargs: Dict[str, Any] = {"maxResults": 100}
+                if token:
+                    kwargs["nextToken"] = token
+                resp = client.list_analyzers(**kwargs)
+                analyzers.extend(resp.get("analyzers", []) or [])
+                token = resp.get("nextToken")
+                if not token:
+                    break
+
+            raw_uri = _write_access_analyzer_raw(
+                raw_dir,
+                payload,
+                f"list_analyzers_{region}.json",
+                {"analyzers": analyzers},
+            )
+            active_analyzers = [
+                analyzer
+                for analyzer in analyzers
+                if str(analyzer.get("status") or "").upper() == "ACTIVE"
+            ]
+            total_analyzers += len(active_analyzers)
+            collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_ok(
+                raw_s3_uri=raw_uri,
+                analyzer_count=len(active_analyzers),
+            )
+
+            for analyzer in active_analyzers:
+                analyzer_name = analyzer.get("name") or "unknown-analyzer"
+                analyzer_arn = analyzer.get("arn")
+                if not analyzer_arn:
+                    continue
+
+                region_findings: List[Dict[str, Any]] = []
+                token = None
+                while len(region_findings) < max_findings_per_analyzer:
+                    kwargs = {
+                        "analyzerArn": analyzer_arn,
+                        "maxResults": min(100, max_findings_per_analyzer - len(region_findings)),
+                    }
+                    if token:
+                        kwargs["nextToken"] = token
+                    resp = client.list_findings(**kwargs)
+                    region_findings.extend(resp.get("findings", []) or [])
+                    token = resp.get("nextToken")
+                    if not token:
+                        break
+
+                findings_uri = _write_access_analyzer_raw(
+                    raw_dir,
+                    payload,
+                    f"list_findings_{region}_{_safe_fs_name(analyzer_name)}.json",
+                    {
+                        "analyzer": {
+                            "arn": analyzer_arn,
+                            "name": analyzer_name,
+                            "type": analyzer.get("type"),
+                            "status": analyzer.get("status"),
+                        },
+                        "findings": region_findings,
+                    },
+                )
+                collection[f"access_analyzer.list_findings.{region}.{analyzer_name}"] = _advisor_stage_ok(
+                    raw_s3_uri=findings_uri,
+                    finding_count=len(region_findings),
+                )
+
+                for finding in region_findings:
+                    item = _serialize_access_analyzer_finding(finding)
+                    item["region"] = region
+                    item["analyzer_name"] = analyzer_name
+                    item["analyzer_type"] = analyzer.get("type")
+                    item["evidence"] = {"raw_s3_uri": findings_uri}
+                    findings.append({k: v for k, v in item.items() if v is not None})
+
+        except ClientError as e:
+            na = _na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_na(na_reason, message)
+            else:
+                code = _client_error_code(e)
+                collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_failed(
+                    "ACCESS_ANALYZER_LIST_ANALYZERS_FAILED",
+                    f"{code}: {e}",
+                )
+        except Exception as e:
+            collection[f"access_analyzer.list_analyzers.{region}"] = _advisor_stage_failed(
+                "ACCESS_ANALYZER_UNEXPECTED",
+                str(e),
+            )
+
+    findings.sort(
+        key=lambda f: (
+            0 if f.get("is_public") else 1,
+            str(f.get("resource_type", "")),
+            str(f.get("id", "")),
+        )
+    )
+
+    resource_type_counts: Dict[str, int] = {}
+    public_count = 0
+    for finding in findings:
+        r_type = str(finding.get("resource_type") or "UNKNOWN")
+        resource_type_counts[r_type] = resource_type_counts.get(r_type, 0) + 1
+        if finding.get("is_public") is True:
+            public_count += 1
+
+    return {
+        "access_analyzer_collection_status": collection,
+        "access_analyzer_findings": findings,
+        "access_analyzer_rollup": {
+            "analyzer_count": total_analyzers,
+            "finding_count": len(findings),
+            "public_finding_count": public_count,
+            "resource_type_counts": resource_type_counts,
         },
     }
 
@@ -1373,24 +1957,40 @@ def build_meta(payload: Dict[str, Any], time_range: Dict[str, Any]) -> Dict[str,
     return meta
 
 
-def run_job_from_payload_file(
-    payload_path: Path,
-    repo_root: Path,
-    out_root: Path,
-    max_cloudtrail_events: int = 500,
-) -> Path:
-    """
-    End-to-end runner:
-      payload.json -> raw/ -> normalized/{canonical|event}.json
-    Returns path to normalized json file.
-    """
+def _contract_paths(repo_root: Path) -> Tuple[Path, Path, Path]:
     contracts_dir = repo_root / "contracts"
     payload_schema = contracts_dir / "payload" / "job_payload.schema.json"
     canonical_schema = contracts_dir / "canonical_model.schema.json"
     event_schema = contracts_dir / "event_model.schema.json"
+    return payload_schema, canonical_schema, event_schema
 
-    payload = load_json(payload_path)
-    validate_with_schema(payload, payload_schema)
+
+def _result_path_for_job(job_dir: Path, job_type: str) -> Path:
+    return job_dir / "normalized" / ("event.json" if job_type == "EVENT" else "canonical.json")
+
+
+def run_job_from_payload(
+    payload: Dict[str, Any],
+    repo_root: Path,
+    out_root: Path,
+    max_cloudtrail_events: int = 500,
+) -> WorkerExecutionResult:
+    """
+    End-to-end runner:
+      payload dict -> raw/ -> normalized/{canonical|event}.json
+    Returns path to normalized json file.
+    """
+    payload_schema, canonical_schema, event_schema = _contract_paths(repo_root)
+
+    payload = dict(payload)
+    try:
+        validate_with_schema(payload, payload_schema)
+    except ValueError as exc:
+        raise WorkerExecutionError(
+            "INVALID_PAYLOAD",
+            str(exc),
+            retryable=False,
+        ) from exc
 
     run_id = payload.get("run_id") or ("run-" + _sha256_bytes(os.urandom(16))[:12])
     payload["run_id"] = run_id
@@ -1400,11 +2000,26 @@ def run_job_from_payload_file(
     job_dir = out_root / run_id
     raw_dir = job_dir / "raw"
     norm_dir = job_dir / "normalized"
+    result_path = _result_path_for_job(job_dir, job_type)
+    if result_path.exists():
+        return WorkerExecutionResult(
+            run_id=run_id,
+            result_path=result_path,
+            job_type=job_type,
+            already_processed=True,
+        )
+
     _ensure_dir(raw_dir / "meta")
     _ensure_dir(norm_dir)
 
     # Store payload as raw evidence (local)
     dump_json(raw_dir / "meta" / "job_payload.json", payload)
+
+    trigger_artifact_s3_uri = _write_trigger_artifact(raw_dir, payload)
+    if trigger_artifact_s3_uri:
+        payload.setdefault("trigger", {})
+        if isinstance(payload["trigger"], dict):
+            payload["trigger"]["raw_event_s3_uri"] = trigger_artifact_s3_uri
 
     # 저장은 항상 "우리(DnDn) 계정" 권한으로 수행
     storage_session = boto3.Session()
@@ -1439,6 +2054,7 @@ def run_job_from_payload_file(
 
         result_obj.setdefault("extensions", {})
         dump_json(result_path, result_obj)
+        _write_artifact_index(job_dir, payload)
 
         upload_status: Dict[str, Any] = {"ok": True, "bucket": bucket, "prefix": prefix}
         try:
@@ -1453,7 +2069,11 @@ def run_job_from_payload_file(
             result_obj["extensions"]["upload"] = upload_status
             dump_json(result_path, result_obj)
             if strict_upload:
-                raise RuntimeError(f"S3 업로드 실패: {upload_err}") from upload_err
+                raise WorkerExecutionError(
+                    "S3_PUT_FAILED",
+                    f"S3 업로드 실패: {upload_err}",
+                    retryable=True,
+                ) from upload_err
             return result_path
 
         result_obj["extensions"]["upload"] = upload_status
@@ -1465,7 +2085,11 @@ def run_job_from_payload_file(
             result_obj["extensions"]["upload_sync_warning"] = str(sync_err)
             dump_json(result_path, result_obj)
             if strict_upload:
-                raise RuntimeError(f"최종 normalized 결과 동기화 실패: {sync_err}") from sync_err
+                raise WorkerExecutionError(
+                    "S3_PUT_FAILED",
+                    f"최종 normalized 결과 동기화 실패: {sync_err}",
+                    retryable=True,
+                ) from sync_err
 
         return result_path
 
@@ -1494,7 +2118,6 @@ def run_job_from_payload_file(
             f"{code}: {e}",
             retryable=False,
         )
-        result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
         failed_result = {
             "meta": build_meta(payload, resolve_time_range(payload)),
             "collection_status": collection_status,
@@ -1505,7 +2128,14 @@ def run_job_from_payload_file(
                 "note": "assume_role failed; no further collection",
             },
         }
-        return _finalize_result(result_path, failed_result, strict_upload=False)
+        finalized_path = _finalize_result(result_path, failed_result, strict_upload=False)
+        return WorkerExecutionResult(
+            run_id=run_id,
+            result_path=finalized_path,
+            job_type=job_type,
+            retryable=False,
+            error_code="ASSUME_ROLE_FAILED",
+        )
 
     # 2) Resolve time range
     time_range = resolve_time_range(payload)
@@ -1600,6 +2230,9 @@ def run_job_from_payload_file(
 
     extensions = build_event_source_extensions(payload, trigger_resource_refs)
     extensions.update(build_weekly_advisor_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_access_analyzer_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_cost_explorer_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_cloudwatch_extensions(session, payload, raw_dir))
 
     result = {
         "meta": build_meta(payload, time_range),
@@ -1620,5 +2253,30 @@ def run_job_from_payload_file(
         collection_status["normalized"] = _stage_failed("SCHEMA_VALIDATION_FAILED", str(e), retryable=False)
         result["extensions"]["schema_error"] = str(e)
 
-    result_path = norm_dir / ("event.json" if job_type == "EVENT" else "canonical.json")
-    return _finalize_result(result_path, result, strict_upload=True)
+    finalized_path = _finalize_result(result_path, result, strict_upload=True)
+    normalized_status = collection_status["normalized"]
+    return WorkerExecutionResult(
+        run_id=run_id,
+        result_path=finalized_path,
+        job_type=job_type,
+        retryable=bool(normalized_status.get("retryable", False)),
+        error_code=normalized_status.get("error_code"),
+    )
+
+
+def run_job_from_payload_file(
+    payload_path: Path,
+    repo_root: Path,
+    out_root: Path,
+    max_cloudtrail_events: int = 500,
+) -> WorkerExecutionResult:
+    """
+    Thin file wrapper for local/CLI execution.
+    """
+    payload = load_json(payload_path)
+    return run_job_from_payload(
+        payload=payload,
+        repo_root=repo_root,
+        out_root=out_root,
+        max_cloudtrail_events=max_cloudtrail_events,
+    )

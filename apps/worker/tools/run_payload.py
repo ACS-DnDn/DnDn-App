@@ -18,13 +18,17 @@ def main() -> None:
     repo_root = Path(args.repo_root)
     out_root = Path(args.out)
 
-    result_path = run_job_from_payload_file(
+    result = run_job_from_payload_file(
         payload_path=payload_path,
         repo_root=repo_root,
         out_root=out_root,
         max_cloudtrail_events=args.max_events,
     )
-    print(f"✅ Done. normalized file: {result_path}")
+    print(
+        "✅ Done. "
+        f"normalized file: {result.result_path} "
+        f"(run_id={result.run_id}, already_processed={result.already_processed}, error_code={result.error_code})"
+    )
 
 
 if __name__ == "__main__":
