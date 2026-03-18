@@ -24,7 +24,10 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 
 _REPORT_QUEUE_URL = os.environ.get("REPORT_REQUEST_QUEUE_URL", "")
 _INTERNAL_KEY = os.environ.get("INTERNAL_API_KEY", "")
-_SCHEDULER_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
+_AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
+_S3_BUCKET = os.environ.get("S3_BUCKET", "")
+_STS_ROLE_NAME = os.environ.get("STS_ROLE_NAME", "DnDnOpsAgentRole")
+_STS_EXTERNAL_ID = os.environ.get("STS_EXTERNAL_ID", "")
 
 # auto_error=False — X-Internal-Key 경로에서 Authorization 없어도 403 대신 None 반환
 _security_optional = HTTPBearer(auto_error=False)
@@ -87,18 +90,38 @@ async def create_summary_report(
 
     run_id = str(uuid.uuid4())
 
+    # Worker 스키마(contracts/payload/job_payload.schema.json) 준수 payload 조립
+    job_payload = {
+        "type": "WEEKLY",
+        "run_id": run_id,
+        "account_id": ws.acct_id,
+        "regions": [_AWS_REGION],
+        "assume_role": {
+            "role_arn": f"arn:aws:iam::{ws.acct_id}:role/{_STS_ROLE_NAME}",
+            "external_id": _STS_EXTERNAL_ID,
+        },
+        "s3": {
+            "bucket": _S3_BUCKET,
+            "prefix": f"account_id={ws.acct_id}/type=WEEKLY/run_id={run_id}",
+        },
+        "time_range": {
+            "start": req.startDate.isoformat(),
+            "end": req.endDate.isoformat(),
+            "timezone": "Asia/Seoul",
+        },
+        "trigger": {
+            "source": "API",
+            "title": req.title,
+            "workspace_id": workspaceId,
+        },
+    }
+
     # SQS에 보고서 생성 작업 전달
     try:
-        sqs = boto3.client("sqs", region_name=_SCHEDULER_REGION)
+        sqs = boto3.client("sqs", region_name=_AWS_REGION)
         sqs.send_message(
             QueueUrl=_REPORT_QUEUE_URL,
-            MessageBody=json.dumps({
-                "runId": run_id,
-                "workspaceId": workspaceId,
-                "title": req.title,
-                "startDate": req.startDate.isoformat(),
-                "endDate": req.endDate.isoformat(),
-            }),
+            MessageBody=json.dumps(job_payload),
         )
     except ClientError as e:
         raise HTTPException(status_code=500, detail="QUEUE_ERROR") from e

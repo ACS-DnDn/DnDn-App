@@ -79,6 +79,13 @@ class User(Base):
     slack_channel = Column(String(100), nullable=True)
     slack_notify = Column(Boolean, nullable=True)
 
+    # GitHub 연동
+    github_access_token = Column(Text, nullable=True)
+
+    # OAuth state (멀티 Pod 공유 — JSON: [{value, expires_at}, ...])
+    github_oauth_states = Column(JSON, nullable=True)
+    slack_oauth_states = Column(JSON, nullable=True)
+
     documents = relationship("Document", back_populates="author")
     approvals = relationship("Approval", back_populates="user")
 
@@ -190,6 +197,9 @@ class Workspace(Base):
     icon = Column(String(30), nullable=False, default="rocket")  # 아이콘 키
     memo = Column(Text, nullable=True)  # 메모
 
+    # Lambda event_router가 AssumeRole 시 사용하는 고객별 External ID
+    external_id = Column(String(100), nullable=True)
+
     # OPA 인프라 정책 — PUT으로 전체 교체하므로 JSON 컬럼이 적합
     opa_settings = Column(JSON, nullable=True)
 
@@ -203,9 +213,6 @@ class Workspace(Base):
     # 역참조: 이 워크스페이스의 보고서 설정
     report_settings = relationship(
         "ReportSettings", back_populates="workspace", uselist=False
-    )
-    report_schedules = relationship(
-        "ReportSchedule", back_populates="workspace", cascade="all, delete-orphan"
     )
 
 

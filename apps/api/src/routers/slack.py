@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -25,19 +24,11 @@ router = APIRouter(prefix="/slack", tags=["Slack"])
 _STATE_TTL = timedelta(minutes=10)
 
 
-class _StateEntry(NamedTuple):
-    value: str
-    expires_at: datetime
-
-
-_oauth_states: dict[str, set[_StateEntry]] = {}
-
-
-def _cleanup_expired() -> None:
-    for uid in list(_oauth_states):
-        _oauth_states[uid] = {s for s in _oauth_states[uid] if s.expires_at > datetime.now(timezone.utc)}
-        if not _oauth_states[uid]:
-            del _oauth_states[uid]
+def _get_valid_states(user: User) -> list[dict]:
+    """만료되지 않은 state 목록 반환."""
+    now = datetime.now(timezone.utc).isoformat()
+    states = user.slack_oauth_states or []
+    return [s for s in states if s["expires_at"] > now]
 
 
 def _user_status(user: User) -> SlackStatusResponse:
@@ -52,16 +43,20 @@ def _user_status(user: User) -> SlackStatusResponse:
 
 # ── GET /slack/auth ────────────────────────────────────────
 @router.get("/auth", response_model=SuccessResponse[dict])
-async def slack_auth(current_user: User = Depends(get_current_user)):
+async def slack_auth(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Slack OAuth 인증 플로우를 시작한다. 응답 URL로 사용자를 리다이렉트한다."""
-    _cleanup_expired()
     result = get_auth_url()
 
-    if current_user.id not in _oauth_states:
-        _oauth_states[current_user.id] = set()
-    _oauth_states[current_user.id].add(
-        _StateEntry(value=result.state, expires_at=datetime.now(timezone.utc) + _STATE_TTL)
-    )
+    states = _get_valid_states(current_user)
+    states.append({
+        "value": result.state,
+        "expires_at": (datetime.now(timezone.utc) + _STATE_TTL).isoformat(),
+    })
+    current_user.slack_oauth_states = states
+    db.commit()
 
     return SuccessResponse(data={"authorizeUrl": result.authorize_url, "state": result.state})
 
@@ -75,15 +70,12 @@ async def slack_callback(
     current_user: User = Depends(get_current_user),
 ):
     """Slack 인증 완료 후 프론트에서 호출하는 콜백. code를 토큰으로 교환하고 DB에 저장한다."""
-    _cleanup_expired()
-
-    user_states = _oauth_states.get(current_user.id, set())
-    matched = next((s for s in user_states if s.value == state), None)
+    valid_states = _get_valid_states(current_user)
+    matched = next((s for s in valid_states if s["value"] == state), None)
     if not matched:
         raise HTTPException(status_code=400, detail="INVALID_OAUTH_STATE")
-    user_states.discard(matched)
-    if not user_states:
-        _oauth_states.pop(current_user.id, None)
+    current_user.slack_oauth_states = [s for s in valid_states if s["value"] != state]
+    db.commit()
 
     try:
         result = exchange_code(code)

@@ -41,6 +41,7 @@ COGNITO_USER_POOL_ID = "ap-northeast-2_AqyobCjs4"
 COGNITO_APP_CLIENT_ID = "2ihan310ih4tg1qk71t7fsvdu"
 
 JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+COGNITO_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}"
 JWKS_CACHE_TTL_SECONDS = 3600  # 1 hour TTL for JWKS cache
 
 jwks_cache = None
@@ -63,7 +64,6 @@ def get_jwks():
 
     if not cache_valid:
         try:
-            # 네트워크 이슈로 인한 무한 대기를 방지하기 위해 timeout 설정
             with urllib.request.urlopen(JWKS_URL, timeout=5) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 jwks_cache = {
@@ -71,18 +71,35 @@ def get_jwks():
                     "fetched_at": now,
                 }
         except Exception as e:
-            # 최초 로드에 실패하면 예외를 그대로 올려 애플리케이션에서 감지할 수 있게 한다.
             if not cache_valid and (jwks_cache is None or "data" not in jwks_cache):
                 raise
             # 이전 캐시가 있으면 로그만 남기고 기존 캐시를 계속 사용한다.
             print(f"JWKS fetch error, using cached JWKS if available: {e}")
 
-    # jwks_cache가 dict 구조로 정리되어 있다면 실제 데이터만 반환
     if isinstance(jwks_cache, dict) and "data" in jwks_cache:
         return jwks_cache["data"]
 
-    # 여기에 도달하는 것은 비정상적인 상태이므로 예외를 발생시킨다.
-   raise RuntimeError("JWKS cache is not initialized and fetch failed.")
+    raise RuntimeError("JWKS cache is not initialized and fetch failed.")
+
+
+def _get_public_key(token: str) -> dict:
+    """JWT header의 kid에 맞는 공개키를 JWKS에서 반환. kid 불일치 시 캐시 무효화 후 재시도."""
+    global jwks_cache
+
+    header = jwt.get_unverified_header(token)
+    kid = header.get("kid")
+
+    for key in get_jwks().get("keys", []):
+        if key.get("kid") == kid:
+            return key
+
+    # 키 롤오버 대응: 캐시 무효화 후 1회 재시도
+    jwks_cache = None
+    for key in get_jwks().get("keys", []):
+        if key.get("kid") == kid:
+            return key
+
+    raise ValueError(f"kid '{kid}'에 맞는 공개키가 없습니다")
 
 
 # -------------------------------------------------------------------
@@ -107,13 +124,19 @@ async def get_current_user(
     )
 
     try:
+        public_key = _get_public_key(token)
         payload = jwt.decode(
             token,
-            get_jwks(),
+            public_key,
             algorithms=["RS256"],
-            audience=COGNITO_APP_CLIENT_ID,
-            options={"verify_aud": False},
+            options={"verify_aud": False},  # Cognito access token은 aud 클레임 없음
         )
+
+        # iss, token_use 명시적 검증
+        if payload.get("iss") != COGNITO_ISSUER:
+            raise ValueError("iss 불일치")
+        if payload.get("token_use") != "access":
+            raise ValueError("access token만 허용")
 
         cognito_user_id = payload.get("sub")
         email = payload.get("email")
