@@ -27,9 +27,6 @@ KST_TZ = "Asia/Seoul"
 
 @dataclass(frozen=True)
 class WorkerExecutionResult:
-    # TODO: 플랫폼 상태 저장소를 붙일 때 contracts/job_status.schema.json과
-    # 이 런타임 결과 모델을 맞춰야 함. status, executor_id,
-    # requested_at, started_at, finished_at 필드는 후속 PR에서 반영 예정.
     run_id: str
     result_path: Path
     job_type: str
