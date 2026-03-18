@@ -57,16 +57,38 @@ app.add_middleware(
 
 
 def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
+    db = SessionLocal()
     try:
-        update_job_status(job_id, "generating")
+        job = db.query(ReportJob).filter(ReportJob.job_id == job_id).first()
+        if not job:
+            return
 
-        generate_work_plan(req.target, req.content, ctx)
+        job.status = "generating"
+        db.commit()
 
-        update_job_status(job_id, "done")
+        html = generate_work_plan(req.target, req.content, ctx)
+
+        doc_id = f"plan-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        html_key = save_report_html(doc_id, html, req.workspace_id or "default")
+        content_url = get_presigned_url(html_key)
+
+        job.status = "done"
+        job.document_id = doc_id
+        job.content_url = content_url
+        job.title = req.target
+        db.commit()
 
     except Exception as e:
         logger.error("work_plan AI 생성 오류: %s", e, exc_info=True)
-        update_job_status(job_id, "failed")
+        job = db.query(ReportJob).filter(ReportJob.job_id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_code = "AI_UNAVAILABLE"
+            job.error_message = str(e)
+            db.commit()
+
+    finally:
+        db.close()
 
 
 def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
