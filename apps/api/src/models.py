@@ -194,7 +194,6 @@ class Workspace(Base):
 
     # 역참조: 이 워크스페이스의 보고서 설정
     report_settings = relationship("ReportSettings", back_populates="workspace", uselist=False)
-    report_schedules = relationship("ReportSchedule", back_populates="workspace", cascade="all, delete-orphan")
 
 
 # 7. 📊 보고서 설정 테이블 (워크스페이스당 1개)
@@ -215,24 +214,3 @@ class ReportSettings(Base):
     event_settings = Column(JSON, nullable=True)
 
     workspace = relationship("Workspace", back_populates="report_settings")
-
-
-# 8. 📅 보고서 스케줄 테이블 (워크스페이스당 여러 개)
-class ReportSchedule(Base):
-    __tablename__ = "report_schedules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    workspace_id = Column(
-        String(50), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
-    )
-
-    title = Column(String(200), nullable=False)  # 스케줄 제목
-    preset = Column(String(20), nullable=False)  # daily / weekly / monthly
-    day_of_week = Column(Integer, nullable=True)  # 요일 (1=월 ~ 7=일), weekly 시
-    day_of_month = Column(Integer, nullable=True)  # 날짜 (1-31), monthly 시
-    time = Column(String(5), nullable=False)  # 실행 시각 (HH:mm)
-    include_range = Column(Boolean, default=True)  # 수집 기간 포함 여부
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    workspace = relationship("Workspace", back_populates="report_schedules")
