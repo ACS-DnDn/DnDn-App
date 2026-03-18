@@ -108,6 +108,11 @@ function calcNextRun(preset: string, tv: TimingValues): Date | null {
   return null;
 }
 
+function toLocalDateTimeInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /* ── 컴포넌트 ── */
 export function ReportSettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -115,8 +120,20 @@ export function ReportSettingsPage() {
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
 
   /* 현황 보고서 */
-  const [summaryStart, setSummaryStart] = useState('2026-03-03T00:00');
-  const [summaryEnd, setSummaryEnd] = useState('2026-03-09T23:59');
+  const [summaryStart, setSummaryStart] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const toLastMon = day === 0 ? 13 : day + 6;
+    const mon = new Date(now); mon.setDate(now.getDate() - toLastMon); mon.setHours(0, 0, 0, 0);
+    return toLocalDateTimeInput(mon);
+  });
+  const [summaryEnd, setSummaryEnd] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const toLastMon = day === 0 ? 13 : day + 6;
+    const sun = new Date(now); sun.setDate(now.getDate() - toLastMon + 6); sun.setHours(23, 59, 0, 0);
+    return toLocalDateTimeInput(sun);
+  });
   const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
 
   /* 스케줄 */

@@ -1,6 +1,5 @@
 import { apiFetch } from '@/services/api';
-import type { Document, RefDocMeta, DocDataItem, MockDocContent } from '@/mocks';
-import { REF_DOCS, docData, MOCK_DOC_CONTENT } from '@/mocks';
+import type { Document } from '@/mocks';
 
 interface ApiDocItem {
   id: string;
@@ -62,6 +61,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
     const res = await apiFetch<{
       id: string; title: string; type: string; status: string;
       author?: { name: string }; date?: string; workspace?: string;
+      content?: string; terraform?: Record<string, string>; ref_doc_ids?: string[];
     }>(`/documents/${id}`);
     return {
       id: res.id,
@@ -73,26 +73,12 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       action: null,
       icon: '📄',
       workspace: res.workspace ?? '',
+      content: res.content,
+      terraform: res.terraform,
+      refDocIds: res.ref_doc_ids,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;
     throw err;
   }
-}
-
-// 아래는 PlanPage 등에서 사용하는 mock 기반 함수 — 해당 페이지 API 연동 시 교체
-export function getRefDocs(): Record<string, RefDocMeta> {
-  return Object.fromEntries(
-    Object.entries(REF_DOCS).map(([k, v]) => [k, { ...v, meta: v.meta.map((m) => [...m]) }])
-  ) as Record<string, RefDocMeta>;
-}
-
-export function getDocData(): DocDataItem[] {
-  return docData.map((d) => ({ ...d }));
-}
-
-export function getDocContent(): MockDocContent {
-  return Object.fromEntries(
-    Object.entries(MOCK_DOC_CONTENT).map(([k, v]) => [k, { ...v }])
-  ) as MockDocContent;
 }

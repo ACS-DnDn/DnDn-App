@@ -1,6 +1,5 @@
 import { apiFetch } from '@/services/api';
-import type { Workspace, GitHubMock, OpaCategory } from '@/mocks';
-import { MOCK_GH } from '@/mocks';
+import type { Workspace, OpaCategory } from '@/mocks';
 
 interface ApiOpaPolicyItem {
   key: string;
@@ -56,7 +55,3 @@ export async function saveOpaSettings(workspaceId: string, policies: OpaCategory
   );
 }
 
-// GitHub 데이터는 OAuth 흐름에서 동적으로 조회 — mock 유지
-export function getGitHubData(): GitHubMock {
-  return structuredClone(MOCK_GH);
-}
