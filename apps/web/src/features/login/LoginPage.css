@@ -150,12 +150,44 @@ input[type="password"]::-ms-clear { display: none; }
 
 .version {
   position: fixed;
-  bottom: 28px; right: 32px;
+  bottom: 28px; left: 32px;
   font-size: 10px;
   font-weight: 300;
   color: var(--text-muted);
   opacity: 0.3;
   letter-spacing: 1px;
+}
+
+.service-links {
+  position: fixed;
+  bottom: 24px; right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.service-link {
+  display: flex;
+  align-items: center;
+  color: var(--text);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.service-link:hover { transform: scale(1.18); }
+
+.service-logo-aws {
+  height: 26px;
+  width: auto;
+}
+.service-logo-github {
+  height: 24px;
+  width: auto;
+}
+.service-logo-hr {
+  height: 28px;
+  width: auto;
+  pointer-events: none;
+  background: transparent;
+  color-scheme: light dark;
 }
 
 /* ── 모드 토글 ── */
