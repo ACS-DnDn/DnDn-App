@@ -54,11 +54,18 @@ def _change_message_visibility(sqs_client: Any, queue_url: str, receipt_handle: 
 
 
 def _resolve_heartbeat_interval_seconds(config: ConsumerConfig) -> int:
-    if config.heartbeat_interval_seconds > 0:
-        return config.heartbeat_interval_seconds
     if config.visibility_timeout is None or config.visibility_timeout <= 0:
         return 0
-    return max(30, config.visibility_timeout // 3)
+    if config.visibility_timeout <= 1:
+        raise ValueError("visibility_timeout must be greater than 1 when heartbeat is enabled")
+    if config.heartbeat_interval_seconds > 0:
+        if config.heartbeat_interval_seconds >= config.visibility_timeout:
+            raise ValueError("heartbeat interval must be smaller than visibility timeout")
+        return config.heartbeat_interval_seconds
+    return min(
+        max(1, config.visibility_timeout // 3),
+        config.visibility_timeout - 1,
+    )
 
 
 def _start_message_heartbeat(
@@ -149,13 +156,13 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         except WorkerExecutionError as exc:
             if exc.retryable:
                 print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
-                raise
+                return None
             print(f"[consumer] dropping non-retryable message {message_id}: {exc}")
             _delete_message(sqs_client, config.queue_url, receipt_handle)
             return None
         except Exception as exc:
             print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
-            raise
+            return None
 
         _delete_message(sqs_client, config.queue_url, receipt_handle)
         outcome = "already processed" if result.already_processed else "processed"
@@ -201,7 +208,7 @@ def _build_config(args: argparse.Namespace) -> ConsumerConfig:
 
     repo_root = Path(args.repo_root)
     out_root = Path(args.out)
-    return ConsumerConfig(
+    config = ConsumerConfig(
         queue_url=queue_url,
         repo_root=repo_root,
         out_root=out_root,
@@ -211,6 +218,8 @@ def _build_config(args: argparse.Namespace) -> ConsumerConfig:
         visibility_timeout=args.visibility_timeout,
         heartbeat_interval_seconds=args.heartbeat_interval_seconds,
     )
+    _resolve_heartbeat_interval_seconds(config)
+    return config
 
 
 def main() -> None:
