@@ -1,4 +1,4 @@
-export const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
+const BASE_URL = '/api';
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -6,11 +6,6 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!headers.has('Content-Type') && init?.body != null && !isFormData) {
     headers.set('Content-Type', 'application/json');
-  }
-
-  const token = localStorage.getItem('dndn-access-token');
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {

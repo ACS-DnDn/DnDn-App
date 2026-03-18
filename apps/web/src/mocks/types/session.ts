@@ -7,11 +7,8 @@ export interface Company {
 }
 
 export interface Session {
-  id: string;
   name: string;
-  email: string;
   role: string;
   auth: AuthRole;
   company: Company;
-  createdAt: string | null;
 }

@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '@/hooks/useSession';
+import { useAuth } from '@/hooks/useAuth';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
-import { apiFetch, BASE_URL } from '@/services/api';
 import './WorkspaceCreatePage.css';
 
 const POLICY_ROWS = [
@@ -19,7 +18,7 @@ const POLICY_ROWS = [
 
 export function WorkspaceCreatePage() {
   const navigate = useNavigate();
-  const session = useSession();
+  const { session } = useAuth();
 
   const [step, setStep] = useState(0);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
@@ -47,7 +46,6 @@ export function WorkspaceCreatePage() {
   const [branchList, setBranchList] = useState<{ name: string; isDefault: boolean }[]>([]);
 
   // Step 3: Profile
-  const [creating, setCreating] = useState(false);
   const [alias, setAlias] = useState('');
   const [memo, setMemo] = useState('');
   const [selectedIcon, setSelectedIcon] = useState<IconKey>('cloud');
@@ -87,11 +85,13 @@ export function WorkspaceCreatePage() {
     const clean = acctId.replace(/\D/g, '');
     if (clean.length !== 12) { showToast('AWS 계정 ID를 12자리로 입력하세요.'); return; }
     try {
-      const data = await apiFetch<{ success: boolean; data?: { url: string }; error?: { message: string } }>('/workspaces/cfn-link', {
+      const res = await fetch('/api/workspaces/cfn-link', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
       });
-      if (data.success && data.data?.url) {
+      const data = await res.json();
+      if (data.success) {
         window.open(data.data.url, '_blank');
       } else {
         showToast(data.error?.message || 'URL 생성 실패');
@@ -109,14 +109,14 @@ export function WorkspaceCreatePage() {
     setAwsError('');
     setAwsTesting(true);
     try {
-      const data = await apiFetch<{ success: boolean; data?: { success: boolean; error?: string } }>('/workspaces/test-aws', {
+      const res = await fetch('/api/workspaces/test-aws', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ acctId: clean }),
       });
+      const data = await res.json();
       setAwsTesting(false);
-      if (!data.success) {
-        setAwsError(data.data?.error || '연동 실패 — 스택 생성을 먼저 완료하세요.');
-      } else if (data.data?.success) {
+      if (data.success) {
         setAwsTested(true);
         setAwsError('');
       } else {
@@ -132,8 +132,7 @@ export function WorkspaceCreatePage() {
   const connectGH = async () => {
     setGhConnecting(true);
     try {
-      const res = await fetch(`${BASE_URL}/github/auth-url`);
-      if (!res.ok) { showToast('GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
+      const res = await fetch('/api/github/auth-url');
       const data = await res.json();
       if (!data.success) { showToast(data.error?.message || 'GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
 
@@ -150,16 +149,10 @@ export function WorkspaceCreatePage() {
         return;
       }
 
-      let popupCheck: ReturnType<typeof setInterval> | null = null;
-      const cleanup = () => {
-        if (popupCheck) { clearInterval(popupCheck); popupCheck = null; }
-        window.removeEventListener('message', handler);
-      };
-
       // 팝업이 사용자에 의해 닫힌 경우 감지
-      popupCheck = setInterval(() => {
+      const popupCheck = setInterval(() => {
         if (popup.closed) {
-          cleanup();
+          clearInterval(popupCheck);
           setGhConnecting(false);
         }
       }, 1000);
@@ -167,39 +160,33 @@ export function WorkspaceCreatePage() {
       // 콜백 메시지 수신 대기
       const handler = async (e: MessageEvent) => {
         if (e.origin !== window.location.origin || e.data?.type !== 'github-oauth') return;
-        cleanup();
+        window.removeEventListener('message', handler);
+        clearInterval(popupCheck);
 
-        try {
-          const { code, state: returnedState, error } = e.data;
-          if (error) { showToast(e.data.errorDescription || 'GitHub 인증이 거부되었습니다.'); return; }
-          if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); return; }
+        const { code, state: returnedState, error } = e.data;
+        if (error) { showToast(e.data.errorDescription || 'GitHub 인증이 거부되었습니다.'); setGhConnecting(false); return; }
+        if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); setGhConnecting(false); return; }
 
-          // code → access token 교환
-          const exRes = await fetch(`${BASE_URL}/github/exchange`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, state }),
-          });
-          if (!exRes.ok) { showToast('GitHub 토큰 교환 실패'); return; }
-          const exData = await exRes.json();
-          if (!exData.success) { showToast(exData.error?.message || 'GitHub 토큰 교환 실패'); return; }
+        // code → access token 교환
+        const exRes = await fetch('/api/github/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, state }),
+        });
+        const exData = await exRes.json();
+        if (!exData.success) { showToast(exData.error?.message || 'GitHub 토큰 교환 실패'); setGhConnecting(false); return; }
 
-          setGhToken(exData.data.accessToken);
-          setGhUsername(exData.data.username);
-          setGhConnected(true);
+        setGhToken(exData.data.accessToken);
+        setGhUsername(exData.data.username);
+        setGhConnected(true);
+        setGhConnecting(false);
 
-          // 조직 목록 자동 로드
-          const orgRes = await fetch(`${BASE_URL}/github/orgs`, { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
-          if (orgRes.ok) {
-            const orgData = await orgRes.json();
-            if (orgData.success) {
-              setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data]);
-            }
-          }
-        } catch {
-          showToast('GitHub 연동 처리 중 오류가 발생했습니다.');
-        } finally {
-          setGhConnecting(false);
+        // 조직 목록 자동 로드
+        const orgRes = await fetch('/api/github/orgs', { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
+        const orgData = await orgRes.json();
+        if (orgData.success) {
+          // 본인 계정도 포함
+          setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data]);
         }
       };
       window.addEventListener('message', handler);
@@ -218,11 +205,10 @@ export function WorkspaceCreatePage() {
     setBranchList([]);
     if (!selectedOrg || !ghToken) return;
     try {
-      const res = await fetch(`${BASE_URL}/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
-      if (!res.ok) { showToast('저장소 목록을 불러올 수 없습니다.'); return; }
+      const res = await fetch(`/api/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
       const data = await res.json();
       if (data.success) setRepoList(data.data);
-    } catch { showToast('저장소 목록 조회 실패'); }
+    } catch { /* ignore */ }
   };
 
   // 레포 선택 시 브랜치 목록 로드
@@ -232,15 +218,14 @@ export function WorkspaceCreatePage() {
     setBranchList([]);
     if (!selectedRepo || !org || !ghToken) return;
     try {
-      const res = await fetch(`${BASE_URL}/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
-      if (!res.ok) { showToast('브랜치 목록을 불러올 수 없습니다.'); return; }
+      const res = await fetch(`/api/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
       const data = await res.json();
       if (data.success) {
         setBranchList(data.data);
         const defaultBr = (data.data as { name: string; isDefault: boolean }[]).find((b) => b.isDefault);
         if (defaultBr) setBranch(defaultBr.name);
       }
-    } catch { showToast('브랜치 목록 조회 실패'); }
+    } catch { /* ignore */ }
   };
 
   // Validation
@@ -269,27 +254,15 @@ export function WorkspaceCreatePage() {
     setStep(s => s - 1);
   };
 
-  const createWorkspace = async () => {
-    if (creating) return;
-    setCreating(true);
+  const createWorkspace = () => {
     const ws = {
       alias: alias.trim() || 'Workspace-' + acctId.replace(/\D/g, '').slice(-4),
       acctId: acctId.replace(/\D/g, ''),
       githubOrg: org, repo, path: path.trim(), branch: branch || 'main',
       memo: memo.trim(), icon: selectedIcon,
     };
-    try {
-      const data = await apiFetch<{ success: boolean; error?: { message: string } }>('/workspaces', {
-        method: 'POST',
-        body: JSON.stringify(ws),
-      });
-      if (!data.success) { showToast(data.error?.message || '생성 실패'); setCreating(false); return; }
-      showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
-      navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
-    } catch {
-      showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
-      setCreating(false);
-    }
+    showToast(`"${ws.alias}" 워크스페이스가 생성되었습니다.`, 'ok');
+    navTimerRef.current = setTimeout(() => navigate('/workspace'), 1000);
   };
 
   const cleanAcct = acctId.replace(/\D/g, '');
@@ -460,7 +433,7 @@ export function WorkspaceCreatePage() {
         {/* 하단 버튼 */}
         <div className="wizard-foot">
           <button className="btn-wiz btn-prev" onClick={prevStep}>{step === 0 ? '취소' : '이전'}</button>
-          <button className="btn-wiz btn-next" onClick={nextStep} disabled={step === 2 && creating}>{step === 2 ? (creating ? '생성 중…' : '생성') : '다음'}</button>
+          <button className="btn-wiz btn-next" onClick={nextStep}>{step === 2 ? '생성' : '다음'}</button>
         </div>
       </div>
       {toast && createPortal(<div className={`wsc-toast ${toast.type}`} role={toast.type === 'warn' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>, document.body)}

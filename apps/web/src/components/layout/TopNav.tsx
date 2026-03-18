@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '@/hooks/useSession';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
-import { apiFetch } from '@/services/api';
+import { wsAccounts } from '@/mocks';
 import { AnimatedLogo } from './AnimatedLogo';
 
 interface TopNavProps {
@@ -12,17 +11,11 @@ interface TopNavProps {
 
 export function TopNav({ breadcrumb, onMenuClick }: TopNavProps) {
   const navigate = useNavigate();
-  const session = useSession();
+  const { session } = useAuth();
   const { isDark } = useTheme();
 
   const companyLogoSrc = session.company.logoUrl;
-  const [ws, setWs] = useState<{ alias: string; acctId: string } | null>(null);
-
-  useEffect(() => {
-    apiFetch<{ success: boolean; data: { items: { alias: string; acctId: string }[] } }>('/workspaces')
-      .then(res => setWs(res.data.items[0] ?? null))
-      .catch(() => {});
-  }, []);
+  const ws = wsAccounts[0];
 
   return (
     <header className="topnav">

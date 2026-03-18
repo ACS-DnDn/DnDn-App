@@ -1,19 +1,55 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSession } from '@/hooks/useSession';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
-import { apiFetch } from '@/services/api';
-import { getDocuments } from '@/services/document.service';
-import type { Document } from '@/mocks';
-import type { OrgDept } from '@/mocks';
+import { orgData, docData, ALL_DOCS, wsAccounts } from '@/mocks';
+import type { DocDataItem } from '@/mocks';
 import './PlanPage.css';
 
-/* ── Terraform 기본값 (API 실패 시 fallback) ── */
+/* ── Terraform mock ── */
 const TF_FILES = [
-  { name: 'main.tf', code: '# Terraform 코드 생성 버튼을 눌러 코드를 생성하세요.' },
-];
+  {
+    name: 'eks_node_group.tf',
+    code: `resource "aws_eks_node_group" "production_ng" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "production-ng"
+  node_role_arn   = aws_iam_role.node.arn
+  subnet_ids      = var.private_subnet_ids
 
+  instance_types = ["t3.large"]
+
+  scaling_config {
+    desired_size = 3
+    min_size     = 2
+    max_size     = 6
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  tags = {
+    Environment = "production"
+    ManagedBy   = "terraform"
+  }
+}`,
+  },
+  {
+    name: 'variables.tf',
+    code: `variable "node_instance_type" {
+  description = "EKS 노드 인스턴스 타입"
+  type        = string
+  default     = "t3.large"
+}
+
+variable "rollback_instance_type" {
+  description = "롤백용 인스턴스 타입 (t3.medium)"
+  type        = string
+  default     = "t3.medium"
+}`,
+  },
+];
 
 interface Approver { name: string; rank: string; type: string; }
 interface PendingApprover { name: string; rank: string; type: string; }
@@ -30,7 +66,7 @@ function now() {
 export function PlanPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const session = useSession();
+  const { session } = useAuth();
   const { isDark } = useTheme();
 
   /* ── left panel state ── */
@@ -56,11 +92,6 @@ export function PlanPage() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const tfTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const validationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  /* ── API 연동 state ── */
-  const [draftDocumentId, setDraftDocumentId] = useState<string | null>(null);
-  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
-  const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
   const logPanelRef = useRef<HTMLDivElement>(null);
 
   /* ── approver popup state ── */
@@ -69,23 +100,6 @@ export function PlanPage() {
   const [orgSelected, setOrgSelected] = useState<Set<string>>(new Set());
   const [pendingApprovers, setPendingApprovers] = useState<PendingApprover[]>([]);
   const [apvSearch, setApvSearch] = useState('');
-
-  /* ── 실제 API 데이터 state ── */
-  const [orgData, setOrgData] = useState<OrgDept[]>([]);
-  const [docList, setDocList] = useState<Document[]>([]);
-  const [ws, setWs] = useState<{ id: string; alias: string; acctId: string } | null>(null);
-
-  useEffect(() => {
-    apiFetch<{ data: OrgDept[] }>('/org/members')
-      .then(res => setOrgData(res.data))
-      .catch(() => {});
-    getDocuments({ pageSize: 100 })
-      .then(res => setDocList(res.items))
-      .catch(() => {});
-    apiFetch<{ success: boolean; data: { items: { id: string; alias: string; acctId: string }[] } }>('/workspaces')
-      .then(res => setWs(res.data.items[0] ?? null))
-      .catch(() => {});
-  }, []);
 
   /* ── doc popup state ── */
   const [docPopupOpen, setDocPopupOpen] = useState(false);
@@ -100,13 +114,13 @@ export function PlanPage() {
   useEffect(() => {
     const refDocId = searchParams.get('refDocId');
     if (!refDocId) return;
-    const doc = docList.find(d => d.id === refDocId);
+    const doc = ALL_DOCS.find(d => d.id === parseInt(refDocId, 10));
     if (!doc) return;
     setRefDocs(prev => {
-      if (prev.some(r => r.no === doc.id)) return prev;
-      return [...prev, { no: doc.id, name: `${doc.icon} ${doc.name}` }];
+      if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;
+      return [...prev, { no: `ref-${doc.id}`, name: `${doc.icon} ${doc.name}` }];
     });
-  }, [searchParams, docList]);
+  }, [searchParams]);
 
   /* ── scroll log panel ── */
   useEffect(() => {
@@ -158,7 +172,7 @@ export function PlanPage() {
     orgSelected.forEach(name => {
       if (newPending.some(p => p.name === name)) return;
       let rank = '';
-      orgData.forEach(dept => { const m = (dept.members as { name: string; rank: string }[]).find(mm => mm.name === name); if (m) rank = m.rank; });
+      orgData.forEach(dept => { const m = dept.members.find(mm => mm.name === name); if (m) rank = m.rank; });
       newPending.push({ name, rank, type: '결재' });
     });
     setPendingApprovers(newPending);
@@ -205,7 +219,7 @@ export function PlanPage() {
     setDocPage(1);
   }
 
-  const filteredDocs = docList.filter(d => {
+  const filteredDocs: DocDataItem[] = docData.filter(d => {
     if (!docFilterQ) return true;
     const val = docFilterField === 'author' ? d.author : d.name;
     return val.toLowerCase().includes(docFilterQ);
@@ -216,11 +230,11 @@ export function PlanPage() {
 
   function saveDocPopup() {
     if (!selectedDocNo) return;
-    const d = docList.find(x => x.id === selectedDocNo);
+    const d = docData.find(x => x.no === selectedDocNo);
     if (!d) return;
     setRefDocs(prev => {
-      if (prev.some(r => r.no === d.id)) return prev;
-      return [...prev, { no: d.id, name: `${d.id} — ${d.name}` }];
+      if (prev.some(r => r.no === d.no)) return prev;
+      return [...prev, { no: d.no, name: `${d.no} — ${d.name}` }];
     });
     setDocPopupOpen(false);
   }
@@ -228,55 +242,11 @@ export function PlanPage() {
   /* ══════════════════════════════
      계획서 생성
   ══════════════════════════════ */
-  async function pollJob(jobId: string): Promise<Record<string, unknown>> {
-    for (let i = 0; i < 60; i++) {
-      await new Promise<void>(r => setTimeout(r, 1000));
-      const res = await fetch(`/todo/documents/generate/${jobId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { status, result, error } = (json.data ?? json) as {
-        status: string;
-        result?: Record<string, unknown>;
-        error?: { message: string };
-      };
-      if (status === 'done') return result ?? {};
-      if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
-    }
-    throw new Error('타임아웃: 60초 초과');
-  }
-
-  async function generateDoc() {
+  function generateDoc() {
     setDocState('loading');
-    setTfState('blank');
-    setTfStatus('pending');
-    setTfStatusText('대기 중');
-    setGeneratedTfFiles([]);
-    setTfCodes(TF_FILES.map(f => f.code));
-    setLogEntries([]);
-    setDraftDocumentId(null);
-    try {
-      const res = await fetch('/todo/documents/generate/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: ws?.id,
-          target: nlTarget,
-          content: nlInput,
-          ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { jobId } = json.data ?? json;
-      const result = await pollJob(jobId);
-      setDraftDocumentId(result.documentId as string);
-      setIframeSrc(result.contentUrl as string);
+    docTimerRef.current = setTimeout(() => {
       setDocState('ready');
-    } catch (err) {
-      console.error('workplan API error:', err);
-      setDocState('blank');
-      alert('계획서 생성 중 오류가 발생했습니다: ' + String(err));
-    }
+    }, 2200);
   }
 
   function doAutoSave() {
@@ -308,45 +278,63 @@ export function PlanPage() {
   /* ══════════════════════════════
      Terraform 코드 생성
   ══════════════════════════════ */
-  async function generateTerraform() {
-    if (!draftDocumentId) return;
+  function generateTerraform() {
     setTfState('loading');
     setTfStatus('generating');
     setTfStatusText('코드 생성 중');
-    setLogEntries([]);
     addLog('작업 계획서 분석 중...', 'muted', 0);
-    addLog('Terraform 코드 생성 중...', 'run', 0);
-    try {
-      const res = await fetch('/todo/documents/generate/terraform', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId: draftDocumentId }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { jobId } = json.data ?? json;
-      const result = await pollJob(jobId);
-      const rawFiles = (result.files as Record<string, string>) ?? {};
-      const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
-      if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
-      setGeneratedTfFiles(files);
-      setTfCodes(files.map(f => f.code));
-      setTfTab(0);
+    addLog('변경 대상 리소스 추출 중...', 'run', 0);
+
+    tfTimerRef.current = setTimeout(() => {
       setTfState('ready');
-      files.forEach((f, i) => addLog(`${f.name} 생성 완료`, 'ok', i));
-      setTfStatus('ok');
-      setTfStatusText('생성 완료');
-    } catch (err) {
-      console.error('terraform API error:', err);
-      setTfState('blank');
-      setTfStatus('pending');
-      setTfStatusText('대기 중');
-      addLog('오류: ' + String(err), 'muted', 0);
-    }
+      setTfTab(0);
+      addLog('eks_node_group.tf 생성 완료', 'ok', 0);
+      addLog('instance_types: t3.medium → t3.large', 'info', 0);
+      addLog('variables.tf 생성 완료', 'ok', 1);
+      addLog('node_instance_type, rollback_instance_type 추가', 'info', 1);
+      runValidation();
+    }, 1800);
+  }
+
+  function runValidation() {
+    validationTimersRef.current.forEach((t) => { clearTimeout(t); });
+    validationTimersRef.current = [];
+
+    setTfStatus('generating');
+    setTfStatusText('보안 검증 중');
+    addLog('보안 검증 중...', 'run', 0);
+    addLog('보안 검증 중...', 'run', 1);
+
+    const t1 = setTimeout(() => {
+      addLog('보안 검증 통과', 'ok', 0);
+      addLog('보안 검증 통과', 'ok', 1);
+      setTfStatusText('비용 분석 중');
+      addLog('비용 분석 중...', 'run', 0);
+      addLog('비용 분석 중...', 'run', 1);
+
+      const t2 = setTimeout(() => {
+        addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 0);
+        addLog('예상 추가 비용 $14.24/월 (t3.large 기준)', 'info', 1);
+        setTfStatusText('정책 검증 중');
+        addLog('정책 검증 중...', 'run', 0);
+        addLog('정책 검증 중...', 'run', 1);
+
+        const t3 = setTimeout(() => {
+          addLog('정책 검증 통과', 'ok', 0);
+          addLog('정책 검증 통과', 'ok', 1);
+          setTfStatus('ok');
+          setTfStatusText('검증 완료');
+        }, 900);
+        validationTimersRef.current.push(t3);
+      }, 900);
+      validationTimersRef.current.push(t2);
+    }, 900);
+    validationTimersRef.current.push(t1);
   }
 
   function revalidate() {
     setLogEntries([]);
+    runValidation();
   }
 
   /* ── auto-resize textarea ── */
@@ -446,6 +434,8 @@ export function PlanPage() {
   /* ══════════════════════════════
      RENDER
   ══════════════════════════════ */
+  const ws = wsAccounts[0];
+
   return (
     <>
       {/* ── Plan 전용 topnav (사이드바 없음) ── */}
@@ -503,9 +493,7 @@ export function PlanPage() {
             {refDocs.map(rd => (
               <div key={rd.no} className="ref-doc-item">
                 <div className="ref-doc-name">{rd.name}</div>
-                <button className="ref-doc-remove" onClick={() => {
-                  setRefDocs(prev => prev.filter(r => r.no !== rd.no));
-                }}>&times;</button>
+                <button className="ref-doc-remove" onClick={() => setRefDocs(prev => prev.filter(r => r.no !== rd.no))}>&times;</button>
               </div>
             ))}
           </div>
@@ -576,7 +564,7 @@ export function PlanPage() {
             <iframe
               ref={iframeRef}
               className="plan-iframe"
-              {...(iframeSrc ? { src: iframeSrc } : { src: '/mock/plan-sample.html' })}
+              src="/mock/plan-sample.html"
               onLoad={() => {
                 const doc = iframeRef.current?.contentDocument;
                 if (doc) {
@@ -617,12 +605,12 @@ export function PlanPage() {
         {tfState === 'ready' && (
           <div className="tf-code-area">
             <div className="tf-tabs-bar">
-              {(generatedTfFiles.length > 0 ? generatedTfFiles : TF_FILES).map((f, i) => (
+              {TF_FILES.map((f, i) => (
                 <button key={f.name} className={`plan-tf-tab${tfTab === i ? ' active' : ''}`} onClick={() => setTfTab(i)}>{f.name}</button>
               ))}
             </div>
             <div className="tf-code-scroll">
-              {(generatedTfFiles.length > 0 ? generatedTfFiles : TF_FILES).map((_, i) => (
+              {TF_FILES.map((_, i) => (
                 <div key={i} className={`tf-tab-panel${tfTab === i ? ' active' : ''}`}>
                   <textarea
                     className="tf-editor"
@@ -771,8 +759,8 @@ export function PlanPage() {
             {currentPageDocs.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>검색 결과가 없습니다.</div>
             ) : currentPageDocs.map(d => (
-              <div key={d.id} className={`doc-popup-item${selectedDocNo === d.id ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.id ? null : d.id)}>
-                <div className="doc-item-no">{d.id}</div>
+              <div key={d.no} className={`doc-popup-item${selectedDocNo === d.no ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.no ? null : d.no)}>
+                <div className="doc-item-no">{d.no}</div>
                 <div className="doc-item-name">{d.name}</div>
                 <div className="doc-item-author">{d.author}</div>
                 <div className="doc-item-date">{d.date}</div>

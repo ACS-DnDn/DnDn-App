@@ -108,36 +108,21 @@ function calcNextRun(preset: string, tv: TimingValues): Date | null {
   return null;
 }
 
-function toLocalDateTimeInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 /* ── 컴포넌트 ── */
 export function ReportSettingsPage() {
   const [params, setParams] = useSearchParams();
   const section = params.get('section') === 'events' ? 'events' : 'summary';
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
 
+  const settings = getReportSettings();
+
   /* 현황 보고서 */
-  const [summaryStart, setSummaryStart] = useState(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const toLastMon = day === 0 ? 13 : day + 6;
-    const mon = new Date(now); mon.setDate(now.getDate() - toLastMon); mon.setHours(0, 0, 0, 0);
-    return toLocalDateTimeInput(mon);
-  });
-  const [summaryEnd, setSummaryEnd] = useState(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const toLastMon = day === 0 ? 13 : day + 6;
-    const sun = new Date(now); sun.setDate(now.getDate() - toLastMon + 6); sun.setHours(23, 59, 0, 0);
-    return toLocalDateTimeInput(sun);
-  });
+  const [summaryStart, setSummaryStart] = useState('2026-03-03T00:00');
+  const [summaryEnd, setSummaryEnd] = useState('2026-03-09T23:59');
   const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
 
   /* 스케줄 */
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([...settings.schedules]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [schTitle, setSchTitle] = useState('');
@@ -149,22 +134,7 @@ export function ReportSettingsPage() {
   const autoFilled = useRef(false);
 
   /* 이벤트 */
-  const [evtSettings, setEvtSettings] = useState<Record<string, boolean>>({});
-  const [settingsLoading, setSettingsLoading] = useState(true);
-  const [settingsError, setSettingsError] = useState(false);
-
-  useEffect(() => {
-    setSettingsLoading(true);
-    setSettingsError(false);
-    getReportSettings().then(settings => {
-      setSchedules([...settings.schedules]);
-      setEvtSettings({ ...settings.eventSettings });
-    }).catch(() => {
-      setSettingsError(true);
-    }).finally(() => {
-      setSettingsLoading(false);
-    });
-  }, []);
+  const [evtSettings, setEvtSettings] = useState({ ...settings.eventSettings });
   const [openDescs, setOpenDescs] = useState<Set<string>>(new Set());
 
   /* 토스트 */
@@ -366,7 +336,7 @@ export function ReportSettingsPage() {
                   <span className="rpt-card-title">이벤트 보고서</span>
                   <p className="rpt-card-desc">AWS 이벤트 발생 시 자동으로 보고서를 생성합니다</p>
                 </div>
-                <button className="btn-save" onClick={() => showToast('이벤트 보고서 설정이 저장되었습니다.')} disabled={settingsLoading || settingsError}>설정 저장</button>
+                <button className="btn-save" onClick={() => showToast('이벤트 보고서 설정이 저장되었습니다.')}>설정 저장</button>
               </div>
             </div>
 
@@ -389,7 +359,7 @@ export function ReportSettingsPage() {
                             <span className="ei-label">{item.label}<span className="ei-svc">{item.svc}</span></span>
                             <div className="ei-right" onClick={e => e.stopPropagation()}>
                               <label className="rpt-sw">
-                                <input type="checkbox" checked={evtSettings[item.key] !== false} onChange={() => toggleEvt(item.key)} disabled={settingsLoading || settingsError} />
+                                <input type="checkbox" checked={evtSettings[item.key] !== false} onChange={() => toggleEvt(item.key)} />
                                 <div className="tr" /><div className="kn" />
                               </label>
                             </div>

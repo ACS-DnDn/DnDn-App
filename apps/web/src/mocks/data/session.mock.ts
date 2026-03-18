@@ -1,9 +1,7 @@
 import type { Session } from '../types/session';
 
 export const session: Session = {
-  id: 'user-001',
   name: '정지은',
-  email: 'jjeong@cslee.io',
   role: '선임연구원',
   auth: 'leader',
   company: {
@@ -11,5 +9,4 @@ export const session: Session = {
     logoUrl: '/mock/logo_real.png',
     logoDarkUrl: '/mock/logo_real.png',
   },
-  createdAt: '2024.03.01',
 };

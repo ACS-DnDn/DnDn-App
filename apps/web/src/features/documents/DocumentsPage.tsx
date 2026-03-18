@@ -33,8 +33,8 @@ export function DocumentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 읽음/선택 상태
-  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [readIds, setReadIds] = useState<Set<number>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
   // 날짜 피커 상태
   const [pickStart, setPickStart] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getDocuments({ pageSize: 200 }).then(({ items }) => setAllDocs(items)).catch(console.error);
+    setAllDocs(getDocuments());
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
@@ -91,7 +91,7 @@ export function DocumentsPage() {
   const resetPage = useCallback(() => setCurrentPage(1), []);
 
   // 체크박스 핸들러
-  const toggleSelect = (id: string, checked: boolean) => {
+  const toggleSelect = (id: number, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       checked ? next.add(id) : next.delete(id);
@@ -391,7 +391,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
+                const docNum = `${doc.date.slice(0, 4)}-DnDn-${String(doc.id).padStart(4, '0')}`;
                 return (
                   <tr
                     key={doc.id}
