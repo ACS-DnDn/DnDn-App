@@ -7,6 +7,7 @@ from jose import jwt
 from typing import Union
 import urllib.request
 import json
+import datetime
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User
@@ -40,16 +41,48 @@ COGNITO_USER_POOL_ID = "ap-northeast-2_AqyobCjs4"
 COGNITO_APP_CLIENT_ID = "2ihan310ih4tg1qk71t7fsvdu"
 
 JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+JWKS_CACHE_TTL_SECONDS = 3600  # 1 hour TTL for JWKS cache
 
 jwks_cache = None
 
 
 def get_jwks():
+    """
+    JWKS를 가져오고, TTL 기반 캐싱과 네트워크 타임아웃을 적용한다.
+    """
     global jwks_cache
-    if jwks_cache is None:
-        with urllib.request.urlopen(JWKS_URL) as response:
-            jwks_cache = json.loads(response.read().decode("utf-8"))
-    return jwks_cache
+    now = datetime.datetime.utcnow()
+
+    # jwks_cache 구조: {"data": <jwks_dict>, "fetched_at": <datetime>}
+    cache_valid = (
+        isinstance(jwks_cache, dict)
+        and "data" in jwks_cache
+        and "fetched_at" in jwks_cache
+        and now - jwks_cache["fetched_at"] < datetime.timedelta(seconds=JWKS_CACHE_TTL_SECONDS)
+    )
+
+    if not cache_valid:
+        try:
+            # 네트워크 이슈로 인한 무한 대기를 방지하기 위해 timeout 설정
+            with urllib.request.urlopen(JWKS_URL, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                jwks_cache = {
+                    "data": data,
+                    "fetched_at": now,
+                }
+        except Exception as e:
+            # 최초 로드에 실패하면 예외를 그대로 올려 애플리케이션에서 감지할 수 있게 한다.
+            if not cache_valid and (jwks_cache is None or "data" not in jwks_cache):
+                raise
+            # 이전 캐시가 있으면 로그만 남기고 기존 캐시를 계속 사용한다.
+            print(f"JWKS fetch error, using cached JWKS if available: {e}")
+
+    # jwks_cache가 dict 구조로 정리되어 있다면 실제 데이터만 반환
+    if isinstance(jwks_cache, dict) and "data" in jwks_cache:
+        return jwks_cache["data"]
+
+    # 여기에 도달하는 것은 비정상적인 상태이므로 예외를 발생시킨다.
+   raise RuntimeError("JWKS cache is not initialized and fetch failed.")
 
 
 # -------------------------------------------------------------------
