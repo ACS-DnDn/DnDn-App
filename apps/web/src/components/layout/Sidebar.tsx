@@ -1,7 +1,8 @@
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
-import { dashboardData } from '@/mocks';
+import { apiFetch } from '@/services/api';
 
 interface SidebarProps {
   open: boolean;
@@ -44,7 +45,6 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
       {
         label: '처리할 문서', href: '/pending',
         icon: <svg className="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 4h12v12H4z" rx="1"/><path d="M7 10l2 2 4-4"/></svg>,
-        badge: dashboardData.pendingDocs.length,
       },
       {
         label: '문서 보관함', href: '/documents',
@@ -74,8 +74,15 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
 export function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const session = useSession();
   const { isDark, toggle } = useTheme();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    apiFetch<{ success: boolean; data: { docStats: { pending: number } } }>('/dashboard')
+      .then(res => setPendingCount(res.data.docStats.pending))
+      .catch(() => {});
+  }, []);
 
   const logoSrc = isDark && session.company.logoDarkUrl
     ? session.company.logoDarkUrl
@@ -112,9 +119,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     >
                       {item.icon}
                       {item.label}
-                      {item.badge != null && item.badge > 0 && (
-                        <span className="nav-badge">{item.badge}</span>
-                      )}
+                      {(() => { const b = item.href === '/pending' ? pendingCount : (item.badge ?? 0); return b > 0 ? <span className="nav-badge">{b}</span> : null; })()}
                     </a>
                     {item.children && (
                       <div className={`nav-sub${isActive ? ' stay-open' : ''}`}>

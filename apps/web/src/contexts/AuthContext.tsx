@@ -4,7 +4,14 @@ import type { Session, AuthRole } from '@/mocks';
 
 interface ApiMeResponse {
   success: boolean;
-  data: { name: string; role: string; company: { name: string; logoUrl: string } };
+  data: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    company: { name: string; logoUrl: string };
+    createdAt: string | null;
+  };
 }
 
 interface ApiLoginData {
@@ -59,12 +66,15 @@ function clearTokens() {
 
 async function fetchMe(): Promise<Session> {
   const res = await apiFetch<ApiMeResponse>('/auth/me');
-  const { name, role, company } = res.data;
+  const { id, name, email, role, company, createdAt } = res.data;
   return {
+    id,
     name,
+    email,
     role,
     auth: roleToAuth(role),
     company: { name: company.name, logoUrl: company.logoUrl, logoDarkUrl: company.logoUrl },
+    createdAt: createdAt ?? null,
   };
 }
 

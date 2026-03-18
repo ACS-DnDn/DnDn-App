@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSession } from '@/hooks/useSession';
+import { apiFetch } from '@/services/api';
 import './MyPage.css';
 
 const AUTH_LABELS: Record<string, string> = { leader: '리더', user: '사용자', auditor: '감사자' };
@@ -13,13 +14,32 @@ const CHANNELS = [
   { id: 'infra-events', name: '#infra-events', desc: '인프라 이벤트' },
 ];
 
+interface SlackStatus {
+  connected: boolean;
+  workspace: string | null;
+  channel: string | null;
+  notifyEnabled: boolean;
+}
+
+function getSessionExpiry(): string {
+  const token = localStorage.getItem('dndn-access-token');
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1] ?? ''));
+      if (payload.exp) {
+        const d = new Date(payload.exp * 1000);
+        return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+    } catch { /* invalid token */ }
+  }
+  return '-';
+}
+
 export function MyPage() {
-  const { session } = useAuth();
-  const [mfaEnabled, setMfaEnabled] = useState(true);
-  const [slackConnected, setSlackConnected] = useState(false);
-  const [slackNotifOn, setSlackNotifOn] = useState(true);
-  const [selectedChannel, setSelectedChannel] = useState('aws-alerts');
+  const session = useSession();
+  const [slack, setSlack] = useState<SlackStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,21 +47,89 @@ export function MyPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (avatarUrl) URL.revokeObjectURL(avatarUrl);
-    const url = URL.createObjectURL(file);
-    setAvatarUrl(url);
+    setAvatarUrl(URL.createObjectURL(file));
   };
 
   useEffect(() => {
     return () => { if (avatarUrl) URL.revokeObjectURL(avatarUrl); };
   }, [avatarUrl]);
 
-  const email = session.name.replace(' ', '.').toLowerCase() + '@cslee.io';
+  // Slack 연동 상태 로드
+  useEffect(() => {
+    apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status')
+      .then((res) => setSlack(res.data))
+      .catch(() => setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true }));
+  }, []);
 
-  const sessionExpiry = (() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 8);
-    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  })();
+  // Slack OAuth 팝업 + postMessage 처리
+  const handleSlackConnect = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/slack/auth');
+      const popup = window.open(res.data.authorizeUrl, 'slack-oauth', 'width=600,height=700');
+
+      const onMessage = async (e: MessageEvent) => {
+        if (e.origin !== window.location.origin || e.data?.type !== 'slack-oauth') return;
+        window.removeEventListener('message', onMessage);
+        popup?.close();
+
+        if (e.data.error) { setSaving(false); return; }
+
+        try {
+          const cb = await apiFetch<{ success: boolean; data: SlackStatus }>(
+            `/slack/callback?code=${encodeURIComponent(e.data.code)}&state=${encodeURIComponent(e.data.state)}`,
+          );
+          setSlack(cb.data);
+        } catch { /* ignore */ } finally {
+          setSaving(false);
+        }
+      };
+      window.addEventListener('message', onMessage);
+    } catch {
+      setSaving(false);
+    }
+  }, [saving]);
+
+  const handleDisconnect = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await apiFetch('/slack/disconnect', { method: 'DELETE' });
+      setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true });
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  }, [saving]);
+
+  const handleNotifyToggle = useCallback(async () => {
+    if (!slack || saving) return;
+    setSaving(true);
+    try {
+      const res = await apiFetch<{ success: boolean; data: SlackStatus }>(
+        '/slack/settings',
+        { method: 'PATCH', body: JSON.stringify({ notifyEnabled: !slack.notifyEnabled }) },
+      );
+      setSlack(res.data);
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  }, [slack, saving]);
+
+  const handleChannelChange = useCallback(async (channelId: string) => {
+    if (!slack || saving) return;
+    setSaving(true);
+    setPickerOpen(false);
+    try {
+      const res = await apiFetch<{ success: boolean; data: SlackStatus }>(
+        '/slack/settings',
+        { method: 'PATCH', body: JSON.stringify({ channel: channelId }) },
+      );
+      setSlack(res.data);
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  }, [slack, saving]);
 
   return (
     <div className="mypage-page">
@@ -76,10 +164,10 @@ export function MyPage() {
             <div className="banner-company">{session.company.name}</div>
           </div>
         </div>
-        <InfoRow label="계정 ID" value="user-001" />
-        <InfoRow label="이메일" value={email} />
+        <InfoRow label="계정 ID" value={session.id} />
+        <InfoRow label="이메일" value={session.email} />
         <InfoRow label="권한 그룹" value={AUTH_DESC[session.auth] || session.auth} />
-        <InfoRow label="가입일" value="2024.03.01" />
+        <InfoRow label="가입일" value={session.createdAt ?? '-'} />
       </div>
 
       {/* 보안 및 세션 */}
@@ -87,19 +175,8 @@ export function MyPage() {
         <div className="info-card-header">보안 및 세션</div>
         <div className="security-grid">
           <div className="security-item">
-            <span className="security-label">MFA 상태</span>
-            <div className="mfa-row">
-              <span className={`security-value ${mfaEnabled ? 'status-on' : 'status-off'}`}>
-                {mfaEnabled ? '활성화됨' : '비활성화됨'}
-              </span>
-              <button className="btn-mfa" onClick={() => setMfaEnabled(!mfaEnabled)}>
-                {mfaEnabled ? '비활성화' : 'MFA 설정'}
-              </button>
-            </div>
-          </div>
-          <div className="security-item">
             <span className="security-label">세션 만료</span>
-            <span className="security-value">{sessionExpiry}</span>
+            <span className="security-value">{getSessionExpiry()}</span>
           </div>
           <div className="security-item">
             <span className="security-label">인증 방식</span>
@@ -128,30 +205,31 @@ export function MyPage() {
             </div>
             <div>
               <div className="integration-name">Slack</div>
-              <div className={`integration-sub${slackConnected ? ' connected' : ''}`}>
-                {slackConnected ? 'cslee-io 워크스페이스 연동됨' : '미연동'}
+              <div className={`integration-sub${slack?.connected ? ' connected' : ''}`}>
+                {slack?.connected ? `${slack.workspace} 워크스페이스 연동됨` : '미연동'}
               </div>
             </div>
           </div>
           <div className="integration-right">
-            {slackConnected ? (
+            {slack?.connected ? (
               <>
                 <div className="notif-toggle-wrap">
                   <span className="notif-toggle-label">알림</span>
                   <button
-                    className={`notif-toggle-track${slackNotifOn ? ' on' : ''}`}
-                    onClick={() => setSlackNotifOn(!slackNotifOn)}
+                    className={`notif-toggle-track${slack.notifyEnabled ? ' on' : ''}`}
+                    onClick={handleNotifyToggle}
+                    disabled={saving}
                     role="switch"
-                    aria-checked={slackNotifOn}
+                    aria-checked={slack.notifyEnabled}
                     aria-label="Slack 알림 토글"
                   >
                     <div className="notif-toggle-thumb" />
                   </button>
                 </div>
-                <button className="btn-slack-disconnect" onClick={() => setSlackConnected(false)}>연동 해제</button>
+                <button className="btn-slack-disconnect" onClick={handleDisconnect} disabled={saving}>연동 해제</button>
               </>
             ) : (
-              <button className="btn-slack-connect" onClick={() => setSlackConnected(true)}>
+              <button className="btn-slack-connect" onClick={handleSlackConnect} disabled={saving}>
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
                 Slack 연동
               </button>
@@ -160,12 +238,12 @@ export function MyPage() {
         </div>
 
         {/* 채널 영역 */}
-        {slackConnected && (
+        {slack?.connected && (
           <>
             <div className="integration-channel-row">
               <span className="info-label" style={{ color: 'var(--text-muted)' }}>알림 채널</span>
               <span className="channel-tag">
-                <span className="channel-tag-hash">#</span>{selectedChannel}
+                <span className="channel-tag-hash">#</span>{slack.channel ?? 'general'}
               </span>
               <button className="btn-channel-change" onClick={() => setPickerOpen(!pickerOpen)}>변경</button>
             </div>
@@ -176,8 +254,9 @@ export function MyPage() {
                   <button
                     type="button"
                     key={ch.id}
-                    className={`channel-option${selectedChannel === ch.id ? ' selected' : ''}`}
-                    onClick={() => { setSelectedChannel(ch.id); setPickerOpen(false); }}
+                    className={`channel-option${(slack.channel ?? 'general') === ch.id ? ' selected' : ''}`}
+                    onClick={() => handleChannelChange(ch.id)}
+                    disabled={saving}
                   >
                     <div className="channel-radio"><div className="channel-radio-dot" /></div>
                     <div className="channel-option-name">{ch.name} <span>{ch.desc}</span></div>
