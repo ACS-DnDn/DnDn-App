@@ -15,8 +15,8 @@ const TF_FILES = [
 ];
 
 
-interface Approver { name: string; rank: string; type: string; }
-interface PendingApprover { name: string; rank: string; type: string; }
+interface Approver { id: string; name: string; rank: string; type: string; }
+interface PendingApprover { id: string; name: string; rank: string; type: string; }
 interface RefDoc { no: string; name: string; }
 interface LogEntry { time: string; msg: string; type: string; tab: number; }
 
@@ -158,8 +158,9 @@ export function PlanPage() {
     orgSelected.forEach(name => {
       if (newPending.some(p => p.name === name)) return;
       let rank = '';
-      orgData.forEach(dept => { const m = (dept.members as { name: string; rank: string }[]).find(mm => mm.name === name); if (m) rank = m.rank; });
-      newPending.push({ name, rank, type: '결재' });
+      let memberId = '';
+      orgData.forEach(dept => { const m = dept.members.find(mm => mm.name === name); if (m) { rank = m.rank; memberId = m.id; } });
+      newPending.push({ id: memberId, name, rank, type: '결재' });
     });
     setPendingApprovers(newPending);
     setOrgSelected(new Set());
@@ -174,7 +175,7 @@ export function PlanPage() {
   }
 
   function saveApprovers() {
-    setApprovers(prev => [...prev, ...pendingApprovers.map(p => ({ name: p.name, rank: p.rank, type: p.type }))]);
+    setApprovers(prev => [...prev, ...pendingApprovers.map(p => ({ id: p.id, name: p.name, rank: p.rank, type: p.type }))]);
     setApvPopupOpen(false);
   }
 
@@ -295,14 +296,25 @@ export function PlanPage() {
   }, []);
 
   async function saveDoc() {
-    if (docState !== 'ready') { alert('저장할 계획서가 없습니다.'); return; }
+    if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
 
-    const editedHtml = iframeRef.current?.contentDocument?.documentElement.outerHTML;
-    if (!editedHtml) { alert('문서 내용을 가져올 수 없습니다.'); return; }
-
-    // mock: localStorage에 저장 후 viewer 이동 (API 연동 시 POST /api/documents 로 교체)
-    localStorage.setItem(`doc-${docId}`, editedHtml);
-    navigate(`/viewer/${docId}`);
+    try {
+      const terraformObj = Object.fromEntries(generatedTfFiles.map(f => [f.name, f.code]));
+      const res = await apiFetch<{ id: string; docNum: string; status: string }>('/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          documentId: draftDocumentId,
+          type: 'plan',
+          terraform: generatedTfFiles.length > 0 ? terraformObj : undefined,
+          refDocIds: refDocs.map(rd => rd.no),
+          approvers: approvers.map((a, i) => ({ userId: a.id, seq: i + 1, type: a.type })),
+          isDraft: false,
+        }),
+      });
+      navigate(`/viewer/${res.id}`);
+    } catch {
+      alert('결재 상신에 실패했습니다. 다시 시도해 주세요.');
+    }
   }
 
   /* ══════════════════════════════

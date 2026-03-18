@@ -1,4 +1,5 @@
 export interface OrgMember {
+  id: string;
   name: string;
   rank: string;
 }
