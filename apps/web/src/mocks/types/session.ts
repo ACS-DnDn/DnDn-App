@@ -11,6 +11,7 @@ export interface Session {
   name: string;
   email: string;
   role: string;
+  position: string | null;
   auth: AuthRole;
   company: Company;
   createdAt: string | null;

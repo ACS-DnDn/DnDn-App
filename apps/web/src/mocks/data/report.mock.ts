@@ -8,9 +8,9 @@ export const reportSettings: ReportSettings = {
   },
 
   schedules: [
-    { id: 1, title: '주간보고서', preset: 'weekly', dayOfWeek: 1, time: '06:00', includeRange: true },
-    { id: 2, title: '월간보고서', preset: 'monthly', dayOfMonth: 1, time: '00:00', includeRange: true },
-    { id: 3, title: '일일점검', preset: 'daily', time: '09:00', includeRange: false },
+    { id: 'mock0001', title: '주간보고서', preset: 'weekly', dayOfWeek: 1, time: '06:00', includeRange: true },
+    { id: 'mock0002', title: '월간보고서', preset: 'monthly', dayOfMonth: 1, time: '00:00', includeRange: true },
+    { id: 'mock0003', title: '일일점검', preset: 'daily', time: '09:00', includeRange: false },
   ],
 
   eventSettings: {

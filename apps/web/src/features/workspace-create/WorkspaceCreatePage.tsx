@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { WS_ICONS, ICON_KEYS, SVG } from '@/mocks/data/icons.mock';
 import type { IconKey } from '@/mocks/types/workspace';
-import { apiFetch, BASE_URL } from '@/services/api';
+import { apiFetch } from '@/services/api';
 import './WorkspaceCreatePage.css';
 
 const POLICY_ROWS = [
@@ -37,7 +37,6 @@ export function WorkspaceCreatePage() {
   const [ghConnected, setGhConnected] = useState(false);
   const [ghConnecting, setGhConnecting] = useState(false);
   const [ghUsername, setGhUsername] = useState('');
-  const [ghToken, setGhToken] = useState('');
   const [org, setOrg] = useState('');
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('');
@@ -132,12 +131,8 @@ export function WorkspaceCreatePage() {
   const connectGH = async () => {
     setGhConnecting(true);
     try {
-      const res = await fetch(`${BASE_URL}/github/auth-url`);
-      if (!res.ok) { showToast('GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
-      const data = await res.json();
-      if (!data.success) { showToast(data.error?.message || 'GitHub 인증 URL 생성 실패'); setGhConnecting(false); return; }
-
-      const { authorizeUrl, state } = data.data;
+      const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/github/auth');
+      const { authorizeUrl, state } = res.data;
 
       // 팝업으로 GitHub 인증 페이지 열기
       const w = 600, h = 700;
@@ -175,27 +170,21 @@ export function WorkspaceCreatePage() {
           if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); return; }
 
           // code → access token 교환
-          const exRes = await fetch(`${BASE_URL}/github/exchange`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, state }),
-          });
-          if (!exRes.ok) { showToast('GitHub 토큰 교환 실패'); return; }
-          const exData = await exRes.json();
-          if (!exData.success) { showToast(exData.error?.message || 'GitHub 토큰 교환 실패'); return; }
+          const exData = await apiFetch<{ success: boolean; data: { accessToken?: string; username: string; connected: boolean } }>(
+            `/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+          );
+          if (!exData.success) { showToast('GitHub 토큰 교환 실패'); return; }
 
-          setGhToken(exData.data.accessToken);
           setGhUsername(exData.data.username);
           setGhConnected(true);
 
           // 조직 목록 자동 로드
-          const orgRes = await fetch(`${BASE_URL}/github/orgs`, { headers: { Authorization: `Bearer ${exData.data.accessToken}` } });
-          if (orgRes.ok) {
-            const orgData = await orgRes.json();
+          try {
+            const orgData = await apiFetch<{ success: boolean; data: { orgs: { login: string; avatarUrl: string | null }[] } }>('/github/orgs');
             if (orgData.success) {
-              setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data]);
+              setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data.orgs]);
             }
-          }
+          } catch { /* org 로드 실패는 무시 — 수동 선택 가능 */ }
         } catch {
           showToast('GitHub 연동 처리 중 오류가 발생했습니다.');
         } finally {
@@ -216,12 +205,10 @@ export function WorkspaceCreatePage() {
     setBranch('');
     setRepoList([]);
     setBranchList([]);
-    if (!selectedOrg || !ghToken) return;
+    if (!selectedOrg) return;
     try {
-      const res = await fetch(`${BASE_URL}/github/repos?org=${encodeURIComponent(selectedOrg)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
-      if (!res.ok) { showToast('저장소 목록을 불러올 수 없습니다.'); return; }
-      const data = await res.json();
-      if (data.success) setRepoList(data.data);
+      const data = await apiFetch<{ success: boolean; data: { repos: { name: string; private: boolean; defaultBranch: string }[] } }>(`/github/orgs/${encodeURIComponent(selectedOrg)}/repos`);
+      if (data.success) setRepoList(data.data.repos);
     } catch { showToast('저장소 목록 조회 실패'); }
   };
 
@@ -230,14 +217,14 @@ export function WorkspaceCreatePage() {
     setRepo(selectedRepo);
     setBranch('');
     setBranchList([]);
-    if (!selectedRepo || !org || !ghToken) return;
+    if (!selectedRepo || !org) return;
     try {
-      const res = await fetch(`${BASE_URL}/github/branches?org=${encodeURIComponent(org)}&repo=${encodeURIComponent(selectedRepo)}`, { headers: { Authorization: `Bearer ${ghToken}` } });
-      if (!res.ok) { showToast('브랜치 목록을 불러올 수 없습니다.'); return; }
-      const data = await res.json();
+      const data = await apiFetch<{ success: boolean; data: { branches: { name: string; isDefault: boolean }[] } }>(
+        `/github/repos/${encodeURIComponent(org)}/${encodeURIComponent(selectedRepo)}/branches`,
+      );
       if (data.success) {
-        setBranchList(data.data);
-        const defaultBr = (data.data as { name: string; isDefault: boolean }[]).find((b) => b.isDefault);
+        setBranchList(data.data.branches);
+        const defaultBr = data.data.branches.find((b) => b.isDefault);
         if (defaultBr) setBranch(defaultBr.name);
       }
     } catch { showToast('브랜치 목록 조회 실패'); }

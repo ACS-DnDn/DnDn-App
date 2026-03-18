@@ -53,7 +53,7 @@ export function TopNav({ breadcrumb, onMenuClick }: TopNavProps) {
         <div className="divider-v" />
         <div className="profile-info">
           <span className="profile-name">{session.name}</span>
-          <span className="profile-role">{session.role}</span>
+          <span className="profile-role">{session.position ?? session.role}</span>
         </div>
         <span className="company-name">{session.company.name}</span>
         <div className="divider-v" />

@@ -158,7 +158,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             )}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{session.name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{session.role}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{session.position ?? session.role}</div>
             </div>
             <button
               className="sidebar-toggle"
