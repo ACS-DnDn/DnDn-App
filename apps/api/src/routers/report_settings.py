@@ -4,7 +4,6 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime, timedelta
 
 import boto3
 from botocore.exceptions import ClientError
@@ -49,29 +48,20 @@ def _kst_to_cron(
     day_of_month: int | None,
     time_kst: str,
 ) -> str:
-    """KST HH:mm + preset → EventBridge Scheduler cron expression (UTC)"""
+    """KST HH:mm + preset → EventBridge Scheduler cron expression (Asia/Seoul 기준)"""
     hh, mm = map(int, time_kst.split(":"))
-    kst_dt = datetime(2000, 1, 15, hh, mm)
-    utc_dt = kst_dt - timedelta(hours=9)
-    u_hh, u_mm = utc_dt.hour, utc_dt.minute
-    day_shifted = utc_dt.day < kst_dt.day  # UTC가 전날로 넘어간 경우
 
     if preset == "daily":
-        return f"cron({u_mm} {u_hh} * * ? *)"
+        return f"cron({mm} {hh} * * ? *)"
 
     if preset == "weekly":
         # 입력: 1=월 ~ 7=일 / AWS cron: SUN=1, MON=2, ..., SAT=7
         aws_map = {1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 1}
         aws_dow = aws_map[day_of_week]
-        if day_shifted:
-            aws_dow = aws_dow - 1 if aws_dow > 1 else 7
-        return f"cron({u_mm} {u_hh} ? * {aws_dow} *)"
+        return f"cron({mm} {hh} ? * {aws_dow} *)"
 
     # monthly
-    dom = day_of_month
-    if day_shifted:
-        dom = dom - 1 if dom > 1 else 28  # 1일인 경우 전월 28일로 근사
-    return f"cron({u_mm} {u_hh} {dom} * ? *)"
+    return f"cron({mm} {hh} {day_of_month} * ? *)"
 
 
 # ---------------------------------------------------------
@@ -237,7 +227,7 @@ async def create_schedule(
             GroupName=_SCHEDULER_GROUP,
             Name=name,
             ScheduleExpression=cron_expr,
-            ScheduleExpressionTimezone="UTC",
+            ScheduleExpressionTimezone="Asia/Seoul",
             FlexibleTimeWindow={"Mode": "OFF"},
             Target={
                 "Arn": _SCHEDULER_TARGET_ARN,
@@ -288,7 +278,7 @@ async def update_schedule(
             GroupName=_SCHEDULER_GROUP,
             Name=name,
             ScheduleExpression=cron_expr,
-            ScheduleExpressionTimezone="UTC",
+            ScheduleExpressionTimezone="Asia/Seoul",
             FlexibleTimeWindow={"Mode": "OFF"},
             Target={
                 "Arn": _SCHEDULER_TARGET_ARN,

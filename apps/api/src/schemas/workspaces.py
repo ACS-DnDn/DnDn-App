@@ -1,6 +1,6 @@
 # apps/api/schemas/workspaces.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Any
 
 
@@ -43,7 +43,7 @@ class OpaPolicyParam(BaseModel):
     on: bool
     severity: Literal["block", "warn"]
     params: Optional[Any] = None
-    exceptions: List[str] = []
+    exceptions: List[str] = Field(default_factory=list)
 
 
 class OpaCategoryItem(BaseModel):

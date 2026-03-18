@@ -88,6 +88,9 @@ async def create_summary_report(
     if not req.title or not req.title.strip():
         raise HTTPException(status_code=400, detail="BAD_REQUEST")
 
+    if not _REPORT_QUEUE_URL:
+        raise HTTPException(status_code=503, detail="QUEUE_NOT_CONFIGURED")
+
     run_id = str(uuid.uuid4())
 
     # Worker 스키마(contracts/payload/job_payload.schema.json) 준수 payload 조립
