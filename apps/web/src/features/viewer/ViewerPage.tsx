@@ -153,13 +153,14 @@ export function ViewerPage() {
   /* 참조 문서 목록 */
   const [refDocList, setRefDocList] = useState<{ id: string; name: string; date: string }[]>([]);
   useEffect(() => {
-    if (!doc?.refDocIds?.length) { setRefDocList([]); return; }
+    setRefDocList([]);
+    if (!doc?.refDocIds?.length) return;
     Promise.all(doc.refDocIds.map(refId => getDocumentById(refId)))
       .then(results => setRefDocList(
         results.filter((d): d is NonNullable<typeof d> => d !== undefined)
           .map(d => ({ id: d.id, name: d.name, date: d.date }))
       ))
-      .catch(() => {});
+      .catch(() => setRefDocList([]));
   }, [doc?.id]);
 
   /* 패널 탭 */
@@ -181,9 +182,8 @@ export function ViewerPage() {
 
   const isReport = doc.type !== '계획서';
   const viewMode = doc.action === 'approve' ? 'approver' : 'completed';
-  const tfHtml = doc.terraform && Object.keys(doc.terraform).length > 0
-    ? renderTerraform(doc.terraform)
-    : TF_CODE_HTML;
+  const hasTerraform = !!doc.terraform && Object.keys(doc.terraform).length > 0;
+  const tfHtml = hasTerraform ? renderTerraform(doc.terraform!) : '';
 
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
@@ -205,7 +205,7 @@ export function ViewerPage() {
         <div className="doc-toolbar">
           <span className={`doc-status-badge ${sCls}`}>{sLbl}</span>
           <div className="toolbar-spacer" />
-          {(doc.terraform || !isReport) && (
+          {hasTerraform && (
             <button className="btn-tf-popup" onClick={() => setTfModalOpen(true)}>
               Terraform 코드 보기
             </button>

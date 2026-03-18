@@ -103,8 +103,8 @@ export function PlanPage() {
     const doc = docList.find(d => d.id === refDocId);
     if (!doc) return;
     setRefDocs(prev => {
-      if (prev.some(r => r.no === `ref-${doc.id}`)) return prev;
-      return [...prev, { no: `ref-${doc.id}`, name: `${doc.icon} ${doc.name}` }];
+      if (prev.some(r => r.no === doc.id)) return prev;
+      return [...prev, { no: doc.id, name: `${doc.icon} ${doc.name}` }];
     });
   }, [searchParams, docList]);
 
