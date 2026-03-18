@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from apps.api.src.database import get_db
 from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment
@@ -129,6 +129,14 @@ async def get_documents(
         query = query.filter(Document.created_at >= from_dt)
     if dateTo:
         to_dt = datetime.strptime(dateTo, "%Y-%m-%d")
+    try:
+        from_dt = datetime.strptime(dateFrom, "%Y-%m-%d") if dateFrom else None
+        to_dt = datetime.strptime(dateTo, "%Y-%m-%d") if dateTo else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="INVALID_DATE_FORMAT")
+    if from_dt:
+        query = query.filter(Document.created_at >= from_dt)
+    if to_dt:
         # 해당 일자의 23:59:59 까지 포함하도록 설정
         to_dt = to_dt.replace(hour=23, minute=59, second=59)
         query = query.filter(Document.created_at <= to_dt)
@@ -156,18 +164,24 @@ async def get_documents(
         )
         approvals_by_doc_id = {approval.document_id: approval for approval in approvals}
 
+    # 8-1. 현재 사용자 기준 문서 읽음 여부를 한 번에 조회 (N+1 쿼리 방지)
+    doc_ids = [doc.id for doc in documents]
+    read_document_ids = set()
+    if doc_ids:
+        read_rows = (
+            db.query(DocumentRead.document_id)
+            .filter(
+                DocumentRead.user_id == current_user.id,
+                DocumentRead.document_id.in_(doc_ids),
+            )
+            .all()
+        )
+        read_document_ids = {row.document_id for row in read_rows}
+
     # 9. 응답 데이터 조립
     items = []
     for doc in documents:
-        is_read_flag = (
-            db.query(DocumentRead)
-            .filter(
-                DocumentRead.user_id == current_user.id,
-                DocumentRead.document_id == doc.id,
-            )
-            .first()
-            is not None
-        )
+        is_read_flag = doc.id in read_document_ids
         # action 값 계산 (명세서: 내가 결재해야 하면 'approve', 내가 반려했으면 'rejected', 없으면 null)
         action_val = None
         if tab == "action":
@@ -278,9 +292,7 @@ async def submit_document(
 
     # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
     if not req.isDraft:
-        first_approver_id = next(
-            (a.userId for a in req.approvers if a.seq == 1), None
-        )
+        first_approver_id = next((a.userId for a in req.approvers if a.seq == 1), None)
         if first_approver_id:
             first_approver = db.query(User).filter(User.id == first_approver_id).first()
             _notify(first_approver, f"📋 결재 요청: [{doc.type}] {doc.title}")
@@ -395,12 +407,17 @@ async def approve_document(
     # 💡 주의: models.py의 Approval 테이블에 comment와 approval_date 컬럼이 없다면 추가해야 합니다!
     if req.comment:
         my_approval.comment = req.comment
-    my_approval.approval_date = datetime.now()
+    my_approval.approval_date = datetime.now(timezone.utc)
 
     # 4. 다음 결재자 찾기 (나의 seq + 1 인 사람)
     next_approval = (
         db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.seq == my_approval.seq + 1)
+        .filter(
+            Approval.document_id == documentId,
+            Approval.seq > my_approval.seq,
+            Approval.status.in_(["wait", "current"]),
+        )
+        .order_by(Approval.seq.asc())
         .first()
     )
 
@@ -605,6 +622,11 @@ async def get_ref_document_detail(
     ref_doc = db.query(Document).filter(Document.id == refDocumentId).first()
     if not ref_doc:
         raise HTTPException(status_code=404, detail="REF_DOC_NOT_FOUND")
+
+    # 부모 문서의 참조 관계를 검증
+    parent_refs = set(parent_doc.ref_doc_ids or [])
+    if refDocumentId not in parent_refs:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # 3. 메타데이터(meta) 배열 조립
     # 프론트엔드 화면에 "라벨: 값" 형태로 예쁘게 출력될 수 있도록 구성합니다.
