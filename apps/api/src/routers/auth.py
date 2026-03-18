@@ -233,10 +233,17 @@ async def get_my_info(current_user: User = Depends(get_current_user)):
         company_data["name"] = current_user.company.name
         company_data["logoUrl"] = current_user.company.logo_url
 
+    created_at = None
+    if current_user.created_at:
+        created_at = current_user.created_at.strftime("%Y.%m.%d")
+
     my_info_data = {
+        "id": current_user.id,
         "name": current_user.name,
+        "email": current_user.email,
         "role": current_user.role,
         "company": company_data,
+        "createdAt": created_at,
     }
 
     return SuccessResponse(data=my_info_data)

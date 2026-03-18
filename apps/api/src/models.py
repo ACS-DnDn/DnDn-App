@@ -70,6 +70,13 @@ class User(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Slack 연동
+    slack_user_id = Column(String(50), nullable=True)
+    slack_access_token = Column(Text, nullable=True)
+    slack_workspace = Column(String(100), nullable=True)
+    slack_channel = Column(String(100), nullable=True)
+    slack_notify = Column(Boolean, nullable=True)
+
     tasks = relationship("Task", back_populates="user")
     documents = relationship("Document", back_populates="author")
     approvals = relationship("Approval", back_populates="user")
