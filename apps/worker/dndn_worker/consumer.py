@@ -218,7 +218,8 @@ def _build_config(args: argparse.Namespace) -> ConsumerConfig:
         visibility_timeout=args.visibility_timeout,
         heartbeat_interval_seconds=args.heartbeat_interval_seconds,
     )
-    _resolve_heartbeat_interval_seconds(config)
+    # Validate heartbeat configuration early.
+    _ = _resolve_heartbeat_interval_seconds(config)
     return config
 
 
