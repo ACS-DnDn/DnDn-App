@@ -93,14 +93,26 @@ async def get_current_user(
         print(f"Token Verification Error: {e}")
         raise credentials_exception
 
-    user = db.query(User).filter(User.id == cognito_user_id).first()
+    # 1차: cognito_sub로 조회 (정상 경로)
+    user = db.query(User).filter(User.cognito_sub == cognito_user_id).first()
+
+    if user is None and email:
+        # 2차: HR이 사전 생성한 유저를 이메일로 조회 → cognito_sub 등록
+        user = db.query(User).filter(User.email == email).first()
+        if user is not None:
+            user.cognito_sub = cognito_user_id
+            db.commit()
+            db.refresh(user)
 
     if user is None:
+        # 3차: 완전히 새 유저 (AdminCreateUser 없이 직접 Cognito 가입한 경우 — 기본 fallback)
+        import uuid as _uuid
         user = User(
-            id=cognito_user_id,
+            id=str(_uuid.uuid4()),
+            cognito_sub=cognito_user_id,
             email=email if email else f"{username}@placeholder.com",
             name=username,
-            role="user",
+            role="member",
         )
         db.add(user)
         db.commit()
@@ -221,10 +233,17 @@ async def get_my_info(current_user: User = Depends(get_current_user)):
         company_data["name"] = current_user.company.name
         company_data["logoUrl"] = current_user.company.logo_url
 
+    created_at = None
+    if current_user.created_at:
+        created_at = current_user.created_at.strftime("%Y.%m.%d")
+
     my_info_data = {
+        "id": current_user.id,
         "name": current_user.name,
+        "email": current_user.email,
         "role": current_user.role,
         "company": company_data,
+        "createdAt": created_at,
     }
 
     return SuccessResponse(data=my_info_data)

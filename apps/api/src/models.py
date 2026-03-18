@@ -9,7 +9,7 @@ from sqlalchemy import (
     JSON,
     Date,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 import uuid
 
@@ -19,6 +19,23 @@ from apps.api.src.database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+
+# 0. 🏗️ 부서 테이블 (자기참조 트리)
+class Department(Base):
+    __tablename__ = "departments"
+
+    id = Column(String(50), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    parent_id = Column(String(50), ForeignKey("departments.id"), nullable=True)
+    leader_id = Column(String(50), ForeignKey("users.id"), nullable=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    children = relationship(
+        "Department", backref=backref("parent", remote_side="Department.id")
+    )
+    leader = relationship("User", foreign_keys=[leader_id], lazy="joined")
 
 
 # 1. 🏢 회사 테이블
@@ -38,15 +55,27 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(50), primary_key=True)
+    cognito_sub = Column(String(50), unique=True, nullable=True, index=True)  # Cognito sub (첫 로그인 시 채워짐)
     email = Column(String(100), unique=True, index=True, nullable=False)
     name = Column(String(50), nullable=False)
-    role = Column(String(20), default="user")
+    role = Column(String(20), default="member")  # hr | leader | member
+    employee_no = Column(String(20), nullable=True)   # 사번
+    position = Column(String(50), nullable=True)       # 직급
 
-    # 👇 새로 추가되는 부분: 어떤 회사에 소속되어 있는지 연결
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
     company = relationship("Company", back_populates="users")
 
+    department_id = Column(String(50), ForeignKey("departments.id"), nullable=True)
+    department = relationship("Department", foreign_keys=[department_id])
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Slack 연동
+    slack_user_id = Column(String(50), nullable=True)
+    slack_access_token = Column(Text, nullable=True)
+    slack_workspace = Column(String(100), nullable=True)
+    slack_channel = Column(String(100), nullable=True)
+    slack_notify = Column(Boolean, nullable=True)
 
     tasks = relationship("Task", back_populates="user")
     documents = relationship("Document", back_populates="author")
