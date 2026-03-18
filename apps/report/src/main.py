@@ -38,7 +38,7 @@ from .s3_client import (
     get_report,
 )
 from .makejob import create_job, get_job
-from .models import ReportJob, Document
+from .models import ReportJob, Document, JobType
 from .database import SessionLocal, get_db
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,8 @@ _raw_origins = os.getenv(
     "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
 )
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+_background_tasks: set[asyncio.Task] = set()
 
 app = FastAPI(title="DnDn Report API")
 
@@ -163,7 +165,11 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
     canonical = {
-        "meta": {"type": "EVENT", "title": req.target, "workspace_id": req.workspace_id},
+        "meta": {
+            "type": "EVENT",
+            "title": req.target,
+            "workspace_id": req.workspace_id,
+        },
         "content": req.content,
         **ctx,
     }
@@ -213,7 +219,11 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
     canonical = {
-        "meta": {"type": "HEALTH", "title": req.target, "workspace_id": req.workspace_id},
+        "meta": {
+            "type": "HEALTH",
+            "title": req.target,
+            "workspace_id": req.workspace_id,
+        },
         "content": req.content,
         **ctx,
     }
@@ -352,7 +362,9 @@ async def work_plan(req: WorkPlanRequest):
 
     ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
 
-    asyncio.create_task(asyncio.to_thread(_run_work_plan, job_id, req, ctx))
+    task = asyncio.create_task(asyncio.to_thread(_run_work_plan, job_id, req, ctx))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return {"success": True, "data": {"jobId": job_id, "status": "pending"}}
 
@@ -370,6 +382,18 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
                 "error": {
                     "code": "INVALID_DOCUMENT",
                     "message": "documentId는 필수입니다.",
+                },
+            },
+        )
+
+    if not req.workspace_id:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_WORKSPACE",
+                    "message": "workspaceId는 필수입니다.",
                 },
             },
         )
@@ -395,7 +419,7 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
         job_id=job_id,
         workspace_id=req.workspace_id,
         status="pending",
-        job_type="terraform",
+        job_type=JobType.terraform,
         document_id=req.document_id,
     )
 
@@ -403,7 +427,9 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
     db.commit()
 
     # 4. background 실행
-    asyncio.create_task(asyncio.to_thread(_run_terraform_job, job_id, req, repo))
+    task = asyncio.create_task(asyncio.to_thread(_run_terraform_job, job_id, req, repo))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     # 5. 즉시 반환
     return {"success": True, "data": {"jobId": job_id, "status": "pending"}}
@@ -439,18 +465,6 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
         data["error"] = {"code": job.error_code, "message": job.error_message}
 
     return {"success": True, "data": data}
-
-
-@app.post("/api/save")
-async def save_to_s3(req: SaveRequest):
-    try:
-        result = await asyncio.to_thread(
-            save_result, req.workspace_id, {}, req.html, req.terraform_files, req.job_id
-        )
-        return {"ok": True, "data": result}
-    except Exception as e:
-        logger.error("save 오류: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="내부 서버 오류")
 
 
 # ── 보고서 HTML 자동 렌더 (Lambda → S3 JSON 저장 후 호출) ──────
