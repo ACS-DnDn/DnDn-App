@@ -3,14 +3,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Task, Document, Approval
+from apps.api.src.models import User, Document, Approval
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
-from apps.api.src.schemas.dashboard import (
-    TaskCreateRequest,
-    TaskResponse,
-    DashboardResponse,
-)
+from apps.api.src.schemas.dashboard import DashboardResponse
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -22,11 +18,7 @@ router = APIRouter(tags=["Dashboard"])
 async def get_dashboard(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    # 1. 내 업무(Tasks) 조회 -> 명세서에 따라 문자열 리스트로 변환
-    my_tasks = db.query(Task).filter(Task.user_id == current_user.id).all()
-    tasks_response = [t.content for t in my_tasks]
-
-    # 2. 문서 통계
+    # 1. 문서 통계
     pending_count = (
         db.query(Approval)
         .filter(Approval.user_id == current_user.id, Approval.status == "current")
@@ -103,7 +95,7 @@ async def get_dashboard(
         "notices": notices,
         "pendingDocs": pending_docs,
         "completedDocs": completed_docs,
-        "tasks": tasks_response,  # ['업무1', '업무2'] 형태로 응답됩니다.
+        "tasks": [],
     }
 
     return SuccessResponse(data=dashboard_data)

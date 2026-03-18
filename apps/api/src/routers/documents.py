@@ -1,6 +1,10 @@
 import os
+import json
 from urllib.parse import quote
 from fastapi.responses import FileResponse
+
+import boto3
+from botocore.exceptions import ClientError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -25,6 +29,33 @@ from apps.api.src.schemas.documents import (
     RefDocumentDetailResponse,
 )
 from apps.api.src.security.slack_oauth import send_message, SlackError
+
+_S3_BUCKET = os.getenv("S3_BUCKET", "")
+_AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+
+def _s3_get_text(key: str) -> str | None:
+    """S3에서 텍스트 파일 내용을 가져옵니다. 실패 시 None 반환."""
+    if not key or not _S3_BUCKET:
+        return None
+    try:
+        s3 = boto3.client("s3", region_name=_AWS_REGION)
+        obj = s3.get_object(Bucket=_S3_BUCKET, Key=key)
+        return obj["Body"].read().decode("utf-8")
+    except ClientError:
+        return None
+
+
+def _s3_get_json(key: str) -> dict | None:
+    """S3에서 JSON 파일을 가져와 dict로 반환합니다. 실패 시 None 반환."""
+    text = _s3_get_text(key)
+    if text is None:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
 
 # 프론트엔드는 /documents 로 요청합니다.
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -181,7 +212,6 @@ async def submit_document(
         doc = Document(
             id=req.documentId,
             title="[테스트] 인프라 작업 계획서",
-            content="임시 내용",
             author_id=current_user.id,
         )
         db.add(doc)
@@ -207,7 +237,6 @@ async def submit_document(
     # 4. 문서 정보 업데이트
     doc.type = req.type
     doc.work_date = req.work_date
-    doc.terraform = req.terraform
     doc.ref_doc_ids = req.refDocIds
     doc.is_draft = req.isDraft
 
@@ -227,7 +256,11 @@ async def submit_document(
             approval_status = "current"
 
         new_approval = Approval(
-            document_id=doc.id, user_id=app.userId, seq=app.seq, status=approval_status
+            document_id=doc.id,
+            user_id=app.userId,
+            seq=app.seq,
+            type=app.type,
+            status=approval_status,
         )
         db.add(new_approval)
 
@@ -251,11 +284,75 @@ async def submit_document(
 
 
 @router.get("/{documentId}")
-async def get_document_detail(documentId: str, db: Session = Depends(get_db)):
+async def get_document_detail(
+    documentId: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    return doc
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+
+    # S3에서 HTML 본문 가져오기
+    content = _s3_get_text(doc.html_key) if doc.html_key else None
+
+    # 참조 문서 목록
+    ref_docs = []
+    if doc.ref_doc_ids:
+        ref_doc_records = (
+            db.query(Document).filter(Document.id.in_(doc.ref_doc_ids)).all()
+        )
+        ref_docs = [
+            {"id": r.id, "title": r.title, "type": r.type} for r in ref_doc_records
+        ]
+
+    # 첨부파일 목록
+    attachments_list = [
+        {"id": a.id, "name": a.original_name, "sizeKb": a.size_kb}
+        for a in db.query(Attachment).filter(Attachment.document_id == doc.id).all()
+    ]
+
+    # 결재선 — 작성자를 첫 번째 항목으로 추가
+    approval_line = [
+        {
+            "seq": 0,
+            "type": "작성자",
+            "name": doc.author.name if doc.author else "알수없음",
+            "role": doc.author.position if doc.author else "",
+            "status": "author",
+            "date": doc.created_at.isoformat() if doc.created_at else None,
+            "comment": None,
+        }
+    ]
+    for apv in sorted(doc.approvals, key=lambda a: a.seq):
+        approval_line.append(
+            {
+                "seq": apv.seq,
+                "type": apv.type or "결재",
+                "name": apv.user.name if apv.user else "알수없음",
+                "role": apv.user.position if apv.user else "",
+                "status": apv.status,
+                "date": apv.approval_date.isoformat() if apv.approval_date else None,
+                "comment": apv.comment,
+            }
+        )
+
+    return {
+        "id": doc.id,
+        "docNum": f"2026-DnDn-{str(doc.id)[:4].upper()}",
+        "title": doc.title,
+        "type": doc.type,
+        "status": doc.status,
+        "author": {
+            "name": doc.author.name if doc.author else "알수없음",
+            "role": doc.author.position if doc.author else "",
+        },
+        "createdAt": doc.created_at.isoformat() if doc.created_at else None,
+        "content": content,
+        "refDocs": ref_docs,
+        "attachments": attachments_list,
+        "approvalLine": approval_line,
+    }
 
 
 @router.post(
@@ -530,14 +627,14 @@ async def get_ref_document_detail(
         )
 
     # 4. 공통 응답 규격으로 리턴
+    content = _s3_get_text(ref_doc.html_key) if ref_doc.html_key else None
+
     return SuccessResponse(
         data=RefDocumentDetailResponse(
             id=str(ref_doc.id),
             title=ref_doc.title,
             meta=meta_data,
-            content=(
-                ref_doc.content if ref_doc.content else "<p>본문 내용이 없습니다.</p>"
-            ),  # 프론트엔드가 HTML을 기대하므로 빈 값 처리
+            content=content or "<p>본문 내용이 없습니다.</p>",
         )
     )
 

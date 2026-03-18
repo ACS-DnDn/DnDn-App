@@ -2,17 +2,6 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 
-# --- Task (오늘의 업무 추가 응답용) ---
-class TaskCreateRequest(BaseModel):
-    content: str
-
-
-class TaskResponse(BaseModel):
-    id: str
-    content: str
-    createdAt: str
-
-
 # --- Dashboard (대시보드 메인) ---
 class DocStats(BaseModel):
     pending: int

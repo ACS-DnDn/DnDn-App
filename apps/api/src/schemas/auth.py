@@ -51,7 +51,3 @@ class RefreshResponse(BaseModel):
     expiresIn: int
 
 
-class MeResponse(BaseModel):
-    username: str
-    email: str
-    name: str | None = None
