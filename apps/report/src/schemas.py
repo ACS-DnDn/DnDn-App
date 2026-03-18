@@ -1,5 +1,4 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Any
 
 
 def _to_camel(s: str) -> str:
@@ -27,10 +26,8 @@ class WorkPlanRequest(BaseModel):
 class TerraformRequest(BaseModel):
     model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
 
-    document_id: str | None = None
+    document_id: str
     workspace_id: str | None = None
-    job_id: str | None = None
-    workplan: dict[str, Any] | None = None
     repo_name: str | None = None
     github_token: str | None = None
 

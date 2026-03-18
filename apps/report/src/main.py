@@ -36,7 +36,7 @@ from .s3_client import (
     get_presigned_url,
     list_reports,
     get_report,
-    get_workplan,
+
 )
 from .makejob import create_job, get_job
 from .models import ReportJob, Document
@@ -76,7 +76,12 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         html = generate_work_plan(req.target, req.content, ctx)
 
         doc_id = f"plan-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-        html_key = save_report_html(doc_id, html, req.workspace_id or "default")
+        workspace_id = req.workspace_id or "default"
+
+        canonical = {"target": req.target, "content": req.content, **ctx}
+        save_report(doc_id, canonical, workspace_id)
+
+        html_key = save_report_html(doc_id, html, workspace_id)
         content_url = get_presigned_url(html_key)
 
         job.status = "done"
@@ -112,13 +117,8 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
         job.status = "generating"
         db.commit()
 
-        # 1. workplan 조회
-        if req.job_id:
-            workplan = get_workplan(req.job_id)
-        elif req.workplan:
-            workplan = req.workplan
-        else:
-            raise ValueError("workplan 없음")
+        # 1. workplan 조회 (plan 생성 시 저장한 canonical JSON)
+        workplan = get_report(req.document_id, req.workspace_id or "default")
 
         # 2. Terraform 생성
         token = req.github_token or GITHUB_TOKEN
