@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -26,6 +27,7 @@ class ConsumerConfig:
     wait_time_seconds: int = 20
     max_messages: int = 1
     visibility_timeout: Optional[int] = None
+    heartbeat_interval_seconds: int = 0
 
 
 def _payload_schema_path(repo_root: Path) -> Path:
@@ -41,6 +43,72 @@ def _parse_payload(body: str) -> Dict[str, Any]:
 
 def _delete_message(sqs_client: Any, queue_url: str, receipt_handle: str) -> None:
     sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+
+
+def _change_message_visibility(sqs_client: Any, queue_url: str, receipt_handle: str, timeout_seconds: int) -> None:
+    sqs_client.change_message_visibility(
+        QueueUrl=queue_url,
+        ReceiptHandle=receipt_handle,
+        VisibilityTimeout=timeout_seconds,
+    )
+
+
+def _resolve_heartbeat_interval_seconds(config: ConsumerConfig) -> int:
+    if config.heartbeat_interval_seconds > 0:
+        return config.heartbeat_interval_seconds
+    if config.visibility_timeout is None or config.visibility_timeout <= 0:
+        return 0
+    return max(30, config.visibility_timeout // 3)
+
+
+def _start_message_heartbeat(
+    sqs_client: Any,
+    config: ConsumerConfig,
+    message_id: str,
+    receipt_handle: str,
+) -> Optional[tuple[threading.Event, threading.Thread]]:
+    visibility_timeout = config.visibility_timeout
+    if visibility_timeout is None or visibility_timeout <= 0:
+        return None
+
+    interval_seconds = _resolve_heartbeat_interval_seconds(config)
+    if interval_seconds <= 0:
+        return None
+
+    stop_event = threading.Event()
+
+    def _heartbeat_loop() -> None:
+        while not stop_event.wait(interval_seconds):
+            try:
+                _change_message_visibility(
+                    sqs_client=sqs_client,
+                    queue_url=config.queue_url,
+                    receipt_handle=receipt_handle,
+                    timeout_seconds=visibility_timeout,
+                )
+                print(
+                    f"[consumer] heartbeat extended visibility for {message_id} "
+                    f"by {visibility_timeout}s"
+                )
+            except Exception as exc:
+                print(f"[consumer] heartbeat failed for {message_id}: {exc}")
+                return
+
+    thread = threading.Thread(
+        target=_heartbeat_loop,
+        name=f"dndn-sqs-heartbeat-{message_id}",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
+
+
+def _stop_message_heartbeat(heartbeat: Optional[tuple[threading.Event, threading.Thread]]) -> None:
+    if heartbeat is None:
+        return
+    stop_event, thread = heartbeat
+    stop_event.set()
+    thread.join(timeout=1.0)
 
 
 def process_message_body(body: str, config: ConsumerConfig) -> WorkerExecutionResult:
@@ -65,30 +133,39 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
     if not receipt_handle:
         raise ValueError(f"SQS message {message_id} is missing ReceiptHandle.")
 
+    heartbeat = _start_message_heartbeat(
+        sqs_client=sqs_client,
+        config=config,
+        message_id=message_id,
+        receipt_handle=receipt_handle,
+    )
     try:
-        result = process_message_body(body, config)
-    except json.JSONDecodeError as exc:
-        print(f"[consumer] dropping non-retryable message {message_id}: INVALID_PAYLOAD: {exc}")
-        _delete_message(sqs_client, config.queue_url, receipt_handle)
-        return None
-    except WorkerExecutionError as exc:
-        if exc.retryable:
+        try:
+            result = process_message_body(body, config)
+        except json.JSONDecodeError as exc:
+            print(f"[consumer] dropping non-retryable message {message_id}: INVALID_PAYLOAD: {exc}")
+            _delete_message(sqs_client, config.queue_url, receipt_handle)
+            return None
+        except WorkerExecutionError as exc:
+            if exc.retryable:
+                print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
+                raise
+            print(f"[consumer] dropping non-retryable message {message_id}: {exc}")
+            _delete_message(sqs_client, config.queue_url, receipt_handle)
+            return None
+        except Exception as exc:
             print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
             raise
-        print(f"[consumer] dropping non-retryable message {message_id}: {exc}")
-        _delete_message(sqs_client, config.queue_url, receipt_handle)
-        return None
-    except Exception as exc:
-        print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
-        raise
 
-    _delete_message(sqs_client, config.queue_url, receipt_handle)
-    outcome = "already processed" if result.already_processed else "processed"
-    print(
-        f"[consumer] {outcome} message {message_id}: "
-        f"{result.result_path} (retryable={result.retryable}, error_code={result.error_code})"
-    )
-    return result
+        _delete_message(sqs_client, config.queue_url, receipt_handle)
+        outcome = "already processed" if result.already_processed else "processed"
+        print(
+            f"[consumer] {outcome} message {message_id}: "
+            f"{result.result_path} (retryable={result.retryable}, error_code={result.error_code})"
+        )
+        return result
+    finally:
+        _stop_message_heartbeat(heartbeat)
 
 
 def poll_once(sqs_client: Any, config: ConsumerConfig) -> int:
@@ -132,6 +209,7 @@ def _build_config(args: argparse.Namespace) -> ConsumerConfig:
         wait_time_seconds=args.wait_time_seconds,
         max_messages=args.max_messages,
         visibility_timeout=args.visibility_timeout,
+        heartbeat_interval_seconds=args.heartbeat_interval_seconds,
     )
 
 
@@ -144,6 +222,12 @@ def main() -> None:
     parser.add_argument("--wait-time-seconds", type=int, default=_env_int("DNDN_WORKER_WAIT_TIME_SECONDS", 20), help="SQS long poll wait time.")
     parser.add_argument("--max-messages", type=int, default=_env_int("DNDN_WORKER_MAX_MESSAGES", 1), help="Max messages to receive per poll.")
     parser.add_argument("--visibility-timeout", type=int, default=None, help="Optional SQS visibility timeout override.")
+    parser.add_argument(
+        "--heartbeat-interval-seconds",
+        type=int,
+        default=_env_int("DNDN_WORKER_HEARTBEAT_INTERVAL_SECONDS", 0),
+        help="Optional SQS heartbeat interval. 0 means auto-calculate from visibility timeout or disable when no timeout is set.",
+    )
     parser.add_argument("--once", action="store_true", help="Process at most one receive cycle and exit.")
     args = parser.parse_args()
 
