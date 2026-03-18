@@ -21,6 +21,7 @@ import { ReportSettingsPage } from '@/features/report-settings/ReportSettingsPag
 import { ViewerPage } from '@/features/viewer/ViewerPage';
 import { PlanPage } from '@/features/plan/PlanPage';
 import { GitHubCallbackPage } from '@/features/auth/GitHubCallbackPage';
+import { SlackCallbackPage } from '@/features/auth/SlackCallbackPage';
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
+            <Route path="/auth/slack/callback" element={<SlackCallbackPage />} />
 
             <Route element={<RequireAuth />}>
               <Route path="/plan" element={<PlanPage />} />
