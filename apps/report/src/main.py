@@ -36,7 +36,6 @@ from .s3_client import (
     get_presigned_url,
     list_reports,
     get_report,
-
 )
 from .makejob import create_job, get_job
 from .models import ReportJob, Document
@@ -162,16 +161,16 @@ async def _merge_context(ref_doc_ids: list[str], workspace_id: str) -> dict[str,
 @app.post("/api/report/event")
 async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+    ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
     canonical = {
-        "meta": {"type": "EVENT", "title": req.target, "account_id": req.account_id},
+        "meta": {"type": "EVENT", "title": req.target, "workspace_id": req.workspace_id},
         "content": req.content,
         **ctx,
     }
 
     try:
         json_key = await asyncio.to_thread(
-            save_report, doc_id, canonical, req.account_id
+            save_report, doc_id, canonical, req.workspace_id
         )
     except Exception as e:
         logger.error("event_report: JSON 저장 실패: %s", e, exc_info=True)
@@ -185,7 +184,7 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
 
     try:
         html_key = await asyncio.to_thread(
-            save_report_html, doc_id, html, req.account_id
+            save_report_html, doc_id, html, req.workspace_id
         )
         html_url = await asyncio.to_thread(get_presigned_url, html_key)
     except Exception as e:
@@ -212,16 +211,16 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
 @app.post("/api/report/health-event")
 async def health_event_report(req: ReportRequest, db: Session = Depends(get_db)):
     doc_id = f"event-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    ctx = await _merge_context(req.ref_doc_ids, req.account_id)
+    ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
     canonical = {
-        "meta": {"type": "HEALTH", "title": req.target, "account_id": req.account_id},
+        "meta": {"type": "HEALTH", "title": req.target, "workspace_id": req.workspace_id},
         "content": req.content,
         **ctx,
     }
 
     try:
         json_key = await asyncio.to_thread(
-            save_report, doc_id, canonical, req.account_id
+            save_report, doc_id, canonical, req.workspace_id
         )
     except Exception as e:
         logger.error("health_event_report: JSON 저장 실패: %s", e, exc_info=True)
@@ -235,7 +234,7 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
 
     try:
         html_key = await asyncio.to_thread(
-            save_report_html, doc_id, html, req.account_id
+            save_report_html, doc_id, html, req.workspace_id
         )
         html_url = await asyncio.to_thread(get_presigned_url, html_key)
     except Exception as e:
@@ -268,7 +267,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
             "type": "WEEKLY",
             "run_id": doc_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "account_id": req.account_id,
+            "workspace_id": req.workspace_id,
             "period": {"start": req.period_start, "end": req.period_end},
             "title": req.target,
         },
@@ -277,7 +276,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
 
     try:
         json_key = await asyncio.to_thread(
-            save_report, doc_id, canonical, req.account_id
+            save_report, doc_id, canonical, req.workspace_id
         )
     except Exception as e:
         logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
@@ -291,7 +290,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
 
     try:
         html_key = await asyncio.to_thread(
-            save_report_html, doc_id, html, req.account_id
+            save_report_html, doc_id, html, req.workspace_id
         )
         html_url = await asyncio.to_thread(get_presigned_url, html_key)
     except Exception as e:
@@ -304,7 +303,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
         type="주간보고서",
         html_key=html_key,
         json_key=json_key,
-        workspace_id=req.account_id,
+        workspace_id=req.workspace_id,
         status="done",
     )
     db.add(doc)
@@ -320,17 +319,32 @@ async def work_plan(req: WorkPlanRequest):
     if not req.target:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": {"code": "MISSING_TARGET", "message": "target은 필수입니다."}},
+            content={
+                "success": False,
+                "error": {"code": "MISSING_TARGET", "message": "target은 필수입니다."},
+            },
         )
     if not req.content:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": {"code": "MISSING_CONTENT", "message": "content는 필수입니다."}},
+            content={
+                "success": False,
+                "error": {
+                    "code": "MISSING_CONTENT",
+                    "message": "content는 필수입니다.",
+                },
+            },
         )
     if not req.workspace_id:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": {"code": "INVALID_WORKSPACE", "message": "workspaceId는 필수입니다."}},
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_WORKSPACE",
+                    "message": "workspaceId는 필수입니다.",
+                },
+            },
         )
 
     job_id = str(uuid.uuid4())
@@ -351,7 +365,13 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
     if not req.document_id:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": {"code": "INVALID_DOCUMENT", "message": "documentId는 필수입니다."}},
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_DOCUMENT",
+                    "message": "documentId는 필수입니다.",
+                },
+            },
         )
 
     # 2. repo 설정
@@ -359,7 +379,13 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
     if not repo:
         return JSONResponse(
             status_code=503,
-            content={"success": False, "error": {"code": "AI_UNAVAILABLE", "message": "GITHUB_REPO가 설정되지 않았습니다."}},
+            content={
+                "success": False,
+                "error": {
+                    "code": "AI_UNAVAILABLE",
+                    "message": "GITHUB_REPO가 설정되지 않았습니다.",
+                },
+            },
         )
 
     # 3. job 생성
@@ -392,7 +418,10 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
     if not job:
         return JSONResponse(
             status_code=404,
-            content={"success": False, "error": {"code": "JOB_NOT_FOUND", "message": "존재하지 않는 jobId"}},
+            content={
+                "success": False,
+                "error": {"code": "JOB_NOT_FOUND", "message": "존재하지 않는 jobId"},
+            },
         )
 
     data = {"jobId": job.job_id, "status": job.status}
@@ -416,7 +445,7 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
 async def save_to_s3(req: SaveRequest):
     try:
         result = await asyncio.to_thread(
-            save_result, req.account_id, {}, req.html, req.terraform_files, req.job_id
+            save_result, req.workspace_id, {}, req.html, req.terraform_files, req.job_id
         )
         return {"ok": True, "data": result}
     except Exception as e:
@@ -429,7 +458,7 @@ async def save_to_s3(req: SaveRequest):
 async def render_report(req: RenderRequest):
     """S3 canonical JSON 읽기 → AI HTML 보고서 생성 → HTML 저장 → html_key 반환"""
     try:
-        canonical = await asyncio.to_thread(get_report, req.doc_id, req.account_id)
+        canonical = await asyncio.to_thread(get_report, req.doc_id, req.workspace_id)
     except Exception as e:
         logger.error("render_report: canonical 조회 실패: %s", e, exc_info=True)
         raise HTTPException(
@@ -451,7 +480,7 @@ async def render_report(req: RenderRequest):
 
     try:
         html_key = await asyncio.to_thread(
-            save_report_html, req.doc_id, html, req.account_id
+            save_report_html, req.doc_id, html, req.workspace_id
         )
         return {"ok": True, "data": {"doc_id": req.doc_id, "html_key": html_key}}
     except Exception as e:

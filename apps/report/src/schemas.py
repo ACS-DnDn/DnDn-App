@@ -11,7 +11,6 @@ class ReportRequest(BaseModel):
     target: str = ""
     content: str = ""
     ref_doc_ids: list[str] = []
-    account_id: str = "default"
 
 
 class WorkPlanRequest(BaseModel):
@@ -33,7 +32,7 @@ class TerraformRequest(BaseModel):
 
 
 class SaveRequest(BaseModel):
-    account_id: str = "default"
+    workspace_id: str = "default"
     job_id: str | None = None
     html: str = ""
     terraform_files: list[dict[str, str]] = []
@@ -41,7 +40,7 @@ class SaveRequest(BaseModel):
 
 class RenderRequest(BaseModel):
     doc_id: str
-    account_id: str = "default"
+    workspace_id: str = "default"
 
 
 class WeeklyReportRequest(BaseModel):
@@ -49,4 +48,4 @@ class WeeklyReportRequest(BaseModel):
     content: str = ""
     period_start: str = ""
     period_end: str = ""
-    account_id: str = "default"
+    workspace_id: str = "default"
