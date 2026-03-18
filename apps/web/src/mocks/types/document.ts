@@ -13,6 +13,9 @@ export interface Document {
   action: DocAction;
   icon: string;
   workspace: string;
+  content?: string;
+  terraform?: Record<string, string>;
+  refDocIds?: string[];
 }
 
 export interface RefDocMeta {

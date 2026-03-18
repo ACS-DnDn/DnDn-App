@@ -25,7 +25,7 @@ function getSessionExpiry(): string {
   const token = localStorage.getItem('dndn-access-token');
   if (token) {
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(atob(token.split('.')[1] ?? ''));
       if (payload.exp) {
         const d = new Date(payload.exp * 1000);
         return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 0 280 100" style="background:transparent">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@700&amp;display=swap');
+    </style>
+  </defs>
+
+  <g id="c1" opacity="0">
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#0d1117" stroke="#0d1117" stroke-width="10" stroke-linejoin="round" x="0">D</text>
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#4ADEAA" stroke="#4ADEAA" stroke-width="3" x="0">D</text>
+  </g>
+  <g id="c2" opacity="0">
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#0d1117" stroke="#0d1117" stroke-width="10" stroke-linejoin="round" x="43.609375">n</text>
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#ffffff" stroke="#ffffff" stroke-width="3" x="43.609375">n</text>
+  </g>
+  <g id="c3" opacity="0">
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#0d1117" stroke="#0d1117" stroke-width="10" stroke-linejoin="round" x="87.21875">D</text>
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#4ADEAA" stroke="#4ADEAA" stroke-width="3" x="87.21875">D</text>
+  </g>
+  <g id="c4" opacity="0">
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#0d1117" stroke="#0d1117" stroke-width="10" stroke-linejoin="round" x="130.828125">n</text>
+    <text y="88" font-family="'Courier New',monospace" font-size="86" font-weight="700" fill="#ffffff" stroke="#ffffff" stroke-width="3" x="130.828125">n</text>
+  </g>
+  <text id="ch" opacity="0" y="38" font-family="'Lexend', sans-serif" font-size="26" font-weight="700" fill="#ffffff" x="194.4375">H</text>
+  <text id="cr" opacity="0" y="38" font-family="'Lexend', sans-serif" font-size="26" font-weight="700" fill="#ffffff" x="215">R</text>
+  <rect id="cursor" rx="1" fill="#4ADEAA" x="0" y="13" width="11" height="86"/>
+
+  <script type="text/javascript"><![CDATA[
+    var CURSOR_X = [0, 43.609375, 87.21875, 130.828125, 194.4375, 215, 236];
+    var TYPE_GAP = 100;
+    var HOLD_MS = 30000;
+    var WAIT_MS = 1000;
+    var BLINK_MS = 500;
+    var chars = ['c1','c2','c3','c4'];
+    var cursor = document.getElementById('cursor');
+    var blinkTimer = null;
+
+    function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+    function setOp(id, v) { var el = document.getElementById(id); if(el) el.setAttribute('opacity', v); }
+    function setCursorX(idx) { cursor.setAttribute('x', CURSOR_X[idx]); }
+    function showCursor() { cursor.setAttribute('opacity', '1'); }
+
+    function startBlink() {
+      var state = true;
+      showCursor();
+      blinkTimer = setInterval(function() {
+        state = !state;
+        cursor.setAttribute('opacity', state ? '1' : '0');
+      }, BLINK_MS);
+    }
+    function stopBlink() {
+      if (blinkTimer) { clearInterval(blinkTimer); blinkTimer = null; }
+      showCursor();
+    }
+
+    async function run() {
+      while (true) {
+        chars.forEach(function(id) { setOp(id, '0'); });
+        setOp('ch', '0'); setOp('cr', '0');
+        setCursorX(0); showCursor();
+        await sleep(300);
+
+        stopBlink();
+        for (var i = 0; i < 4; i++) {
+          setOp(chars[i], '1'); setCursorX(i + 1);
+          await sleep(TYPE_GAP);
+        }
+        setOp('ch', '1'); setCursorX(5); await sleep(TYPE_GAP);
+        setOp('cr', '1'); setCursorX(6); await sleep(TYPE_GAP);
+
+        startBlink(); await sleep(HOLD_MS); stopBlink();
+
+        setOp('cr', '0'); setCursorX(5); await sleep(TYPE_GAP);
+        setOp('ch', '0'); setCursorX(4); await sleep(TYPE_GAP);
+        for (var j = 3; j >= 0; j--) {
+          setOp(chars[j], '0'); setCursorX(j);
+          await sleep(TYPE_GAP);
+        }
+        startBlink(); await sleep(WAIT_MS); stopBlink();
+      }
+    }
+
+    run();
+  ]]></script>
+</svg>

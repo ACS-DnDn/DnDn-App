@@ -115,8 +115,20 @@ export function ReportSettingsPage() {
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
 
   /* 현황 보고서 */
-  const [summaryStart, setSummaryStart] = useState('2026-03-03T00:00');
-  const [summaryEnd, setSummaryEnd] = useState('2026-03-09T23:59');
+  const [summaryStart, setSummaryStart] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const toLastMon = day === 0 ? 13 : day + 6;
+    const mon = new Date(now); mon.setDate(now.getDate() - toLastMon); mon.setHours(0, 0, 0, 0);
+    return mon.toISOString().slice(0, 16);
+  });
+  const [summaryEnd, setSummaryEnd] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const toLastMon = day === 0 ? 13 : day + 6;
+    const sun = new Date(now); sun.setDate(now.getDate() - toLastMon + 6); sun.setHours(23, 59, 0, 0);
+    return sun.toISOString().slice(0, 16);
+  });
   const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
 
   /* 스케줄 */
