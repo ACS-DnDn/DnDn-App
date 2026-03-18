@@ -142,6 +142,20 @@ async def get_documents(
         query.order_by(Document.created_at.desc()).offset(offset).limit(pageSize).all()
     )
 
+    # tab == "action" 인 경우, 모든 문서에 대한 Approval 을 한 번에 조회하여 N+1 문제를 방지
+    approvals_by_doc_id = {}
+    if tab == "action" and documents:
+        doc_ids = [doc.id for doc in documents]
+        approvals = (
+            db.query(Approval)
+            .filter(
+                Approval.document_id.in_(doc_ids),
+                Approval.user_id == current_user.id,
+            )
+            .all()
+        )
+        approvals_by_doc_id = {approval.document_id: approval for approval in approvals}
+
     # 9. 응답 데이터 조립
     items = []
     for doc in documents:
@@ -157,13 +171,7 @@ async def get_documents(
         # action 값 계산 (명세서: 내가 결재해야 하면 'approve', 내가 반려했으면 'rejected', 없으면 null)
         action_val = None
         if tab == "action":
-            my_approval = (
-                db.query(Approval)
-                .filter(
-                    Approval.document_id == doc.id, Approval.user_id == current_user.id
-                )
-                .first()
-            )
+            my_approval = approvals_by_doc_id.get(doc.id)
 
             if my_approval:
                 if my_approval.status == "current":
