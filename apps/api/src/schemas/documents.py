@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from datetime import date
 
 
 # --- 결재자 정보 ---
@@ -15,7 +16,7 @@ class ApproverItem(BaseModel):
 class DocumentSubmitRequest(BaseModel):
     documentId: str
     type: str
-    work_date: Optional[str] = Field(None, alias="workDate")
+    work_date: Optional[date] = Field(None, alias="workDate")
     terraform: Optional[Dict[str, Any]] = None  # JSON 객체를 받기 위해 Dict 사용
     refDocIds: Optional[List[str]] = []
     approvers: List[ApproverItem]
