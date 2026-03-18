@@ -157,10 +157,8 @@ export function PlanPage() {
     const newPending = [...pendingApprovers];
     orgSelected.forEach(name => {
       if (newPending.some(p => p.name === name)) return;
-      let rank = '';
-      let memberId = '';
-      orgData.forEach(dept => { const m = dept.members.find(mm => mm.name === name); if (m) { rank = m.rank; memberId = m.id; } });
-      newPending.push({ id: memberId, name, rank, type: '결재' });
+      const member = orgData.flatMap(d => d.members).find(m => m.name === name);
+      newPending.push({ id: member?.id ?? '', name, rank: member?.rank ?? '', type: '결재' });
     });
     setPendingApprovers(newPending);
     setOrgSelected(new Set());
@@ -297,6 +295,7 @@ export function PlanPage() {
 
   async function saveDoc() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
+    if (approvers.length === 0) { alert('결재자를 1명 이상 지정해 주세요.'); return; }
 
     try {
       const terraformObj = Object.fromEntries(generatedTfFiles.map(f => [f.name, f.code]));
@@ -312,7 +311,8 @@ export function PlanPage() {
         }),
       });
       navigate(`/viewer/${res.id}`);
-    } catch {
+    } catch (err) {
+      console.error('결재 상신 실패:', err);
       alert('결재 상신에 실패했습니다. 다시 시도해 주세요.');
     }
   }
