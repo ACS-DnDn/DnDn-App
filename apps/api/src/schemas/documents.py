@@ -1,8 +1,7 @@
 # app/schemas/documents.py
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
-from datetime import date
 
 
 # --- 결재자 정보 ---
@@ -14,19 +13,15 @@ class ApproverItem(BaseModel):
 
 # --- 문서 저장/상신 요청 ---
 class DocumentSubmitRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     documentId: str
-    type: str
-    work_date: Optional[date] = Field(None, alias="workDate")
-    terraform: Optional[Dict[str, Any]] = None  # JSON 객체를 받기 위해 Dict 사용
+    workspaceId: str
+    work_date: Optional[str] = Field(None, alias="workDate")
+    terraform: Optional[Dict[str, Any]] = None
     refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
     isDraft: bool
-
-    # 💡 [백엔드의 제안] 프론트엔드에서 사용자가 제목이나 내용을 수정했을 수 있으므로,
-    # 실무에서는 여기에 title과 content도 같이 받아서 업데이트해 주는 것이 좋습니다!
-    # 일단 명세서에 없으므로 주석으로만 남겨둡니다.
-    # title: Optional[str] = None
-    # content: Optional[str] = None
 
 
 # --- 문서 저장/상신 응답 ---

@@ -229,7 +229,7 @@ async def get_documents(
 
 
 @router.post(
-    "", response_model=DocumentSubmitResponse, status_code=status.HTTP_201_CREATED
+    "", response_model=SuccessResponse[DocumentSubmitResponse], status_code=status.HTTP_201_CREATED
 )
 async def submit_document(
     req: DocumentSubmitRequest,
@@ -269,7 +269,7 @@ async def submit_document(
             raise HTTPException(status_code=400, detail="INVALID_APPROVER")
 
     # 4. 문서 정보 업데이트
-    doc.type = req.type
+    doc.workspace_id = req.workspaceId
     doc.work_date = req.work_date
     doc.ref_doc_ids = req.refDocIds
     doc.is_draft = req.isDraft
@@ -310,8 +310,10 @@ async def submit_document(
             _notify(first_approver, f"📋 결재 요청: [{doc.type}] {doc.title}")
 
     # 9. 명세서에 맞는 응답 반환
-    return DocumentSubmitResponse(
-        id=str(doc.id), docNum=str(doc.id)[:8], status=doc.status  # UUID 앞 8자리
+    return SuccessResponse(
+        data=DocumentSubmitResponse(
+            id=str(doc.id), docNum=str(doc.id)[:8], status=doc.status
+        )
     )
 
 
