@@ -36,9 +36,9 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # -------------------------------------------------------------------
 # ⚙️ AWS Cognito 설정
 # -------------------------------------------------------------------
-COGNITO_REGION = "ap-northeast-2"
-COGNITO_USER_POOL_ID = "ap-northeast-2_AqyobCjs4"
-COGNITO_APP_CLIENT_ID = "2ihan310ih4tg1qk71t7fsvdu"
+import os as _os
+COGNITO_REGION = _os.getenv("AWS_REGION", "ap-northeast-2")
+COGNITO_USER_POOL_ID = _os.getenv("COGNITO_USER_POOL_ID", "")
 
 JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
 COGNITO_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}"
