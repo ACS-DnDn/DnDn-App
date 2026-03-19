@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
@@ -79,6 +80,10 @@ async def create_user(
     if req.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="INVALID_ROLE")
 
+    # 0. DB 중복 선검사
+    if db.query(User).filter(User.email == req.email).first():
+        raise HTTPException(status_code=409, detail="EMAIL_ALREADY_EXISTS")
+
     # 1. Cognito 사용자 생성
     try:
         username = admin_create_user(req.email, req.name)
@@ -98,8 +103,17 @@ async def create_user(
         company_id=current_user.company_id,
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        try:
+            admin_delete_user(req.email)
+        except CognitoError:
+            pass  # best-effort cleanup
+        raise HTTPException(status_code=409, detail="EMAIL_ALREADY_EXISTS")
+
     return SuccessResponse(data=_to_response(user))
 
 
