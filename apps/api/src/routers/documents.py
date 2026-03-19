@@ -497,7 +497,7 @@ async def reject_document(
     # 4. 내 결재 상태를 '반려(rejected)'로 변경하고 사유와 시간 기록
     my_approval.status = "rejected"
     my_approval.comment = req.comment
-    my_approval.approval_date = datetime.now()
+    my_approval.approval_date = datetime.now(timezone.utc)
 
     # 5. 문서 전체 상태를 '반려(rejected)'로 덮어쓰기
     # 💡 이 순간, 기안자(작성자)의 대시보드에 이 문서가 다시 'rejected' 상태로 뜨게 됩니다!
