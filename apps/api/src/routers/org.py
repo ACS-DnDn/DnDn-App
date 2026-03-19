@@ -8,11 +8,12 @@ from apps.api.src.database import get_db
 from apps.api.src.models import User
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.org import OrgMembersResponse
+from apps.api.src.schemas.common import SuccessResponse
 
 router = APIRouter(prefix="/org", tags=["Organization"])
 
 
-@router.get("/members", response_model=OrgMembersResponse)
+@router.get("/members", response_model=SuccessResponse[OrgMembersResponse])
 async def get_org_members(
     keyword: Optional[str] = Query(None, description="이름 또는 부서명 검색"),
     db: Session = Depends(get_db),
@@ -59,4 +60,4 @@ async def get_org_members(
         if members:  # 멤버가 한 명이라도 있는 부서만 추가
             result_data.append({"dept": dept, "members": members})
 
-    return {"data": result_data}
+    return SuccessResponse(data=OrgMembersResponse(items=result_data))

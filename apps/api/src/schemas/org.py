@@ -15,4 +15,4 @@ class OrgDeptItem(BaseModel):
 
 
 class OrgMembersResponse(BaseModel):
-    data: List[OrgDeptItem]
+    items: List[OrgDeptItem]
