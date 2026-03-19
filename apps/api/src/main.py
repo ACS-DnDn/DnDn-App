@@ -20,7 +20,9 @@ from apps.api.src.routers import (
 )
 
 # 1. MariaDB에 테이블 자동 생성 (models.py에 정의된 규격대로)
-# 주의: 이미 테이블이 있으면 덮어쓰지 않습니다. (실무에서는 Alembic 같은 마이그레이션 툴 사용)
+# 주의: 이미 테이블이 있으면 덮어쓰지 않습니다. 컬럼 추가/변경은 반영되지 않습니다.
+# TODO: 운영 환경 전환 전 Alembic 마이그레이션으로 교체 필요
+#       (create_all은 개발/테스트 전용으로만 사용)
 Base.metadata.create_all(bind=engine)
 
 # 2. FastAPI 앱 초기화
