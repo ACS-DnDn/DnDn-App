@@ -12,22 +12,20 @@ export function SlackCallbackPage() {
     const state = params.get('state');
     const error = params.get('error');
 
-    if (window.opener) {
-      if (error) {
-        window.opener.postMessage(
-          { type: 'slack-oauth', error },
-          window.location.origin,
-        );
-      } else {
-        window.opener.postMessage(
-          { type: 'slack-oauth', code, state },
-          window.location.origin,
-        );
-      }
-      window.close();
+    const bc = new BroadcastChannel('slack-oauth');
+    if (error) {
+      bc.postMessage({ type: 'slack-oauth', error });
+    } else if (code && state) {
+      bc.postMessage({ type: 'slack-oauth', code, state });
     } else {
+      bc.close();
       window.location.href = '/';
+      return;
     }
+    setTimeout(() => {
+      bc.close();
+      window.close();
+    }, 500);
   }, []);
 
   return (

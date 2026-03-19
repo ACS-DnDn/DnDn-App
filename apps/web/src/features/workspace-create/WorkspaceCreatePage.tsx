@@ -145,10 +145,12 @@ export function WorkspaceCreatePage() {
         return;
       }
 
+      // BroadcastChannel로 콜백 수신 (GitHub COOP로 인해 window.opener 방식 불가)
+      const bc = new BroadcastChannel('github-oauth');
       let popupCheck: ReturnType<typeof setInterval> | null = null;
       const cleanup = () => {
         if (popupCheck) { clearInterval(popupCheck); popupCheck = null; }
-        window.removeEventListener('message', handler);
+        bc.close();
       };
 
       // 팝업이 사용자에 의해 닫힌 경우 감지
@@ -159,9 +161,8 @@ export function WorkspaceCreatePage() {
         }
       }, 1000);
 
-      // 콜백 메시지 수신 대기
-      const handler = async (e: MessageEvent) => {
-        if (e.origin !== window.location.origin || e.data?.type !== 'github-oauth') return;
+      bc.onmessage = async (e) => {
+        if (e.data?.type !== 'github-oauth') return;
         cleanup();
 
         try {
@@ -191,7 +192,6 @@ export function WorkspaceCreatePage() {
           setGhConnecting(false);
         }
       };
-      window.addEventListener('message', handler);
     } catch {
       showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
       setGhConnecting(false);

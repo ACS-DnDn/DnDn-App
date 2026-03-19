@@ -69,9 +69,10 @@ export function MyPage() {
       const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/slack/auth');
       const popup = window.open(res.data.authorizeUrl, 'slack-oauth', 'width=600,height=700');
 
-      const onMessage = async (e: MessageEvent) => {
-        if (e.origin !== window.location.origin || e.data?.type !== 'slack-oauth') return;
-        window.removeEventListener('message', onMessage);
+      const bc = new BroadcastChannel('slack-oauth');
+      bc.onmessage = async (e) => {
+        if (e.data?.type !== 'slack-oauth') return;
+        bc.close();
         popup?.close();
 
         if (e.data.error) { setSaving(false); return; }
@@ -85,7 +86,6 @@ export function MyPage() {
           setSaving(false);
         }
       };
-      window.addEventListener('message', onMessage);
     } catch {
       setSaving(false);
     }

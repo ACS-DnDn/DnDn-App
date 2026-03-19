@@ -228,20 +228,14 @@ export function PlanPage() {
      계획서 생성
   ══════════════════════════════ */
   async function pollJob(jobId: string): Promise<Record<string, unknown>> {
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       await new Promise<void>(r => setTimeout(r, 1000));
-      const res = await fetch(`/todo/documents/generate/${jobId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { status, result, error } = (json.data ?? json) as {
-        status: string;
-        result?: Record<string, unknown>;
-        error?: { message: string };
-      };
+      const json = await apiFetch<{ status: string; result?: Record<string, unknown>; error?: { message: string } }>(`/documents/generate/${jobId}`);
+      const { status, result, error } = json;
       if (status === 'done') return result ?? {};
       if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
     }
-    throw new Error('타임아웃: 60초 초과');
+    throw new Error('타임아웃: 120초 초과');
   }
 
   async function generateDoc() {
@@ -254,9 +248,8 @@ export function PlanPage() {
     setLogEntries([]);
     setDraftDocumentId(null);
     try {
-      const res = await fetch('/todo/documents/generate/plan', {
+      const json = await apiFetch<{ jobId: string }>('/documents/generate/plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId: ws?.id,
           target: nlTarget,
@@ -264,9 +257,7 @@ export function PlanPage() {
           ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { jobId } = json.data ?? json;
+      const { jobId } = json;
       const result = await pollJob(jobId);
       setDraftDocumentId(result.documentId as string);
       setIframeSrc(result.contentUrl as string);
