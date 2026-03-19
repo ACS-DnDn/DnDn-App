@@ -244,8 +244,8 @@ async def submit_document(
     # 2. 임시 문서 만료 검사 (400 DRAFT_EXPIRED)
     # 문서 생성일이 24시간을 넘었는지 체크합니다.
     if doc.created_at:
-        # 시간대를 맞추기 위해 타임존 제거(또는 통일) 후 비교
-        time_diff = datetime.now() - doc.created_at.replace(tzinfo=None)
+        now_utc = datetime.now(timezone.utc)
+        time_diff = now_utc - doc.created_at
         if time_diff > timedelta(hours=24):
             raise HTTPException(status_code=400, detail="DRAFT_EXPIRED")
 
