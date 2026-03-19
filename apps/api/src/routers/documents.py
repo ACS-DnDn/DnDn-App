@@ -136,11 +136,6 @@ async def get_documents(
         query = query.filter(Document.status == status)
 
     # 6. 날짜(dateFrom, dateTo) 필터링
-    if dateFrom:
-        from_dt = datetime.strptime(dateFrom, "%Y-%m-%d")
-        query = query.filter(Document.created_at >= from_dt)
-    if dateTo:
-        to_dt = datetime.strptime(dateTo, "%Y-%m-%d")
     try:
         from_dt = datetime.strptime(dateFrom, "%Y-%m-%d") if dateFrom else None
         to_dt = datetime.strptime(dateTo, "%Y-%m-%d") if dateTo else None
