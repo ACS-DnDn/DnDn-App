@@ -145,8 +145,7 @@ async def get_current_user(
         if cognito_user_id is None:
             raise credentials_exception
 
-    except Exception as e:
-        print(f"Token Verification Error: {e}")
+    except Exception:
         raise credentials_exception
 
     # 1차: cognito_sub로 조회 (정상 경로)
