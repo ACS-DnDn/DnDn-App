@@ -27,6 +27,7 @@ from apps.api.src.schemas.documents import (
     DocumentReadAllRequest,
     RefDocMetaItem,
     RefDocumentDetailResponse,
+    DocumentDetailResponse,
 )
 from apps.api.src.security.slack_oauth import send_message, SlackError
 
@@ -308,7 +309,7 @@ async def submit_document(
     )
 
 
-@router.get("/{documentId}")
+@router.get("/{documentId}", response_model=SuccessResponse[DocumentDetailResponse])
 async def get_document_detail(
     documentId: str,
     db: Session = Depends(get_db),
@@ -373,22 +374,21 @@ async def get_document_detail(
             }
         )
 
-    return {
-        "id": doc.id,
-        "docNum": f"2026-DnDn-{str(doc.id)[:4].upper()}",
-        "title": doc.title,
-        "type": doc.type,
-        "status": doc.status,
-        "author": {
-            "name": doc.author.name if doc.author else "알수없음",
-            "role": doc.author.position if doc.author else "",
-        },
-        "createdAt": doc.created_at.isoformat() if doc.created_at else None,
-        "content": content,
-        "refDocs": ref_docs,
-        "attachments": attachments_list,
-        "approvalLine": approval_line,
-    }
+    return SuccessResponse(
+        data=DocumentDetailResponse(
+            id=str(doc.id),
+            docNum=f"2026-DnDn-{str(doc.id)[:4].upper()}",
+            title=doc.title,
+            type=doc.type,
+            status=doc.status,
+            author={"name": doc.author.name if doc.author else "알수없음", "role": doc.author.position if doc.author else ""},
+            createdAt=doc.created_at.isoformat() if doc.created_at else None,
+            content=content,
+            refDocs=ref_docs,
+            attachments=attachments_list,
+            approvalLine=approval_line,
+        )
+    )
 
 
 @router.post(

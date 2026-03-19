@@ -86,3 +86,45 @@ class RefDocumentDetailResponse(BaseModel):
     title: str
     meta: List[RefDocMetaItem]
     content: str
+
+
+# --- 문서 상세 조회 응답 ---
+class DocumentAuthor(BaseModel):
+    name: str
+    role: str
+
+
+class DocumentRefDoc(BaseModel):
+    id: str
+    title: str
+    type: str
+
+
+class DocumentAttachment(BaseModel):
+    id: str
+    name: str
+    sizeKb: Optional[float] = None
+
+
+class DocumentApprovalLine(BaseModel):
+    seq: int
+    type: str
+    name: str
+    role: str
+    status: str
+    date: Optional[str] = None
+    comment: Optional[str] = None
+
+
+class DocumentDetailResponse(BaseModel):
+    id: str
+    docNum: str
+    title: str
+    type: str
+    status: str
+    author: DocumentAuthor
+    createdAt: Optional[str] = None
+    content: Optional[str] = None
+    refDocs: List[DocumentRefDoc]
+    attachments: List[DocumentAttachment]
+    approvalLine: List[DocumentApprovalLine]
