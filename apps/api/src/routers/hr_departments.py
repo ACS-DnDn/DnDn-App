@@ -51,7 +51,10 @@ async def create_department(
     current_user: User = Depends(require_hr),
 ):
     if req.parentId:
-        parent = db.query(Department).filter(Department.id == req.parentId).first()
+        parent = db.query(Department).filter(
+            Department.id == req.parentId,
+            Department.company_id == current_user.company_id,
+        ).first()
         if not parent:
             raise HTTPException(status_code=404, detail="PARENT_NOT_FOUND")
 
@@ -72,13 +75,19 @@ async def create_department(
 async def delete_department(
     dept_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    dept = db.query(Department).filter(Department.id == dept_id).first()
+    dept = db.query(Department).filter(
+        Department.id == dept_id,
+        Department.company_id == current_user.company_id,
+    ).first()
     if not dept:
         raise HTTPException(status_code=404, detail="DEPT_NOT_FOUND")
 
-    has_children = db.query(Department).filter(Department.parent_id == dept_id).first()
+    has_children = db.query(Department).filter(
+        Department.parent_id == dept_id,
+        Department.company_id == current_user.company_id,
+    ).first()
     if has_children:
         raise HTTPException(status_code=400, detail="HAS_CHILDREN")
 
@@ -93,15 +102,21 @@ async def set_leader(
     dept_id: str,
     req: DepartmentSetLeaderRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    dept = db.query(Department).filter(Department.id == dept_id).first()
+    dept = db.query(Department).filter(
+        Department.id == dept_id,
+        Department.company_id == current_user.company_id,
+    ).first()
     if not dept:
         raise HTTPException(status_code=404, detail="DEPT_NOT_FOUND")
 
     # 기존 부서장 → member로 강등
     if dept.leader_id and dept.leader_id != req.leaderId:
-        old_leader = db.query(User).filter(User.id == dept.leader_id).first()
+        old_leader = db.query(User).filter(
+            User.id == dept.leader_id,
+            User.company_id == current_user.company_id,
+        ).first()
         if old_leader and old_leader.role == "leader":
             try:
                 admin_set_group(old_leader.email, "member", old_group="leader")
@@ -111,7 +126,10 @@ async def set_leader(
 
     # 신규 부서장 → leader로 승격
     if req.leaderId:
-        new_leader = db.query(User).filter(User.id == req.leaderId).first()
+        new_leader = db.query(User).filter(
+            User.id == req.leaderId,
+            User.company_id == current_user.company_id,
+        ).first()
         if not new_leader:
             raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
         if new_leader.role != "leader":
