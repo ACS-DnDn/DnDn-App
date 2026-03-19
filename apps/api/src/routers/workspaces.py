@@ -41,9 +41,13 @@ async def get_workspaces(
     현재 사용자가 접근 가능한 워크스페이스 목록을 조회한다.
     같은 부서의 부서장이 생성한 워크스페이스가 반환된다.
     """
-    # 💡 현재는 전체 워크스페이스를 반환합니다.
-    # 추후 부서 기반 필터링이 필요하면 여기서 조건을 추가하세요.
-    workspaces = db.query(Workspace).order_by(Workspace.created_at.desc()).all()
+    workspaces = (
+        db.query(Workspace)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(User.company_id == current_user.company_id)
+        .order_by(Workspace.created_at.desc())
+        .all()
+    )
 
     items = []
     for ws in workspaces:
