@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
@@ -23,6 +24,15 @@ except ImportError:  # pragma: no cover
 
 
 KST_TZ = "Asia/Seoul"
+SUMMARY_EVENT_LIMIT = 20
+SUMMARY_RESOURCE_LIMIT = 15
+SUMMARY_RESOURCE_EVENT_LIMIT = 3
+SUMMARY_ADVISOR_LIMIT = 10
+SUMMARY_FINDING_LIMIT = 5
+SUMMARY_COST_GROUP_LIMIT = 10
+SUMMARY_ALARM_LIMIT = 5
+SUMMARY_TEXT_LIMIT = 400
+SUMMARY_TITLE_LIMIT = 160
 
 
 @dataclass(frozen=True)
@@ -99,6 +109,291 @@ def dump_json(path, obj):
         json.dumps(obj, ensure_ascii=False, indent=2, default=_json_default),
         encoding="utf-8",
     )
+
+
+def _trim_summary_text(value: Any, limit: int = SUMMARY_TEXT_LIMIT) -> Any:
+    if not isinstance(value, str):
+        return value
+    normalized = " ".join(value.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 1].rstrip() + "…"
+
+
+def _summary_counts(values: Iterable[str], limit: int = 10) -> List[Dict[str, Any]]:
+    counter = Counter(v for v in values if v)
+    ordered = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+    return [{"name": name, "count": count} for name, count in ordered[:limit]]
+
+
+def _compact_resource_ref(resource: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: resource.get(key)
+        for key in ("resource_id", "resource_type", "region", "account_id", "arn")
+        if resource.get(key) is not None
+    }
+
+
+def _compact_event_summary(event: Dict[str, Any]) -> Dict[str, Any]:
+    compact = {
+        "event_time": event.get("event_time"),
+        "event_name": event.get("event_name"),
+        "event_source": event.get("event_source"),
+        "aws_region": event.get("aws_region"),
+        "read_only": event.get("read_only"),
+    }
+
+    user_identity = event.get("user_identity") or {}
+    compact_user = {
+        key: user_identity.get(key)
+        for key in ("arn", "type", "user_name")
+        if user_identity.get(key) is not None
+    }
+    if compact_user:
+        compact["user_identity"] = compact_user
+
+    resources = event.get("resources") or []
+    if resources:
+        compact["resources"] = [_compact_resource_ref(resource) for resource in resources[:3]]
+
+    return {key: value for key, value in compact.items() if value is not None}
+
+
+def _build_events_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    sorted_events = sorted(
+        events,
+        key=lambda item: (item.get("event_time") or "", item.get("event_id") or ""),
+        reverse=True,
+    )
+    sampled = sorted_events[:SUMMARY_EVENT_LIMIT]
+    return {
+        "total_count": len(events),
+        "included_count": len(sampled),
+        "truncated": len(events) > len(sampled),
+        "event_name_counts": _summary_counts((event.get("event_name") or "" for event in events)),
+        "event_source_counts": _summary_counts((event.get("event_source") or "" for event in events)),
+        "recent_events": [_compact_event_summary(event) for event in sampled],
+    }
+
+
+def _compact_resource_group_summary(group: Dict[str, Any]) -> Dict[str, Any]:
+    change_summary = group.get("change_summary") or {}
+    config = group.get("config") or {}
+    recent_events = sorted(
+        group.get("events") or [],
+        key=lambda item: (item.get("event_time") or "", item.get("event_id") or ""),
+        reverse=True,
+    )[:SUMMARY_RESOURCE_EVENT_LIMIT]
+    compact = {
+        "resource": _compact_resource_ref(group.get("resource") or {}),
+        "change_summary": {
+            key: change_summary.get(key)
+            for key in ("event_count", "first_event_time", "last_event_time")
+            if change_summary.get(key) is not None
+        },
+        "config": {
+            key: config.get(key)
+            for key in ("status", "na_reason", "message")
+            if config.get(key) is not None
+        },
+        "recent_events": [
+            {
+                key: event.get(key)
+                for key in ("event_id", "event_time", "event_name", "event_source")
+                if event.get(key) is not None
+            }
+            for event in recent_events
+        ],
+    }
+    return {key: value for key, value in compact.items() if value not in ({}, [], None)}
+
+
+def _build_resources_summary(resources: List[Dict[str, Any]]) -> Dict[str, Any]:
+    sorted_resources = sorted(
+        resources,
+        key=lambda item: (
+            -int((item.get("change_summary") or {}).get("event_count", 0)),
+            -len(item.get("events") or []),
+            (item.get("change_summary") or {}).get("last_event_time") or "",
+            item.get("key") or "",
+        ),
+    )
+    sampled = sorted_resources[:SUMMARY_RESOURCE_LIMIT]
+    return {
+        "total_count": len(resources),
+        "included_count": len(sampled),
+        "truncated": len(resources) > len(sampled),
+        "top_resources": [_compact_resource_group_summary(group) for group in sampled],
+    }
+
+
+def _compact_meta_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
+    compact = {
+        key: meta.get(key)
+        for key in (
+            "account_id",
+            "generated_at",
+            "run_id",
+            "schema_version",
+            "type",
+            "time_range",
+            "regions",
+            "partition",
+        )
+        if meta.get(key) is not None
+    }
+
+    collector = meta.get("collector") or {}
+    compact_collector = {
+        key: collector.get(key)
+        for key in ("name", "version", "runtime", "rule_set_version")
+        if collector.get(key) is not None
+    }
+    if compact_collector:
+        compact["collector"] = compact_collector
+
+    trigger = meta.get("trigger") or {}
+    compact_trigger = {
+        key: trigger.get(key)
+        for key in ("source", "received_at", "event_id", "event_time", "detail_type", "selector")
+        if trigger.get(key) is not None
+    }
+    if compact_trigger:
+        compact["trigger"] = compact_trigger
+
+    return compact
+
+
+def _build_extensions_summary(extensions: Dict[str, Any]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {}
+
+    advisor_checks = extensions.get("advisor_checks") or []
+    if advisor_checks:
+        summary["advisor_checks"] = {
+            "total_count": len(advisor_checks),
+            "included_count": min(len(advisor_checks), SUMMARY_ADVISOR_LIMIT),
+            "items": [
+                {
+                    "category": check.get("category"),
+                    "check_id": check.get("check_id"),
+                    "severity": check.get("severity"),
+                    "title": _trim_summary_text(check.get("title"), SUMMARY_TITLE_LIMIT),
+                    "summary": _trim_summary_text(check.get("summary")),
+                    "recommendation": _trim_summary_text(check.get("recommendation")),
+                    "resources": [
+                        _compact_resource_ref(resource)
+                        for resource in (check.get("resources") or [])[:3]
+                    ],
+                }
+                for check in advisor_checks[:SUMMARY_ADVISOR_LIMIT]
+            ],
+        }
+
+    if extensions.get("access_analyzer_rollup"):
+        summary["access_analyzer_rollup"] = extensions["access_analyzer_rollup"]
+
+    access_analyzer_findings = extensions.get("access_analyzer_findings") or []
+    if access_analyzer_findings:
+        summary["access_analyzer_findings"] = {
+            "total_count": len(access_analyzer_findings),
+            "included_count": min(len(access_analyzer_findings), SUMMARY_FINDING_LIMIT),
+            "items": [
+                {
+                    key: finding.get(key)
+                    for key in (
+                        "id",
+                        "status",
+                        "resource_type",
+                        "resource",
+                        "resource_owner_account",
+                        "is_public",
+                        "principal_count",
+                        "action_count",
+                        "source_count",
+                        "created_at",
+                        "updated_at",
+                        "region",
+                        "analyzer_name",
+                        "analyzer_type",
+                    )
+                    if finding.get(key) is not None
+                }
+                for finding in access_analyzer_findings[:SUMMARY_FINDING_LIMIT]
+            ],
+        }
+
+    if extensions.get("cost_explorer_summary"):
+        summary["cost_explorer_summary"] = extensions["cost_explorer_summary"]
+
+    cost_groups = extensions.get("cost_explorer_groups") or []
+    if cost_groups:
+        summary["cost_explorer_groups"] = {
+            "total_count": len(cost_groups),
+            "included_count": min(len(cost_groups), SUMMARY_COST_GROUP_LIMIT),
+            "items": [
+                {
+                    key: group.get(key)
+                    for key in ("service", "amount", "unit")
+                    if group.get(key) is not None
+                }
+                for group in cost_groups[:SUMMARY_COST_GROUP_LIMIT]
+            ],
+        }
+
+    if extensions.get("cloudwatch_rollup"):
+        summary["cloudwatch_rollup"] = extensions["cloudwatch_rollup"]
+
+    cloudwatch_alarms = [
+        alarm for alarm in (extensions.get("cloudwatch_alarms") or [])
+        if alarm.get("state_value") == "ALARM"
+    ]
+    if cloudwatch_alarms:
+        summary["cloudwatch_alarms"] = {
+            "total_count": len(cloudwatch_alarms),
+            "included_count": min(len(cloudwatch_alarms), SUMMARY_ALARM_LIMIT),
+            "items": [
+                {
+                    key: alarm.get(key)
+                    for key in (
+                        "region",
+                        "alarm_name",
+                        "alarm_type",
+                        "state_value",
+                        "state_reason",
+                        "namespace",
+                        "metric_name",
+                        "evaluation_periods",
+                        "threshold",
+                        "comparison_operator",
+                    )
+                    if alarm.get(key) is not None
+                }
+                for alarm in cloudwatch_alarms[:SUMMARY_ALARM_LIMIT]
+            ],
+        }
+
+    for key in (
+        "advisor_collection_status",
+        "access_analyzer_collection_status",
+        "cost_explorer_collection_status",
+        "cloudwatch_collection_status",
+        "stats",
+        "schema_error",
+    ):
+        if key in extensions:
+            summary[key] = extensions[key]
+
+    return summary
+
+
+def build_canonical_summary(canonical: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "meta": _compact_meta_summary(canonical.get("meta") or {}),
+        "collection_status": canonical.get("collection_status") or {},
+        "events_summary": _build_events_summary(canonical.get("events") or []),
+        "resources_summary": _build_resources_summary(canonical.get("resources") or []),
+        "extensions_summary": _build_extensions_summary(canonical.get("extensions") or {}),
+    }
 
 
 def dump_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
@@ -1969,6 +2264,19 @@ def _result_path_for_job(job_dir: Path, job_type: str) -> Path:
     return job_dir / "normalized" / ("event.json" if job_type == "EVENT" else "canonical.json")
 
 
+def _summary_path_for_job(job_dir: Path, job_type: str) -> Optional[Path]:
+    if job_type == "WEEKLY":
+        return job_dir / "normalized" / "canonical_summary.json"
+    return None
+
+
+def _write_normalized_outputs(job_dir: Path, job_type: str, result_path: Path, result_obj: Dict[str, Any]) -> None:
+    dump_json(result_path, result_obj)
+    summary_path = _summary_path_for_job(job_dir, job_type)
+    if summary_path is not None:
+        dump_json(summary_path, build_canonical_summary(result_obj))
+
+
 def run_job_from_payload(
     payload: Dict[str, Any],
     repo_root: Path,
@@ -2001,7 +2309,33 @@ def run_job_from_payload(
     raw_dir = job_dir / "raw"
     norm_dir = job_dir / "normalized"
     result_path = _result_path_for_job(job_dir, job_type)
-    if result_path.exists():
+    summary_path = _summary_path_for_job(job_dir, job_type)
+    storage_session = boto3.Session()
+    if result_path.exists() and (summary_path is None or summary_path.exists()):
+        return WorkerExecutionResult(
+            run_id=run_id,
+            result_path=result_path,
+            job_type=job_type,
+            already_processed=True,
+        )
+    if result_path.exists() and summary_path is not None and not summary_path.exists():
+        _ensure_dir(norm_dir)
+        _write_normalized_outputs(job_dir, job_type, result_path, load_json(result_path))
+        try:
+            bucket = payload["s3"]["bucket"]
+            prefix = payload["s3"]["prefix"].rstrip("/")
+            key = f"{prefix}/normalized/{summary_path.name}".lstrip("/")
+            storage_session.client("s3").upload_file(
+                str(summary_path),
+                bucket,
+                key,
+                ExtraArgs={
+                    "ServerSideEncryption": "AES256",
+                    "ContentType": "application/json",
+                },
+            )
+        except Exception as backfill_err:
+            print(f"[summary] canonical_summary.json 업로드 건너뜀: {backfill_err}")
         return WorkerExecutionResult(
             run_id=run_id,
             result_path=result_path,
@@ -2022,7 +2356,6 @@ def run_job_from_payload(
             payload["trigger"]["raw_event_s3_uri"] = trigger_artifact_s3_uri
 
     # 저장은 항상 "우리(DnDn) 계정" 권한으로 수행
-    storage_session = boto3.Session()
 
     def _upload_all_artifacts() -> None:
         bucket = payload["s3"]["bucket"]
@@ -2053,7 +2386,7 @@ def run_job_from_payload(
         prefix = payload["s3"]["prefix"].rstrip("/")
 
         result_obj.setdefault("extensions", {})
-        dump_json(result_path, result_obj)
+        _write_normalized_outputs(job_dir, job_type, result_path, result_obj)
         _write_artifact_index(job_dir, payload)
 
         upload_status: Dict[str, Any] = {"ok": True, "bucket": bucket, "prefix": prefix}
@@ -2067,7 +2400,7 @@ def run_job_from_payload(
                 "error": str(upload_err),
             }
             result_obj["extensions"]["upload"] = upload_status
-            dump_json(result_path, result_obj)
+            _write_normalized_outputs(job_dir, job_type, result_path, result_obj)
             if strict_upload:
                 raise WorkerExecutionError(
                     "S3_PUT_FAILED",
@@ -2077,13 +2410,13 @@ def run_job_from_payload(
             return result_path
 
         result_obj["extensions"]["upload"] = upload_status
-        dump_json(result_path, result_obj)
+        _write_normalized_outputs(job_dir, job_type, result_path, result_obj)
 
         try:
             _upload_result_json_only(result_path)
         except Exception as sync_err:
             result_obj["extensions"]["upload_sync_warning"] = str(sync_err)
-            dump_json(result_path, result_obj)
+            _write_normalized_outputs(job_dir, job_type, result_path, result_obj)
             if strict_upload:
                 raise WorkerExecutionError(
                     "S3_PUT_FAILED",
