@@ -294,8 +294,13 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
 async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db)):
     doc_id = f"weekly-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
 
+    ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
+    ctx_meta = ctx.get("meta", {})
+
     canonical = {
         "meta": {
+            **ctx_meta,  # canonical_summary의 account_id, time_range 등 보존
+            # 요청 필드가 ctx_meta를 덮어씀
             "type": "WEEKLY",
             "run_id": doc_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -304,6 +309,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
             "title": req.target,
         },
         "content": req.content,
+        **{k: v for k, v in ctx.items() if k != "meta"},
     }
 
     try:

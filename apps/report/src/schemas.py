@@ -49,3 +49,4 @@ class WeeklyReportRequest(BaseModel):
     period_start: str = ""
     period_end: str = ""
     workspace_id: str = "default"
+    ref_doc_ids: list[str] = []

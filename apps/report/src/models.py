@@ -25,6 +25,17 @@ class JobType(str, enum.Enum):
     terraform = "terraform"
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+    id = Column(String(50), primary_key=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String(50), primary_key=True)
+    email = Column(String(255), nullable=True)
+
+
 class ReportJob(Base):
     __tablename__ = "report_jobs"
 
