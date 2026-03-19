@@ -628,11 +628,20 @@ async def get_ref_document_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 원본 문서 확인 (보안 및 데이터 정합성 차원)
-    # 현재 보고 있는 문서가 진짜로 존재하는지 가볍게 체크해 줍니다.
+    # 1. 원본 문서 확인 및 접근 권한 검증
     parent_doc = db.query(Document).filter(Document.id == documentId).first()
     if not parent_doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+
+    is_author = parent_doc.author_id == current_user.id
+    is_approver = (
+        db.query(Approval)
+        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
+        .first()
+        is not None
+    )
+    if not (is_author or is_approver):
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # 2. 참조 문서(타겟) 상세 정보 조회 (404 REF_DOC_NOT_FOUND)
     ref_doc = db.query(Document).filter(Document.id == refDocumentId).first()
