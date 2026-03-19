@@ -260,7 +260,11 @@ export function PlanPage() {
       const { jobId } = json;
       const result = await pollJob(jobId);
       setDraftDocumentId(result.documentId as string);
-      setIframeSrc(result.contentUrl as string);
+      // S3 URL은 cross-origin → contentDocument 접근 불가. Blob URL로 변환
+      const htmlResp = await fetch(result.contentUrl as string);
+      const htmlText = await htmlResp.text();
+      const blob = new Blob([htmlText], { type: 'text/html' });
+      setIframeSrc(URL.createObjectURL(blob));
       setDocState('ready');
     } catch (err) {
       console.error('workplan API error:', err);
