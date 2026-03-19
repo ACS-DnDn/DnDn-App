@@ -25,9 +25,9 @@ def _presigned_url(client, key: str) -> str:
     )
 
 
-def save_report(doc_id: str, data: dict, account_id: str = "default") -> str:
+def save_report(doc_id: str, data: dict, workspace_id: str = "default") -> str:
     """보고서 생성 결과를 S3에 저장하고 key 반환"""
-    key = f"{account_id}/{REPORTS_PREFIX}/{doc_id}.json"
+    key = f"{workspace_id}/{REPORTS_PREFIX}/{doc_id}.json"
     _client().put_object(
         Bucket=S3_BUCKET,
         Key=key,
@@ -37,9 +37,9 @@ def save_report(doc_id: str, data: dict, account_id: str = "default") -> str:
     return key
 
 
-def save_report_html(doc_id: str, html: str, account_id: str = "default") -> str:
+def save_report_html(doc_id: str, html: str, workspace_id: str = "default") -> str:
     """렌더링된 보고서 HTML을 S3에 저장하고 key 반환"""
-    key = f"{account_id}/{REPORTS_PREFIX}/{doc_id}.html"
+    key = f"{workspace_id}/{REPORTS_PREFIX}/{doc_id}.html"
     _client().put_object(
         Bucket=S3_BUCKET,
         Key=key,
@@ -49,13 +49,13 @@ def save_report_html(doc_id: str, html: str, account_id: str = "default") -> str
     return key
 
 
-def list_reports(account_id: str = "default") -> list[dict]:
+def list_reports(workspace_id: str = "default") -> list[dict]:
     """S3에서 보고서 + 작업계획서 목록 조회 (html presigned URL 포함)"""
     client = _client()
     items = []
 
     # 1. 자동생성 보고서 (Lambda → reports/)
-    reports_prefix = f"{account_id}/{REPORTS_PREFIX}/"
+    reports_prefix = f"{workspace_id}/{REPORTS_PREFIX}/"
     resp = client.list_objects_v2(Bucket=S3_BUCKET, Prefix=reports_prefix)
     json_objs: dict[str, dict] = {}
     html_objs: dict[str, dict] = {}
@@ -85,14 +85,14 @@ def list_reports(account_id: str = "default") -> list[dict]:
         items.append(entry)
 
     # 2. 사용자 작성 계획서 (workplan/)
-    workplan_prefix = f"{account_id}/workplan/"
+    workplan_prefix = f"{workspace_id}/workplan/"
     resp2 = client.list_objects_v2(Bucket=S3_BUCKET, Prefix=workplan_prefix)
     wp_json: dict[str, dict] = {}
     wp_html: dict[str, dict] = {}
     for obj in resp2.get("Contents", []):
         key = obj["Key"]
         parts = key.split("/")
-        # format: {account_id}/workplan/{job_id}/workplan.json
+        # format: {workspace_id}/workplan/{job_id}/workplan.json
         if len(parts) < 4:
             continue
         job_id = parts[2]
@@ -172,15 +172,31 @@ def get_presigned_url(key: str) -> str:
     return _presigned_url(_client(), key)
 
 
-def get_workplan(job_id: str, account_id: str = "default") -> dict:
+def save_terraform_files(workspace_id: str, job_id: str, files: list[dict]) -> str:
+    """terraform 파일 목록을 S3에 저장하고 prefix 반환 (각 파일: {filename, content})"""
+    client = _client()
+    prefix = f"{workspace_id}/workplan/{job_id}/terraform"
+    for f in files:
+        key = f"{prefix}/{f['filename']}"
+        body = f["content"]
+        client.put_object(
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=body.encode("utf-8") if isinstance(body, str) else body,
+            ContentType="text/plain",
+        )
+    return prefix
+
+
+def get_workplan(job_id: str, workspace_id: str = "default") -> dict:
     """S3에서 작업계획서 JSON 조회"""
-    key = f"{account_id}/workplan/{job_id}/workplan.json"
+    key = f"{workspace_id}/workplan/{job_id}/workplan.json"
     resp = _client().get_object(Bucket=S3_BUCKET, Key=key)
     return json.loads(resp["Body"].read())
 
 
 def save_result(
-    account_id: str,
+    workspace_id: str,
     workplan: dict,
     html: str,
     tf_files: list[dict],
@@ -191,7 +207,7 @@ def save_result(
         job_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     client = _client()
 
-    wp_key = f"{account_id}/workplan/{job_id}/workplan.json"
+    wp_key = f"{workspace_id}/workplan/{job_id}/workplan.json"
     client.put_object(
         Bucket=S3_BUCKET,
         Key=wp_key,
@@ -199,7 +215,7 @@ def save_result(
         ContentType="application/json",
     )
 
-    html_key = f"{account_id}/workplan/{job_id}/workplan.html"
+    html_key = f"{workspace_id}/workplan/{job_id}/workplan.html"
     client.put_object(
         Bucket=S3_BUCKET,
         Key=html_key,
@@ -209,7 +225,7 @@ def save_result(
 
     tf_results = []
     for f in tf_files:
-        tf_key = f"{account_id}/workplan/{job_id}/terraform/{f['name']}"
+        tf_key = f"{workspace_id}/workplan/{job_id}/terraform/{f['name']}"
         client.put_object(
             Bucket=S3_BUCKET,
             Key=tf_key,

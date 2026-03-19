@@ -36,6 +36,7 @@ from .s3_client import (
     get_presigned_url,
     list_reports,
     get_report,
+    save_terraform_files,
 )
 from .makejob import create_job, get_job
 from .models import ReportJob, Document, JobType
@@ -80,10 +81,22 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         workspace_id = req.workspace_id or "default"
 
         canonical = {"target": req.target, "content": req.content, **ctx}
-        save_report(doc_id, canonical, workspace_id)
+        json_key = save_report(doc_id, canonical, workspace_id)
 
         html_key = save_report_html(doc_id, html, workspace_id)
         content_url = get_presigned_url(html_key)
+
+        doc = Document(
+            id=doc_id,
+            title=req.target or doc_id,
+            type="계획서",
+            html_key=html_key,
+            json_key=json_key,
+            ref_doc_ids=req.ref_doc_ids or None,
+            workspace_id=workspace_id,
+            status="done",
+        )
+        db.add(doc)
 
         job.status = "done"
         job.document_id = doc_id
@@ -128,7 +141,16 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
 
         # result = { "main.tf": "...", "vars.tf": "..." }
 
-        # 3. 성공 처리
+        # 3. terraform 파일 S3 저장
+        tf_files = result.get("files", [])
+        terraform_key = save_terraform_files(req.workspace_id, job_id, tf_files)
+
+        # 4. Document.terraform_key 업데이트
+        doc = db.query(Document).filter(Document.id == req.document_id).first()
+        if doc:
+            doc.terraform_key = terraform_key
+
+        # 5. 성공 처리
         job.status = "done"
         job.files = result
 
