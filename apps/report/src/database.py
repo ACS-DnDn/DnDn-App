@@ -1,6 +1,6 @@
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # MariaDB 연결 URL은 환경변수 `SQLALCHEMY_DATABASE_URL`에서 주입합니다.
