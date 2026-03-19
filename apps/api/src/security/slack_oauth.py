@@ -77,17 +77,23 @@ def get_auth_url() -> AuthUrlResult:
 # ── 2. OAuth 콜백 (code → access_token) ───────────────────
 def exchange_code(code: str) -> CallbackResult:
     """Slack 인증 코드를 access token으로 교환."""
-    resp = requests.post(
-        _SLACK_TOKEN_URL,
-        data={
-            "client_id": SLACK_CLIENT_ID,
-            "client_secret": SLACK_CLIENT_SECRET,
-            "code": code,
-            "redirect_uri": SLACK_REDIRECT_URI,
-        },
-        headers={"Accept": "application/json"},
-        timeout=10,
-    )
+    try:
+        resp = requests.post(
+            _SLACK_TOKEN_URL,
+            data={
+                "client_id": SLACK_CLIENT_ID,
+                "client_secret": SLACK_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": SLACK_REDIRECT_URI,
+            },
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+    except requests.exceptions.RequestException as e:
+        raise SlackError(502, "BAD_GATEWAY", "Slack 서버에 연결할 수 없습니다.") from e
+
+    if not resp.ok:
+        raise SlackError(resp.status_code, "SLACK_HTTP_ERROR", f"Slack 토큰 요청 실패: HTTP {resp.status_code}")
 
     try:
         data = resp.json()
@@ -112,12 +118,23 @@ def exchange_code(code: str) -> CallbackResult:
 # ── 3. 메시지 전송 ────────────────────────────────────────
 def send_message(token: str, channel: str, text: str) -> None:
     """Slack 채널에 메시지 전송."""
-    resp = requests.post(
-        f"{_SLACK_API}/chat.postMessage",
-        json={"channel": channel, "text": text},
-        headers=_slack_headers(token),
-        timeout=10,
-    )
-    data = resp.json()
+    try:
+        resp = requests.post(
+            f"{_SLACK_API}/chat.postMessage",
+            json={"channel": channel, "text": text},
+            headers=_slack_headers(token),
+            timeout=10,
+        )
+    except requests.exceptions.RequestException as e:
+        raise SlackError(502, "SLACK_SEND_ERROR", "Slack 서버에 연결할 수 없습니다.") from e
+
+    if not resp.ok:
+        raise SlackError(resp.status_code, "SLACK_SEND_ERROR", f"메시지 전송 실패: HTTP {resp.status_code}")
+
+    try:
+        data = resp.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        raise SlackError(502, "SLACK_SEND_ERROR", "Slack 응답을 파싱할 수 없습니다.")
+
     if not data.get("ok"):
         raise SlackError(502, "SLACK_SEND_ERROR", data.get("error", "메시지 전송 실패"))
