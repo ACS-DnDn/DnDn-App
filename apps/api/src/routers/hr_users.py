@@ -58,9 +58,12 @@ async def list_users(
 async def get_user(
     user_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.company_id == current_user.company_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
     return SuccessResponse(data=_to_response(user))
@@ -106,9 +109,12 @@ async def update_user(
     user_id: str,
     req: HrUserUpdateRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.company_id == current_user.company_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
@@ -141,9 +147,12 @@ async def update_user(
 async def delete_user(
     user_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.company_id == current_user.company_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
@@ -162,9 +171,12 @@ async def delete_user(
 async def reset_password(
     user_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_hr),
+    current_user: User = Depends(require_hr),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.company_id == current_user.company_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
