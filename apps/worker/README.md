@@ -85,6 +85,7 @@ Worker는 로컬 산출물을 만든 뒤 아래처럼 S3에 업로드합니다.
 예시:
 - `s3://<bucket>/<prefix>/raw/...`
 - `s3://<bucket>/<prefix>/normalized/canonical.json`
+- `s3://<bucket>/<prefix>/normalized/canonical_summary.json`
 - `s3://<bucket>/<prefix>/normalized/event.json`
 
 추가로 Worker는 `raw/index.json` 을 생성해서
@@ -287,12 +288,14 @@ python apps/worker/tools/run_payload.py \
       aws_health_event.json
   normalized/
     canonical.json   # WEEKLY
+    canonical_summary.json  # WEEKLY prompt summary
     event.json       # EVENT
 ```
 
 설명:
 - `raw/` 는 evidence 원본 보관소입니다.
 - `normalized/` 는 report가 바로 읽을 표준 결과물입니다.
+- `canonical_summary.json` 은 `canonical.json`에서 LLM 입력용으로 축약한 deterministic summary입니다.
 - `raw/index.json` 은 이번 실행에서 어떤 파일이 생성됐는지 한 번에 보여주는 inventory 입니다.
 
 ### 6-4. SQS consumer 실행
