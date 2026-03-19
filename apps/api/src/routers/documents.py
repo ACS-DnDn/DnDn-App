@@ -94,7 +94,7 @@ async def get_documents(
     dateFrom: Optional[str] = Query(None, description="조회 시작일 (YYYY-MM-DD)"),
     dateTo: Optional[str] = Query(None, description="조회 종료일 (YYYY-MM-DD)"),
     page: int = Query(1, ge=1, description="페이지 번호"),
-    pageSize: int = Query(10, ge=1, le=100, description="페이지당 항목 수"),
+    pageSize: int = Query(10, ge=1, description="페이지당 항목 수"),
     archived: Optional[bool] = Query(
         None, description="참조 문서 검색용 (과거 명세 호환)"
     ),
