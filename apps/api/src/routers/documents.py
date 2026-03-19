@@ -122,9 +122,7 @@ async def get_documents(
         if searchField == "name":
             query = query.filter(Document.title.ilike(f"%{keyword}%"))
         elif searchField == "author":
-            # 탭이 action이 아닐 때만 User 조인이 필요할 수 있으므로 안전하게 조인
-            if tab != "action":
-                query = query.join(User, Document.author_id == User.id)
+            query = query.join(User, Document.author_id == User.id)
             query = query.filter(User.name.ilike(f"%{keyword}%"))
 
     # 4. 유형(type) 필터링
