@@ -6,7 +6,7 @@ import re
 import uuid
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ParamValidationError
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -35,6 +35,12 @@ _SCHEDULER_TARGET_ARN = os.environ.get("SCHEDULER_TARGET_ARN", "")
 
 def _scheduler_client():
     return boto3.client("scheduler", region_name=_SCHEDULER_REGION)
+
+
+def _check_scheduler_config() -> None:
+    """필수 환경변수 미설정 시 503."""
+    if not _SCHEDULER_ROLE_ARN or not _SCHEDULER_TARGET_ARN:
+        raise HTTPException(status_code=503, detail="SCHEDULER_NOT_CONFIGURED")
 
 
 def _schedule_name(workspace_id: str, schedule_id: str) -> str:
@@ -205,6 +211,7 @@ async def create_schedule(
     새로운 보고서 생성 스케줄을 EventBridge Scheduler에 추가한다.
     """
     _get_workspace(db, workspaceId, current_user)
+    _check_scheduler_config()
     _validate_schedule(req)
 
     schedule_id = uuid.uuid4().hex[:8]  # 8자리 hex ID
@@ -236,7 +243,7 @@ async def create_schedule(
             },
             State="ENABLED",
         )
-    except ClientError:
+    except (ClientError, ParamValidationError):
         raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
 
     return SuccessResponse(data=ScheduleCreateResponse(id=schedule_id))
@@ -257,6 +264,7 @@ async def update_schedule(
     기존 스케줄을 수정한다.
     """
     _get_workspace(db, workspaceId, current_user)
+    _check_scheduler_config()
     _validate_schedule(req)
 
     name = _schedule_name(workspaceId, schedule_id)
@@ -290,6 +298,8 @@ async def update_schedule(
     except ClientError as e:
         if e.response["Error"]["Code"] == "ResourceNotFoundException":
             raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
+        raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
+    except ParamValidationError:
         raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
 
     return SuccessResponse(data=ScheduleCreateResponse(id=schedule_id))
