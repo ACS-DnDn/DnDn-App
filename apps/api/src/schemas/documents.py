@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
+from datetime import date
 
 
 # --- 결재자 정보 ---
@@ -17,7 +18,7 @@ class DocumentSubmitRequest(BaseModel):
 
     documentId: str
     workspaceId: str
-    work_date: Optional[str] = Field(None, alias="workDate")
+    work_date: Optional[date] = Field(None, alias="workDate")
     terraform: Optional[Dict[str, Any]] = None
     refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
