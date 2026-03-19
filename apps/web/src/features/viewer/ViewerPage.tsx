@@ -77,9 +77,8 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // mock: localStorage에 저장된 문서가 있으면 /mock/ URL 사용, 나중에 API 연동 시 S3 URL로 대체
-  const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
   const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [docNotFound, setDocNotFound] = useState(false);
   const [fetchError, setFetchError] = useState(false);
 
@@ -93,6 +92,15 @@ export function ViewerPage() {
       else setDocNotFound(true);
     }).catch(() => setFetchError(true));
   }, [id]);
+
+  /* Blob URL for iframe isolation (prevents AI HTML from polluting parent font) */
+  useEffect(() => {
+    if (!doc?.content) { setBlobUrl(null); return; }
+    const blob = new Blob([doc.content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [doc?.content]);
 
   /* 참조 문서 목록 */
   const [refDocList, setRefDocList] = useState<{ id: string; name: string; date: string }[]>([]);
@@ -156,10 +164,8 @@ export function ViewerPage() {
           )}
         </div>
         <div className="doc-scroll">
-          {savedDocUrl ? (
-            <iframe className="viewer-iframe" src={savedDocUrl} title="문서 미리보기" />
-          ) : doc.content ? (
-            <div dangerouslySetInnerHTML={{ __html: doc.content }} />
+          {blobUrl ? (
+            <iframe className="viewer-iframe" src={blobUrl} title="문서 미리보기" />
           ) : (
             <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13 }}>문서 내용을 불러올 수 없습니다.</div>
           )}
