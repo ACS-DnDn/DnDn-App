@@ -312,11 +312,22 @@ async def submit_document(
 async def get_document_detail(
     documentId: str,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+
+    # 접근 권한 확인: 작성자 또는 결재선 포함 여부
+    is_author = doc.author_id == current_user.id
+    is_approver = (
+        db.query(Approval)
+        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
+        .first()
+        is not None
+    )
+    if not (is_author or is_approver):
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # S3에서 HTML 본문 가져오기
     content = _s3_get_text(doc.html_key) if doc.html_key else None
