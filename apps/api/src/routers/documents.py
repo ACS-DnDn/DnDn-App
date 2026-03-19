@@ -233,18 +233,15 @@ async def submit_document(
     current_user: User = Depends(get_current_user),
 ):
     # 1. 대상 문서(임시저장본) 찾기
-    # (원래는 AI 워커가 끝날 때 Document 테이블에 가안을 만들어 뒀다고 가정합니다.
-    # 지금은 테스트를 위해 문서가 없으면 방금 새로 만든 것처럼 생성해 주겠습니다!)
+    # (AI 워커가 끝날 때 Document 테이블에 가안을 만들어 둔다고 가정합니다.)
     doc = db.query(Document).filter(Document.id == req.documentId).first()
 
     if not doc:
-        # 테스트용 임시 방편 (실제로는 404 에러를 내야 맞습니다)
-        doc = Document(
-            id=req.documentId,
-            title="[테스트] 인프라 작업 계획서",
-            author_id=current_user.id,
+        # 대상 문서가 존재하지 않으면 404를 반환합니다.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="DOCUMENT_NOT_FOUND",
         )
-        db.add(doc)
 
     # 2. 임시 문서 만료 검사 (400 DRAFT_EXPIRED)
     # 문서 생성일이 24시간을 넘었는지 체크합니다.
