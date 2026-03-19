@@ -125,6 +125,13 @@ async def get_current_user(
 
     try:
         public_key = _get_public_key(token)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="인증 서비스를 일시적으로 사용할 수 없습니다.",
+        )
+
+    try:
         payload = jwt.decode(
             token,
             public_key,
