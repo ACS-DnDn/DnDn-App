@@ -160,7 +160,7 @@ export function MyPage() {
                 {AUTH_LABELS[session.auth] || session.auth}
               </span>
             </div>
-            <div className="banner-role">{session.role}</div>
+            <div className="banner-role">{session.position || session.role}</div>
             <div className="banner-company">{session.company.name}</div>
           </div>
         </div>
