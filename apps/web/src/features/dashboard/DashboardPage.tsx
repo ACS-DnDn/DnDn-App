@@ -1,21 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '@/hooks/useSession';
+import { useAuth } from '@/hooks/useAuth';
 import { getDashboard } from '@/services/dashboard.service';
 import { getDocuments } from '@/services/document.service';
-import type { DashboardData, Document } from '@/mocks';
 import './DashboardPage.css';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const session = useSession();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [allDocs, setAllDocs] = useState<Document[]>([]);
-
-  useEffect(() => {
-    getDashboard().then(setData).catch(console.error);
-    getDocuments().then(({ items }) => setAllDocs(items)).catch(console.error);
-  }, []);
+  const { session } = useAuth();
+  const data = getDashboard();
+  const allDocs = getDocuments();
 
   // 인사말
   const h = new Date().getHours();
@@ -92,7 +86,7 @@ export function DashboardPage() {
           <div className="table-card-header">
             <div className="table-card-title">
               처리할 문서
-              <span className="count-pill">{data?.pendingDocs.length ?? 0}</span>
+              <span className="count-pill">{data.pendingDocs.length}</span>
             </div>
             <button type="button" className="table-link" onClick={() => navigate('/pending')}>전체 보기 →</button>
           </div>
@@ -114,7 +108,7 @@ export function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {(data?.pendingDocs ?? []).map((d) => {
+              {data.pendingDocs.map((d) => {
                 const s = statusMap[d.status];
                 return (
                   <tr key={d.docNum} onClick={() => navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
@@ -164,7 +158,7 @@ export function DashboardPage() {
             <tbody>
               {recentDocs.map((d) => (
                 <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
-                  <td className="td-num">{d.docNum ?? String(d.id)}</td>
+                  <td className="td-num">DnDn-{String(d.id).padStart(4, '0')}</td>
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{d.type}</td>
                   <td className="td-author">{d.author}</td>

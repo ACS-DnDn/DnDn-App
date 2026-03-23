@@ -1,17 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
-import { getDocumentById } from '@/services/document.service';
+import { getDocumentById, getRefDocs, getDocContent } from '@/services/document.service';
 import './ViewerPage.css';
-
-function escHtml(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function renderTerraform(terraform: Record<string, string>): string {
-  return Object.entries(terraform).map(([filename, code]) =>
-    `<div class="tf-code-block"><div class="tf-code-file"><span class="f-dot f-dot-purple"></span>${escHtml(filename)}</div><pre class="tf-pre">${escHtml(code)}</pre></div>`
-  ).join('');
-}
 
 /* ── 결재선 mock 데이터 ── */
 interface ApprovalStep {
@@ -133,34 +123,10 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const docId = Number(id);
   // mock: localStorage에 저장된 문서가 있으면 /mock/ URL 사용, 나중에 API 연동 시 S3 URL로 대체
   const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
-  const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
-  const [docNotFound, setDocNotFound] = useState(false);
-  const [fetchError, setFetchError] = useState(false);
-
-  useEffect(() => {
-    if (!id) { setDocNotFound(true); return; }
-    setDoc(undefined);
-    setDocNotFound(false);
-    setFetchError(false);
-    getDocumentById(id).then(result => {
-      if (result) setDoc(result);
-      else setDocNotFound(true);
-    }).catch(() => setFetchError(true));
-  }, [id]);
-
-  /* 참조 문서 목록 */
-  const [refDocList, setRefDocList] = useState<{ id: string; name: string; date: string }[]>([]);
-  useEffect(() => {
-    if (!doc?.refDocIds?.length) { setRefDocList([]); return; }
-    Promise.all(doc.refDocIds.map(refId => getDocumentById(refId)))
-      .then(results => setRefDocList(
-        results.filter((d): d is NonNullable<typeof d> => d !== undefined)
-          .map(d => ({ id: d.id, name: d.name, date: d.date }))
-      ))
-      .catch(() => {});
-  }, [doc?.id]);
+  const doc = useMemo(() => (Number.isInteger(docId) ? getDocumentById(docId) : undefined), [docId]);
 
   /* 패널 탭 */
   const [panelTab, setPanelTab] = useState<'refs' | 'attach'>('refs');
@@ -170,22 +136,30 @@ export function ViewerPage() {
   /* 모달 */
   const [tfModalOpen, setTfModalOpen] = useState(false);
   const [tfTab, setTfTab] = useState<'code' | 'plan'>('code');
+  const [refModalOpen, setRefModalOpen] = useState(false);
+  const [refModalKey, setRefModalKey] = useState('weekly');
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
   const [rejectReason, setRejectReason] = useState('');
 
-  if (docNotFound) return <Navigate to="/documents" replace />;
-  if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
-  if (!doc) return null;
+  if (!doc) {
+    return <Navigate to="/documents" replace />;
+  }
+
+  const docContent = getDocContent();
+  const refDocs = getRefDocs();
+  const tmpl = docContent[doc.type] ?? docContent['계획서']!;
 
   const isReport = doc.type !== '계획서';
   const viewMode = doc.action === 'approve' ? 'approver' : 'completed';
-  const tfHtml = doc.terraform && Object.keys(doc.terraform).length > 0
-    ? renderTerraform(doc.terraform)
-    : TF_CODE_HTML;
 
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
+
+  function openRefDoc(key: string) {
+    setRefModalKey(key);
+    setRefModalOpen(true);
+  }
 
   function handleApproveConfirm() {
     setApproveModalOpen(false);
@@ -198,6 +172,8 @@ export function ViewerPage() {
     alert(`반려 처리되었습니다.\n사유: "${rejectReason}"\n\n이전 결재자와 작성자에게 알림이 전송됩니다.`);
   }
 
+  const refDoc = refDocs[refModalKey];
+
   return (
     <div className="viewer-page">
       {/* ── 문서 본문 ── */}
@@ -205,7 +181,7 @@ export function ViewerPage() {
         <div className="doc-toolbar">
           <span className={`doc-status-badge ${sCls}`}>{sLbl}</span>
           <div className="toolbar-spacer" />
-          {(doc.terraform || !isReport) && (
+          {tmpl.hasTerraform && (
             <button className="btn-tf-popup" onClick={() => setTfModalOpen(true)}>
               Terraform 코드 보기
             </button>
@@ -213,11 +189,13 @@ export function ViewerPage() {
         </div>
         <div className="doc-scroll">
           {savedDocUrl ? (
-            <iframe className="viewer-iframe" src={savedDocUrl} title="문서 미리보기" />
-          ) : doc.content ? (
-            <div dangerouslySetInnerHTML={{ __html: doc.content }} />
+            <iframe
+              className="viewer-iframe"
+              src={savedDocUrl}
+              title="문서 미리보기"
+            />
           ) : (
-            <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13 }}>문서 내용을 불러올 수 없습니다.</div>
+            <div dangerouslySetInnerHTML={{ __html: tmpl.render(doc) }} />
           )}
         </div>
       </main>
@@ -232,17 +210,20 @@ export function ViewerPage() {
           </div>
           <div className={`panel-tab-content${panelTab === 'refs' ? ' active' : ''}`}>
             <div className="sidebar-refs">
-              {refDocList.length === 0 ? (
-                <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)' }}>참조 문서 없음</div>
-              ) : refDocList.map(rd => (
-                <div key={rd.id} className="sidebar-ref-item" onClick={() => navigate(`/viewer/${rd.id}`)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/viewer/${rd.id}`); } }}>
-                  <div className="sidebar-ref-no">{rd.id}</div>
-                  <div className="sidebar-ref-row">
-                    <span className="sidebar-ref-name">{rd.name}</span>
-                    <span className="sidebar-ref-date">{rd.date}</span>
-                  </div>
+              <div className="sidebar-ref-item" onClick={() => openRefDoc('weekly')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRefDoc('weekly'); } }}>
+                <div className="sidebar-ref-no">DOC-2026-001</div>
+                <div className="sidebar-ref-row">
+                  <span className="sidebar-ref-name">주간 보고서 (02.17~02.23)</span>
+                  <span className="sidebar-ref-date">2026.02.23</span>
                 </div>
-              ))}
+              </div>
+              <div className="sidebar-ref-item" onClick={() => openRefDoc('eks')} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRefDoc('eks'); } }}>
+                <div className="sidebar-ref-no">DOC-2026-004</div>
+                <div className="sidebar-ref-row">
+                  <span className="sidebar-ref-name">EKS 노드 추가 계획서</span>
+                  <span className="sidebar-ref-date">2026.02.10</span>
+                </div>
+              </div>
             </div>
           </div>
           <div className={`panel-tab-content${panelTab === 'attach' ? ' active' : ''}`}>
@@ -348,11 +329,30 @@ export function ViewerPage() {
             <button type="button" className={`tf-tab${tfTab === 'code' ? ' active' : ''}`} onClick={() => setTfTab('code')}>코드</button>
             <button type="button" className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</button>
           </div>
-          <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: tfHtml }} />
+          <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_CODE_HTML }} />
           <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_HTML }} />
         </div>
       </div>
 
+      {/* ── 참조문서 모달 ── */}
+      {refDoc && (
+        <div className={`viewer-modal-overlay${refModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setRefModalOpen(false); }}>
+          <div className="viewer-modal ref-modal">
+            <div className="ref-modal-header">
+              <div className="ref-modal-title">{refDoc.icon} {refDoc.title}</div>
+              <button className="modal-close-light" onClick={() => setRefModalOpen(false)}>&times;</button>
+            </div>
+            <div className="ref-modal-meta">
+              {refDoc.meta.map(([k, v], i) => (
+                <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <strong style={{ color: 'var(--text-sub)', fontWeight: 600 }}>{k}</strong> {v}
+                </div>
+              ))}
+            </div>
+            <div className="ref-modal-body" dangerouslySetInnerHTML={{ __html: refDoc.body }} />
+          </div>
+        </div>
+      )}
 
       {/* ── 결재 의견 모달 ── */}
       <div className={`viewer-modal-overlay${approveModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setApproveModalOpen(false); }}>

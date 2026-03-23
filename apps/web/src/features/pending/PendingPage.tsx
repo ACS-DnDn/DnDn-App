@@ -28,7 +28,7 @@ export function PendingPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
   // 날짜 피커
   const [pickStart, setPickStart] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export function PendingPage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const datePickerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { getDocuments().then(({ items }) => setAllDocs(items)).catch(console.error); }, []);
+  useEffect(() => { setAllDocs(getDocuments()); }, []);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -81,7 +81,7 @@ export function PendingPage() {
 
   const resetPage = useCallback(() => setCurrentPage(1), []);
 
-  const toggleSelect = (id: string, checked: boolean) => {
+  const toggleSelect = (id: number, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       checked ? next.add(id) : next.delete(id);
@@ -263,7 +263,7 @@ export function PendingPage() {
             </thead>
             <tbody>
               {pageDocs.map(doc => {
-                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
+                const docNum = `${doc.date.slice(0, 4)}-DnDn-${String(doc.id).padStart(4, '0')}`;
                 const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : 'badge badge-progress';
                 const badgeLabel = doc.status === 'rejected' ? '반려' : '결재 대기';
                 return (
