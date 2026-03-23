@@ -1,6 +1,12 @@
 name: Build App Images
 
 on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'Comma-separated apps to build (api,worker,report,web) or "all"'
+        required: false
+        default: 'all'
   push:
     branches: [main]
     paths:
@@ -24,14 +30,16 @@ jobs:
     name: Detect changed apps
     runs-on: ubuntu-latest
     outputs:
-      api:     ${{ steps.filter.outputs.api }}
-      worker:  ${{ steps.filter.outputs.worker }}
-      report:  ${{ steps.filter.outputs.report }}
-      web:     ${{ steps.filter.outputs.web }}
+      api:     ${{ steps.result.outputs.api }}
+      worker:  ${{ steps.result.outputs.worker }}
+      report:  ${{ steps.result.outputs.report }}
+      web:     ${{ steps.result.outputs.web }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name == 'push'
         with:
           filters: |
             api:    ['apps/api/**']
@@ -42,6 +50,31 @@ jobs:
               - 'contracts/event_model.schema.json'
             report: ['apps/report/**']
             web:    ['apps/web/**']
+
+      - name: Resolve targets
+        id: result
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            INPUT="${{ github.event.inputs.apps }}"
+            api=false; worker=false; report=false; web=false
+            if [ "$INPUT" = "all" ] || [ -z "$INPUT" ]; then
+              api=true; worker=true; report=true; web=true
+            else
+              [[ "$INPUT" == *api* ]]    && api=true
+              [[ "$INPUT" == *worker* ]] && worker=true
+              [[ "$INPUT" == *report* ]] && report=true
+              [[ "$INPUT" == *web* ]]    && web=true
+            fi
+            echo "api=$api" >> "$GITHUB_OUTPUT"
+            echo "worker=$worker" >> "$GITHUB_OUTPUT"
+            echo "report=$report" >> "$GITHUB_OUTPUT"
+            echo "web=$web" >> "$GITHUB_OUTPUT"
+          else
+            echo "api=${{ steps.filter.outputs.api }}" >> "$GITHUB_OUTPUT"
+            echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
+            echo "report=${{ steps.filter.outputs.report }}" >> "$GITHUB_OUTPUT"
+            echo "web=${{ steps.filter.outputs.web }}" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── API ───────────────────────────────────────────────────────────────
   publish-api:
