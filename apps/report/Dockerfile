@@ -3,6 +3,8 @@ FROM python:3.12-slim
 # uv 설치
 RUN pip install uv
 
+ENV UV_CACHE_DIR=/tmp/uv-cache
+
 WORKDIR /app
 
 # 의존성 먼저 복사 (캐시 활용)
