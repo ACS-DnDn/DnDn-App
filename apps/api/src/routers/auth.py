@@ -199,7 +199,7 @@ def _extract_access_token(
     "/login",
     response_model=SuccessResponse[Union[LoginResponse, ChallengeResponse]],
 )
-async def auth_login(req: LoginRequest):
+def auth_login(req: LoginRequest):
     """
     이메일+비밀번호로 Cognito 로그인.
     초기 비밀번호 상태면 챌린지를 반환한다.
@@ -231,7 +231,7 @@ async def auth_login(req: LoginRequest):
 # 2. 비밀번호 변경 챌린지 (POST /auth/challenge)
 # -------------------------------------------------------------------
 @router.post("/challenge", response_model=SuccessResponse[LoginResponse])
-async def auth_challenge(req: ChallengeRequest):
+def auth_challenge(req: ChallengeRequest):
     """NEW_PASSWORD_REQUIRED 챌린지에 새 비밀번호로 응답."""
     try:
         result = respond_new_password(req.email, req.newPassword, req.session)
@@ -252,7 +252,7 @@ async def auth_challenge(req: ChallengeRequest):
 # 3. 토큰 갱신 (POST /auth/refresh)
 # -------------------------------------------------------------------
 @router.post("/refresh", response_model=SuccessResponse[RefreshResponse])
-async def auth_refresh(req: RefreshRequest):
+def auth_refresh(req: RefreshRequest):
     """refreshToken으로 새 accessToken 발급."""
     try:
         result = refresh_token(req.refreshToken)
@@ -271,7 +271,7 @@ async def auth_refresh(req: RefreshRequest):
 # 4. 로그아웃 (POST /auth/logout)
 # -------------------------------------------------------------------
 @router.post("/logout", response_model=SuccessResponse[dict])
-async def auth_logout(token: str = Depends(_extract_access_token)):
+def auth_logout(token: str = Depends(_extract_access_token)):
     """Cognito Global Sign-Out. 모든 토큰 무효화."""
     try:
         logout(token)
@@ -287,7 +287,7 @@ async def auth_logout(token: str = Depends(_extract_access_token)):
 @router.get(
     "/me", response_model=SuccessResponse[UserMeResponse], summary="내 정보 조회"
 )
-async def get_my_info(current_user: User = Depends(get_current_user)):
+def get_my_info(current_user: User = Depends(get_current_user)):
     """Cognito JWT를 검증하고 유저 및 소속 회사 정보를 반환한다."""
     company_data = {"name": "소속 회사 없음", "logoUrl": ""}
 

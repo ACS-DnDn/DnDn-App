@@ -32,7 +32,7 @@ def _to_node(dept: Department) -> DepartmentNode:
 
 # ── GET /hr/departments ────────────────────────────────────
 @router.get("", response_model=SuccessResponse[list[DepartmentNode]])
-async def list_departments(
+def list_departments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -45,7 +45,7 @@ async def list_departments(
 
 # ── POST /hr/departments ───────────────────────────────────
 @router.post("", response_model=SuccessResponse[DepartmentNode], status_code=201)
-async def create_department(
+def create_department(
     req: DepartmentCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
@@ -72,7 +72,7 @@ async def create_department(
 
 # ── DELETE /hr/departments/{dept_id} ──────────────────────
 @router.delete("/{dept_id}", response_model=SuccessResponse[dict])
-async def delete_department(
+def delete_department(
     dept_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
@@ -98,7 +98,7 @@ async def delete_department(
 
 # ── PATCH /hr/departments/{dept_id}/leader ─────────────────
 @router.patch("/{dept_id}/leader", response_model=SuccessResponse[DepartmentNode])
-async def set_leader(
+def set_leader(
     dept_id: str,
     req: DepartmentSetLeaderRequest,
     db: Session = Depends(get_db),

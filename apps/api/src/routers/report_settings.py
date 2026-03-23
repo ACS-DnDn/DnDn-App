@@ -142,7 +142,7 @@ def _validate_schedule(req: ScheduleCreateRequest) -> None:
 # 1. 전체 설정 조회 (GET /report-settings?workspaceId=xxx)
 # ---------------------------------------------------------
 @router.get("", response_model=SuccessResponse[ReportSettingsResponse])
-async def get_report_settings(
+def get_report_settings(
     workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -201,7 +201,7 @@ async def get_report_settings(
     response_model=SuccessResponse[ScheduleCreateResponse],
     status_code=201,
 )
-async def create_schedule(
+def create_schedule(
     req: ScheduleCreateRequest,
     workspaceId: str,
     db: Session = Depends(get_db),
@@ -253,7 +253,7 @@ async def create_schedule(
 # 3. 스케줄 수정 (PATCH /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.patch("/schedules/{schedule_id}", response_model=SuccessResponse[ScheduleCreateResponse])
-async def update_schedule(
+def update_schedule(
     schedule_id: str,
     req: ScheduleCreateRequest,
     workspaceId: str,
@@ -309,7 +309,7 @@ async def update_schedule(
 # 4. 스케줄 삭제 (DELETE /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.delete("/schedules/{schedule_id}", status_code=204)
-async def delete_schedule(
+def delete_schedule(
     schedule_id: str,
     workspaceId: str,
     db: Session = Depends(get_db),
@@ -338,7 +338,7 @@ async def delete_schedule(
 # 5. 이벤트 설정 저장 (PATCH /report-settings/events)
 # ---------------------------------------------------------
 @router.patch("/events", response_model=SuccessResponse[EventSettingsResponse])
-async def update_event_settings(
+def update_event_settings(
     req: EventSettingsRequest,
     workspaceId: str,
     db: Session = Depends(get_db),

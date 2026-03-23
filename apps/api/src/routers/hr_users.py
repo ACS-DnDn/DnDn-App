@@ -46,7 +46,7 @@ def _to_response(user: User) -> HrUserResponse:
 
 # ── GET /hr/users ──────────────────────────────────────────
 @router.get("", response_model=SuccessResponse[list[HrUserResponse]])
-async def list_users(
+def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
 ):
@@ -56,7 +56,7 @@ async def list_users(
 
 # ── GET /hr/users/{user_id} ────────────────────────────────
 @router.get("/{user_id}", response_model=SuccessResponse[HrUserResponse])
-async def get_user(
+def get_user(
     user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
@@ -72,7 +72,7 @@ async def get_user(
 
 # ── POST /hr/users ─────────────────────────────────────────
 @router.post("", response_model=SuccessResponse[HrUserResponse], status_code=201)
-async def create_user(
+def create_user(
     req: HrUserCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
@@ -119,7 +119,7 @@ async def create_user(
 
 # ── PATCH /hr/users/{user_id} ──────────────────────────────
 @router.patch("/{user_id}", response_model=SuccessResponse[HrUserResponse])
-async def update_user(
+def update_user(
     user_id: str,
     req: HrUserUpdateRequest,
     db: Session = Depends(get_db),
@@ -158,7 +158,7 @@ async def update_user(
 
 # ── DELETE /hr/users/{user_id} ─────────────────────────────
 @router.delete("/{user_id}", response_model=SuccessResponse[dict])
-async def delete_user(
+def delete_user(
     user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),
@@ -182,7 +182,7 @@ async def delete_user(
 
 # ── POST /hr/users/{user_id}/reset-password ────────────────
 @router.post("/{user_id}/reset-password", response_model=SuccessResponse[dict])
-async def reset_password(
+def reset_password(
     user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_hr),

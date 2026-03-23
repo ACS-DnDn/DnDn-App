@@ -65,7 +65,7 @@ async def _get_caller(
     response_model=SuccessResponse[SummaryCreateResponse],
     status_code=202,
 )
-async def create_summary_report(
+def create_summary_report(
     req: SummaryCreateRequest,
     workspaceId: str,
     caller: Optional[User] = Depends(_get_caller),

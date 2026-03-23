@@ -43,7 +43,7 @@ def _user_status(user: User) -> SlackStatusResponse:
 
 # ── GET /slack/auth ────────────────────────────────────────
 @router.get("/auth", response_model=SuccessResponse[dict])
-async def slack_auth(
+def slack_auth(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -63,7 +63,7 @@ async def slack_auth(
 
 # ── GET /slack/callback ────────────────────────────────────
 @router.get("/callback", response_model=SuccessResponse[SlackStatusResponse])
-async def slack_callback(
+def slack_callback(
     code: str,
     state: str,
     db: Session = Depends(get_db),
@@ -97,14 +97,14 @@ async def slack_callback(
 
 # ── GET /slack/status ──────────────────────────────────────
 @router.get("/status", response_model=SuccessResponse[SlackStatusResponse])
-async def slack_status(current_user: User = Depends(get_current_user)):
+def slack_status(current_user: User = Depends(get_current_user)):
     """현재 Slack 연동 상태 반환."""
     return SuccessResponse(data=_user_status(current_user))
 
 
 # ── PATCH /slack/settings ──────────────────────────────────
 @router.patch("/settings", response_model=SuccessResponse[SlackStatusResponse])
-async def slack_update_settings(
+def slack_update_settings(
     req: SlackSettingsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -125,7 +125,7 @@ async def slack_update_settings(
 
 # ── DELETE /slack/disconnect ───────────────────────────────
 @router.delete("/disconnect", response_model=SuccessResponse[dict])
-async def slack_disconnect(
+def slack_disconnect(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

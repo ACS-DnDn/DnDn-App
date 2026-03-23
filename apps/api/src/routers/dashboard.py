@@ -15,7 +15,7 @@ router = APIRouter(tags=["Dashboard"])
 # 1. 대시보드 데이터 조회 (GET /dashboard)
 # ---------------------------------------------------------
 @router.get("/dashboard", response_model=SuccessResponse[DashboardResponse])
-async def get_dashboard(
+def get_dashboard(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     # 1. 문서 통계

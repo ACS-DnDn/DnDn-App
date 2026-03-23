@@ -54,7 +54,7 @@ def _get_github_token(user: User) -> str:
 # 1. GitHub OAuth 시작 (GET /github/auth)
 # ---------------------------------------------------------
 @router.get("/auth", response_model=SuccessResponse[GitHubAuthResponse])
-async def github_auth(
+def github_auth(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -84,7 +84,7 @@ async def github_auth(
 # 2. GitHub OAuth 콜백 (GET /github/callback)
 # ---------------------------------------------------------
 @router.get("/callback", response_model=SuccessResponse[GitHubCallbackResponse])
-async def github_callback(
+def github_callback(
     code: str,
     state: str,
     current_user: User = Depends(get_current_user),
@@ -122,7 +122,7 @@ async def github_callback(
 # 3. GitHub 조직 목록 조회 (GET /github/orgs)
 # ---------------------------------------------------------
 @router.get("/orgs", response_model=SuccessResponse[GitHubOrgsResponse])
-async def github_orgs(
+def github_orgs(
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -150,7 +150,7 @@ async def github_orgs(
 # 4. 레포지토리 목록 조회 (GET /github/orgs/{org}/repos)
 # ---------------------------------------------------------
 @router.get("/orgs/{org}/repos", response_model=SuccessResponse[GitHubReposResponse])
-async def github_repos(
+def github_repos(
     org: str,
     current_user: User = Depends(get_current_user),
 ):
@@ -186,7 +186,7 @@ async def github_repos(
     "/repos/{org}/{repo}/branches",
     response_model=SuccessResponse[GitHubBranchesResponse],
 )
-async def github_branches(
+def github_branches(
     org: str,
     repo: str,
     current_user: User = Depends(get_current_user),

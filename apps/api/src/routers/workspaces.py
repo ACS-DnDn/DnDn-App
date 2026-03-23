@@ -33,7 +33,7 @@ router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 # 1. 워크스페이스 목록 조회 (GET /workspaces)
 # ---------------------------------------------------------
 @router.get("", response_model=SuccessResponse[WorkspaceListResponse])
-async def get_workspaces(
+def get_workspaces(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -76,7 +76,7 @@ async def get_workspaces(
 # 2. 워크스페이스 수정 (PATCH /workspaces/{id})
 # ---------------------------------------------------------
 @router.patch("/{workspace_id}", response_model=SuccessResponse[WorkspaceUpdateResponse])
-async def update_workspace(
+def update_workspace(
     workspace_id: str,
     req: WorkspaceUpdateRequest,
     db: Session = Depends(get_db),
@@ -124,7 +124,7 @@ async def update_workspace(
     "/{workspace_id}/opa-settings",
     response_model=SuccessResponse[OpaSettingsResponse],
 )
-async def get_opa_settings(
+def get_opa_settings(
     workspace_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -155,7 +155,7 @@ async def get_opa_settings(
     "/{workspace_id}/opa-settings",
     response_model=SuccessResponse[OpaSettingsSavedResponse],
 )
-async def save_opa_settings(
+def save_opa_settings(
     workspace_id: str,
     req: OpaSettingsRequest,
     db: Session = Depends(get_db),
@@ -194,7 +194,7 @@ async def save_opa_settings(
 # 5. CFN Quick-create URL 생성 (POST /workspaces/cfn-link)
 # ---------------------------------------------------------
 @router.post("/cfn-link", response_model=SuccessResponse[CfnLinkResponse])
-async def get_cfn_quick_link(
+def get_cfn_quick_link(
     req: CfnLinkRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -217,7 +217,7 @@ async def get_cfn_quick_link(
 # 7. AWS 연동 테스트 (POST /workspaces/test-aws)
 # ---------------------------------------------------------
 @router.post("/test-aws", response_model=SuccessResponse[AwsTestResponse])
-async def test_aws_connection(
+def test_aws_connection(
     req: AwsTestRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -250,7 +250,7 @@ async def test_aws_connection(
     response_model=SuccessResponse[WorkspaceCreateResponse],
     status_code=201,
 )
-async def create_workspace(
+def create_workspace(
     req: WorkspaceCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

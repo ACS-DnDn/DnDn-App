@@ -8,7 +8,7 @@ from apps.api.src.models import User
 from apps.api.src.routers.auth import get_current_user
 
 
-async def require_hr(current_user: User = Depends(get_current_user)) -> User:
+def require_hr(current_user: User = Depends(get_current_user)) -> User:
     """HR 관리자 전용 접근 제한."""
     if current_user.role != "hr":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HR_ONLY")

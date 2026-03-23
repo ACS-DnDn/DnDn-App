@@ -14,7 +14,7 @@ router = APIRouter(prefix="/org", tags=["Organization"])
 
 
 @router.get("/members", response_model=SuccessResponse[OrgMembersResponse])
-async def get_org_members(
+def get_org_members(
     keyword: Optional[str] = Query(None, description="이름 또는 부서명 검색"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

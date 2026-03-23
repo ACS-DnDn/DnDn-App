@@ -84,7 +84,7 @@ def _notify(user: User, text: str) -> None:
 
 
 @router.get("", response_model=SuccessResponse[DocumentArchiveResponse])
-async def get_documents(
+def get_documents(
     tab: Optional[str] = Query(
         "all", description="action (처리할 문서) / all (전체 문서)"
     ),
@@ -226,7 +226,7 @@ async def get_documents(
 @router.post(
     "", response_model=SuccessResponse[DocumentSubmitResponse], status_code=status.HTTP_201_CREATED
 )
-async def submit_document(
+def submit_document(
     req: DocumentSubmitRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -310,7 +310,7 @@ async def submit_document(
 
 
 @router.get("/{documentId}", response_model=SuccessResponse[DocumentDetailResponse])
-async def get_document_detail(
+def get_document_detail(
     documentId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -394,7 +394,7 @@ async def get_document_detail(
 @router.post(
     "/{documentId}/approve", response_model=SuccessResponse[DocumentStatusResponse]
 )
-async def approve_document(
+def approve_document(
     documentId: str,
     req: DocumentApproveRequest,
     db: Session = Depends(get_db),
@@ -468,7 +468,7 @@ async def approve_document(
 @router.post(
     "/{documentId}/reject", response_model=SuccessResponse[DocumentStatusResponse]
 )
-async def reject_document(
+def reject_document(
     documentId: str,
     req: DocumentRejectRequest,
     db: Session = Depends(get_db),
@@ -514,7 +514,7 @@ async def reject_document(
 
 
 @router.patch("/read", response_model=SuccessResponse[DocumentReadResponse])
-async def mark_documents_as_read(
+def mark_documents_as_read(
     req: DocumentReadRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -561,7 +561,7 @@ async def mark_documents_as_read(
 
 
 @router.patch("/read-all", response_model=SuccessResponse[DocumentReadResponse])
-async def mark_all_documents_as_read(
+def mark_all_documents_as_read(
     req: DocumentReadAllRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -622,7 +622,7 @@ async def mark_all_documents_as_read(
     "/{documentId}/refs/{refDocumentId}",
     response_model=SuccessResponse[RefDocumentDetailResponse],
 )
-async def get_ref_document_detail(
+def get_ref_document_detail(
     documentId: str,
     refDocumentId: str,
     db: Session = Depends(get_db),
@@ -695,7 +695,7 @@ async def get_ref_document_detail(
 
 
 @router.get("/{documentId}/attachments/{fileId}/download", summary="첨부파일 다운로드")
-async def download_attachment(
+def download_attachment(
     documentId: str,
     fileId: str,
     db: Session = Depends(get_db),
