@@ -16,6 +16,7 @@ from apps.api.src.routers import (
     workspaces,
     hr_users,
     hr_departments,
+    hr_company,
     slack,
 )
 
@@ -64,6 +65,7 @@ api.include_router(reports.router)
 api.include_router(workspaces.router)
 api.include_router(hr_users.router)
 api.include_router(hr_departments.router)
+api.include_router(hr_company.router)
 api.include_router(slack.router)
 app.include_router(api)
 
