@@ -86,8 +86,12 @@ export function LoginPage() {
     try {
       await challenge(challengeEmail, newPw, challengeSession);
       navigate('/dashboard');
-    } catch {
-      setModalError('비밀번호 변경에 실패했습니다. 다시 시도해 주세요.');
+    } catch (e) {
+      if (e instanceof Error && e.message === 'HR_ACCESS_DENIED') {
+        setModalError('HR 계정은 DnDn HR 서비스를 이용해 주세요.');
+      } else {
+        setModalError('비밀번호 변경에 실패했습니다. 다시 시도해 주세요.');
+      }
     } finally {
       setModalLoading(false);
     }

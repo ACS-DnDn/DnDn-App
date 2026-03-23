@@ -80,6 +80,15 @@ async function fetchMe(): Promise<Session> {
   };
 }
 
+async function fetchAllowedMe(): Promise<Session> {
+  const me = await fetchMe();
+  if (me.role === 'hr') {
+    clearTokens();
+    throw new Error('HR_ACCESS_DENIED');
+  }
+  return me;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('dndn-access-token');
     if (!token) { setIsLoading(false); return; }
-    fetchMe()
+    fetchAllowedMe()
       .then(setSession)
       .catch(clearTokens)
       .finally(() => setIsLoading(false));
@@ -104,8 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { type: 'challenge', session: data.session };
     }
     saveTokens(data as ApiLoginData);
-    const me = await fetchMe();
-    if (me.role === 'hr') { clearTokens(); throw new Error('HR_ACCESS_DENIED'); }
+    const me = await fetchAllowedMe();
     setSession(me);
     return { type: 'success' };
   }, []);
@@ -116,8 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { method: 'POST', body: JSON.stringify({ email, newPassword, session: sess }) },
     );
     saveTokens(res.data);
-    const me = await fetchMe();
-    if (me.role === 'hr') { clearTokens(); throw new Error('HR_ACCESS_DENIED'); }
+    const me = await fetchAllowedMe();
     setSession(me);
   }, []);
 

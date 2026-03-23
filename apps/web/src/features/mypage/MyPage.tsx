@@ -69,6 +69,7 @@ export function MyPage() {
       const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/slack/auth');
       localStorage.removeItem('slack-oauth-result');
       const popup = window.open(res.data.authorizeUrl, 'slack-oauth', 'width=600,height=700');
+      if (!popup) { setSaving(false); return; }
 
       const onStorage = async (e: StorageEvent) => {
         if (e.key !== 'slack-oauth-result' || !e.newValue) return;

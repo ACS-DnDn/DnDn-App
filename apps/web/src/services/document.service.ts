@@ -72,7 +72,10 @@ export async function getAttachmentUploadUrl(
 }
 
 export async function uploadAttachment(uploadUrl: string, file: File): Promise<void> {
-  await fetch(uploadUrl, { method: 'PUT', body: file });
+  const res = await fetch(uploadUrl, { method: 'PUT', body: file });
+  if (!res.ok) {
+    throw new Error(`업로드 실패: ${res.status} ${res.statusText}`);
+  }
 }
 
 export async function getAttachmentDownloadUrl(
