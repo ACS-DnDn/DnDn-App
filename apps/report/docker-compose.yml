@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    container_name: dndn-report-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  sqs-worker:
+    build: .
+    container_name: dndn-report-sqs-worker
+    command: ["uv", "run", "python", "-m", "src.sqs_worker"]
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - api
