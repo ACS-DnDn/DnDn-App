@@ -33,7 +33,7 @@
       }
     }
   ],
-  "description": "Standard input payload to run_job(payload). Keeps trigger layer independent from worker logic.",
+  "description": "Standard worker input payload. Used both for local file execution and SQS message bodies passed to run_job_from_payload(payload). Keeps trigger layer independent from worker logic.",
   "properties": {
     "account_id": {
       "pattern": "^\\d{12}$",

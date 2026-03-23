@@ -1,27 +1,78 @@
 # apps/api/routers/report_settings.py
 
+import json
+import os
 import re
+import uuid
 
+import boto3
+from botocore.exceptions import ClientError, ParamValidationError
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Workspace, ReportSettings, ReportSchedule
+from apps.api.src.models import User, Workspace, ReportSettings
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.report_settings import (
-    ScheduleItem,
+    EventSettingsRequest,
+    EventSettingsResponse,
     ReportSettingsResponse,
     ScheduleCreateRequest,
     ScheduleCreateResponse,
-    EventSettingsRequest,
-    EventSettingsResponse,
+    ScheduleItem,
 )
 
 router = APIRouter(prefix="/report-settings", tags=["ReportSettings"])
 
+# --- EventBridge Scheduler 설정 (환경변수) ---
+_SCHEDULER_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
+_SCHEDULER_GROUP = os.environ.get("SCHEDULER_GROUP_NAME", "dndn-schedules")
+_SCHEDULER_ROLE_ARN = os.environ.get("SCHEDULER_ROLE_ARN", "")
+_SCHEDULER_TARGET_ARN = os.environ.get("SCHEDULER_TARGET_ARN", "")
 
+
+def _scheduler_client():
+    return boto3.client("scheduler", region_name=_SCHEDULER_REGION)
+
+
+def _check_scheduler_config() -> None:
+    """필수 환경변수 미설정 시 503."""
+    if not _SCHEDULER_ROLE_ARN or not _SCHEDULER_TARGET_ARN:
+        raise HTTPException(status_code=503, detail="SCHEDULER_NOT_CONFIGURED")
+
+
+def _schedule_name(workspace_id: str, schedule_id: str) -> str:
+    """EventBridge Scheduler 이름: dndn-{workspaceId}-{scheduleId}"""
+    return f"dndn-{workspace_id}-{schedule_id}"
+
+
+def _kst_to_cron(
+    preset: str,
+    day_of_week: int | None,
+    day_of_month: int | None,
+    time_kst: str,
+) -> str:
+    """KST HH:mm + preset → EventBridge Scheduler cron expression (Asia/Seoul 기준)"""
+    hh, mm = map(int, time_kst.split(":"))
+
+    if preset == "daily":
+        return f"cron({mm} {hh} * * ? *)"
+
+    if preset == "weekly":
+        # 입력: 1=월 ~ 7=일 / AWS cron: SUN=1, MON=2, ..., SAT=7
+        aws_map = {1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 1}
+        aws_dow = aws_map[day_of_week]
+        return f"cron({mm} {hh} ? * {aws_dow} *)"
+
+    # monthly
+    return f"cron({mm} {hh} {day_of_month} * ? *)"
+
+
+# ---------------------------------------------------------
+# 헬퍼: 워크스페이스 확인
+# ---------------------------------------------------------
 def _get_workspace(db: Session, workspace_id: str, current_user: User) -> Workspace:
     """워크스페이스 존재 여부 확인 (404) + 소유자 권한 확인 (403)."""
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -91,7 +142,7 @@ def _validate_schedule(req: ScheduleCreateRequest) -> None:
 # 1. 전체 설정 조회 (GET /report-settings?workspaceId=xxx)
 # ---------------------------------------------------------
 @router.get("", response_model=SuccessResponse[ReportSettingsResponse])
-async def get_report_settings(
+def get_report_settings(
     workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -103,25 +154,40 @@ async def get_report_settings(
     _get_workspace(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
-    # 스케줄 목록 조회
-    schedules = db.query(ReportSchedule).filter(
-        ReportSchedule.workspace_id == workspaceId
-    ).all()
+    # EventBridge Scheduler에서 이 워크스페이스의 스케줄 목록 조회
+    schedule_items: list[ScheduleItem] = []
+    try:
+        client = _scheduler_client()
+        paginator = client.get_paginator("list_schedules")
+        pages = paginator.paginate(
+            GroupName=_SCHEDULER_GROUP,
+            NamePrefix=f"dndn-{workspaceId}-",
+        )
+        for page in pages:
+            for item in page.get("Schedules", []):
+                detail = client.get_schedule(
+                    GroupName=_SCHEDULER_GROUP,
+                    Name=item["Name"],
+                )
+                payload = json.loads(detail.get("Target", {}).get("Input", "{}"))
+                schedule_items.append(
+                    ScheduleItem(
+                        id=payload.get("scheduleId", ""),
+                        title=payload.get("title", ""),
+                        preset=payload.get("preset", ""),
+                        dayOfWeek=payload.get("dayOfWeek"),
+                        dayOfMonth=payload.get("dayOfMonth"),
+                        time=payload.get("time", ""),
+                        includeRange=payload.get("includeRange", True),
+                    )
+                )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
 
     return SuccessResponse(
         data=ReportSettingsResponse(
-            schedules=[
-                ScheduleItem(
-                    id=s.id,
-                    title=s.title,
-                    preset=s.preset,
-                    dayOfWeek=s.day_of_week,
-                    dayOfMonth=s.day_of_month,
-                    time=s.time,
-                    includeRange=s.include_range,
-                )
-                for s in schedules
-            ],
+            schedules=schedule_items,
             eventSettings=settings.event_settings or {},
         )
     )
@@ -135,43 +201,60 @@ async def get_report_settings(
     response_model=SuccessResponse[ScheduleCreateResponse],
     status_code=201,
 )
-async def create_schedule(
+def create_schedule(
     req: ScheduleCreateRequest,
     workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    새로운 보고서 생성 스케줄을 추가한다.
+    새로운 보고서 생성 스케줄을 EventBridge Scheduler에 추가한다.
     """
     _get_workspace(db, workspaceId, current_user)
+    _check_scheduler_config()
     _validate_schedule(req)
 
-    schedule = ReportSchedule(
-        workspace_id=workspaceId,
-        title=req.title,
-        preset=req.preset,
-        day_of_week=req.dayOfWeek,
-        day_of_month=req.dayOfMonth,
-        time=req.time,
-        include_range=req.includeRange,
-    )
+    schedule_id = uuid.uuid4().hex[:8]  # 8자리 hex ID
+    name = _schedule_name(workspaceId, schedule_id)
+    cron_expr = _kst_to_cron(req.preset, req.dayOfWeek, req.dayOfMonth, req.time)
 
-    db.add(schedule)
-    db.commit()
-    db.refresh(schedule)
+    payload = json.dumps({
+        "workspaceId": workspaceId,
+        "scheduleId": schedule_id,
+        "title": req.title,
+        "preset": req.preset,
+        "dayOfWeek": req.dayOfWeek,
+        "dayOfMonth": req.dayOfMonth,
+        "time": req.time,
+        "includeRange": req.includeRange,
+    })
 
-    return SuccessResponse(
-        data=ScheduleCreateResponse(id=schedule.id)
-    )
+    try:
+        _scheduler_client().create_schedule(
+            GroupName=_SCHEDULER_GROUP,
+            Name=name,
+            ScheduleExpression=cron_expr,
+            ScheduleExpressionTimezone="Asia/Seoul",
+            FlexibleTimeWindow={"Mode": "OFF"},
+            Target={
+                "Arn": _SCHEDULER_TARGET_ARN,
+                "RoleArn": _SCHEDULER_ROLE_ARN,
+                "Input": payload,
+            },
+            State="ENABLED",
+        )
+    except (ClientError, ParamValidationError):
+        raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
+
+    return SuccessResponse(data=ScheduleCreateResponse(id=schedule_id))
 
 
 # ---------------------------------------------------------
 # 3. 스케줄 수정 (PATCH /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.patch("/schedules/{schedule_id}", response_model=SuccessResponse[ScheduleCreateResponse])
-async def update_schedule(
-    schedule_id: int,
+def update_schedule(
+    schedule_id: str,
     req: ScheduleCreateRequest,
     workspaceId: str,
     db: Session = Depends(get_db),
@@ -181,36 +264,53 @@ async def update_schedule(
     기존 스케줄을 수정한다.
     """
     _get_workspace(db, workspaceId, current_user)
-
-    schedule = db.query(ReportSchedule).filter(
-        ReportSchedule.id == schedule_id,
-        ReportSchedule.workspace_id == workspaceId,
-    ).first()
-    if not schedule:
-        raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
-
+    _check_scheduler_config()
     _validate_schedule(req)
 
-    schedule.title = req.title
-    schedule.preset = req.preset
-    schedule.day_of_week = req.dayOfWeek
-    schedule.day_of_month = req.dayOfMonth
-    schedule.time = req.time
-    schedule.include_range = req.includeRange
+    name = _schedule_name(workspaceId, schedule_id)
+    cron_expr = _kst_to_cron(req.preset, req.dayOfWeek, req.dayOfMonth, req.time)
 
-    db.commit()
+    payload = json.dumps({
+        "workspaceId": workspaceId,
+        "scheduleId": schedule_id,
+        "title": req.title,
+        "preset": req.preset,
+        "dayOfWeek": req.dayOfWeek,
+        "dayOfMonth": req.dayOfMonth,
+        "time": req.time,
+        "includeRange": req.includeRange,
+    })
 
-    return SuccessResponse(
-        data=ScheduleCreateResponse(id=schedule.id)
-    )
+    try:
+        _scheduler_client().update_schedule(
+            GroupName=_SCHEDULER_GROUP,
+            Name=name,
+            ScheduleExpression=cron_expr,
+            ScheduleExpressionTimezone="Asia/Seoul",
+            FlexibleTimeWindow={"Mode": "OFF"},
+            Target={
+                "Arn": _SCHEDULER_TARGET_ARN,
+                "RoleArn": _SCHEDULER_ROLE_ARN,
+                "Input": payload,
+            },
+            State="ENABLED",
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
+        raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
+    except ParamValidationError:
+        raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
+
+    return SuccessResponse(data=ScheduleCreateResponse(id=schedule_id))
 
 
 # ---------------------------------------------------------
 # 4. 스케줄 삭제 (DELETE /report-settings/schedules/{id})
 # ---------------------------------------------------------
 @router.delete("/schedules/{schedule_id}", status_code=204)
-async def delete_schedule(
-    schedule_id: int,
+def delete_schedule(
+    schedule_id: str,
     workspaceId: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -220,15 +320,16 @@ async def delete_schedule(
     """
     _get_workspace(db, workspaceId, current_user)
 
-    schedule = db.query(ReportSchedule).filter(
-        ReportSchedule.id == schedule_id,
-        ReportSchedule.workspace_id == workspaceId,
-    ).first()
-    if not schedule:
-        raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
-
-    db.delete(schedule)
-    db.commit()
+    name = _schedule_name(workspaceId, schedule_id)
+    try:
+        _scheduler_client().delete_schedule(
+            GroupName=_SCHEDULER_GROUP,
+            Name=name,
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            raise HTTPException(status_code=404, detail="SCHEDULE_NOT_FOUND")
+        raise HTTPException(status_code=500, detail="SCHEDULER_ERROR")
 
     return Response(status_code=204)
 
@@ -237,7 +338,7 @@ async def delete_schedule(
 # 5. 이벤트 설정 저장 (PATCH /report-settings/events)
 # ---------------------------------------------------------
 @router.patch("/events", response_model=SuccessResponse[EventSettingsResponse])
-async def update_event_settings(
+def update_event_settings(
     req: EventSettingsRequest,
     workspaceId: str,
     db: Session = Depends(get_db),

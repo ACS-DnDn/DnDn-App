@@ -7,6 +7,8 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 
 - `collection_status.<stage>.status = "FAILED"` 면 `error_code` 필수
 - 가능하면 `retryable`을 함께 채웁니다.
+- worker는 결과/예외 모델에서도 `retryable`을 명시적으로 전달합니다.
+- consumer의 delete / no-delete 판단은 예외 타입이 아니라 `retryable` 기준으로 맞춥니다.
 
 ---
 
@@ -76,6 +78,28 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 - `CONFIG_NOT_SUPPORTED`  
   해당 resource_type이 Config에서 조회 불가
 
+## Access Analyzer
+
+- `ACCESS_ANALYZER_LIST_ANALYZERS_FAILED`
+  Access Analyzer analyzer 목록 조회 실패
+
+- `ACCESS_ANALYZER_UNEXPECTED`
+  Access Analyzer 수집 중 예상하지 못한 예외 발생
+
+## Cost Explorer / CloudWatch
+
+- `COST_EXPLORER_GET_COST_AND_USAGE_FAILED`
+  Cost Explorer 비용 조회 실패
+
+- `COST_EXPLORER_UNEXPECTED`
+  Cost Explorer 수집 중 예상하지 못한 예외 발생
+
+- `CLOUDWATCH_DESCRIBE_ALARMS_FAILED`
+  CloudWatch alarm 조회 실패
+
+- `CLOUDWATCH_UNEXPECTED`
+  CloudWatch 수집 중 예상하지 못한 예외 발생
+
 ---
 
 ## 저장/검증
@@ -92,3 +116,9 @@ A 파이프라인에서 `status="FAILED"` 인 경우 `error_code`는 아래 중 
 
 - 재시도 O(대체로): `THROTTLED`, `RATE_LIMITED`, `NETWORK_ERROR`, 일시적 `S3_PUT_FAILED`
 - 재시도 X(대체로): `ASSUME_ROLE_FAILED`, `ACCESS_DENIED`, `INVALID_PAYLOAD`, `SCHEMA_VALIDATION_FAILED`, `TRIGGER_*`
+
+## 멱등성 기준
+
+- 동일 `run_id` 재수신 시, worker는 기존 로컬 결과 파일이 있으면 `already_processed=True` 로 즉시 반환합니다.
+- 이 기준은 동일 worker 인스턴스/로컬 볼륨 범위의 멱등성입니다.
+- 분산 환경 전역 멱등성은 별도 저장소 또는 락 전략이 필요합니다.

@@ -1,59 +1,8 @@
 # app/schemas/documents.py
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
 from datetime import date
-
-
-# 결재자 정보 규격 (재사용을 위해 분리)
-class ApproverSchema(BaseModel):
-    userId: str
-    seq: int = Field(..., description="결재 순서 (1, 2, 3...)")
-
-
-# 1. AI 계획서 생성 요청 (POST /documents/generate/plan)
-class PlanGenerateRequest(BaseModel):
-    title: str
-    workDate: date
-    refDocIds: List[str]
-    memo: Optional[str] = None
-
-
-# 2. 계획서 최종 저장 및 결재 상신 (POST /documents)
-class DocumentCreateRequest(BaseModel):
-    title: str
-    workDate: date
-    content: str  # HTML 본문
-    terraform: dict  # {"main.tf": "..."}
-    refDocIds: List[str]
-    approvers: List[ApproverSchema]  # 상세 규격 적용!
-    isDraft: bool
-
-
-class DocumentListItem(BaseModel):
-    id: str
-    docNum: str
-    name: str
-    author: str
-    date: str
-
-
-class DocumentListResponse(BaseModel):
-    total: int
-    page: int
-    pageSize: int
-    items: List[DocumentListItem]
-
-
-class GeneratePlanRequest(BaseModel):
-    target: str
-    content: str
-    refDocIds: Optional[List[str]] = []
-
-
-class GeneratePlanResponse(BaseModel):
-    jobId: str
-    status: str
 
 
 # --- 결재자 정보 ---
@@ -65,15 +14,15 @@ class ApproverItem(BaseModel):
 
 # --- 문서 저장/상신 요청 ---
 class DocumentSubmitRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     documentId: str
-    type: str
-    work_date: Optional[str] = Field(None, alias="workDate")
-    terraform: Optional[Dict[str, Any]] = None  # JSON 객체를 받기 위해 Dict 사용
-    refDocIds: Optional[List[str]] = []
+    workspaceId: str
+    work_date: Optional[date] = Field(None, alias="workDate")
+    terraform: Optional[Dict[str, Any]] = None
+    refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
     isDraft: bool
-    title: Optional[str] = None
-    content: Optional[str] = None  # 편집된 HTML 본문
 
 
 # --- 문서 저장/상신 응답 ---
@@ -137,3 +86,45 @@ class RefDocumentDetailResponse(BaseModel):
     title: str
     meta: List[RefDocMetaItem]
     content: str
+
+
+# --- 문서 상세 조회 응답 ---
+class DocumentAuthor(BaseModel):
+    name: str
+    role: str
+
+
+class DocumentRefDoc(BaseModel):
+    id: str
+    title: str
+    type: str
+
+
+class DocumentAttachment(BaseModel):
+    id: str
+    name: str
+    sizeKb: Optional[float] = None
+
+
+class DocumentApprovalLine(BaseModel):
+    seq: int
+    type: str
+    name: str
+    role: str
+    status: str
+    date: Optional[str] = None
+    comment: Optional[str] = None
+
+
+class DocumentDetailResponse(BaseModel):
+    id: str
+    docNum: str
+    title: str
+    type: str
+    status: str
+    author: DocumentAuthor
+    createdAt: Optional[str] = None
+    content: Optional[str] = None
+    refDocs: List[DocumentRefDoc]
+    attachments: List[DocumentAttachment]
+    approvalLine: List[DocumentApprovalLine]

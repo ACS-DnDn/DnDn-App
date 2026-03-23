@@ -19,9 +19,10 @@ from apps.api.src.schemas.workspaces import (
     OpaSettingsRequest,
     OpaSettingsSavedResponse,
 )
-from apps.api.src.schemas.aws import AwsTestRequest, AwsTestResponse
+from apps.api.src.schemas.aws import AwsTestRequest, AwsTestResponse, CfnLinkRequest, CfnLinkResponse
 from apps.api.src.security.aws_sts import (
     test_assume_role,
+    get_cfn_link,
     StsValidationError,
 )
 
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 # 1. 워크스페이스 목록 조회 (GET /workspaces)
 # ---------------------------------------------------------
 @router.get("", response_model=SuccessResponse[WorkspaceListResponse])
-async def get_workspaces(
+def get_workspaces(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -40,9 +41,13 @@ async def get_workspaces(
     현재 사용자가 접근 가능한 워크스페이스 목록을 조회한다.
     같은 부서의 부서장이 생성한 워크스페이스가 반환된다.
     """
-    # 💡 현재는 전체 워크스페이스를 반환합니다.
-    # 추후 부서 기반 필터링이 필요하면 여기서 조건을 추가하세요.
-    workspaces = db.query(Workspace).order_by(Workspace.created_at.desc()).all()
+    workspaces = (
+        db.query(Workspace)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(User.company_id == current_user.company_id)
+        .order_by(Workspace.created_at.desc())
+        .all()
+    )
 
     items = []
     for ws in workspaces:
@@ -71,7 +76,7 @@ async def get_workspaces(
 # 2. 워크스페이스 수정 (PATCH /workspaces/{id})
 # ---------------------------------------------------------
 @router.patch("/{workspace_id}", response_model=SuccessResponse[WorkspaceUpdateResponse])
-async def update_workspace(
+def update_workspace(
     workspace_id: str,
     req: WorkspaceUpdateRequest,
     db: Session = Depends(get_db),
@@ -119,7 +124,7 @@ async def update_workspace(
     "/{workspace_id}/opa-settings",
     response_model=SuccessResponse[OpaSettingsResponse],
 )
-async def get_opa_settings(
+def get_opa_settings(
     workspace_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -150,7 +155,7 @@ async def get_opa_settings(
     "/{workspace_id}/opa-settings",
     response_model=SuccessResponse[OpaSettingsSavedResponse],
 )
-async def save_opa_settings(
+def save_opa_settings(
     workspace_id: str,
     req: OpaSettingsRequest,
     db: Session = Depends(get_db),
@@ -186,10 +191,33 @@ async def save_opa_settings(
 
 
 # ---------------------------------------------------------
-# 5. AWS 연동 테스트 (POST /workspaces/test-aws)
+# 5. CFN Quick-create URL 생성 (POST /workspaces/cfn-link)
+# ---------------------------------------------------------
+@router.post("/cfn-link", response_model=SuccessResponse[CfnLinkResponse])
+def get_cfn_quick_link(
+    req: CfnLinkRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    고객이 자신의 AWS 계정에 OpsAgent 스택을 설치할 수 있는
+    CloudFormation Quick-create URL을 반환한다.
+    Step 1 — 역할 생성 버튼 클릭 시 호출.
+    """
+    try:
+        result = get_cfn_link(req.acctId)
+    except StsValidationError:
+        raise HTTPException(status_code=400, detail="BAD_REQUEST") from None
+
+    return SuccessResponse(
+        data=CfnLinkResponse(url=result.url, acctId=result.acct_id)
+    )
+
+
+# ---------------------------------------------------------
+# 7. AWS 연동 테스트 (POST /workspaces/test-aws)
 # ---------------------------------------------------------
 @router.post("/test-aws", response_model=SuccessResponse[AwsTestResponse])
-async def test_aws_connection(
+def test_aws_connection(
     req: AwsTestRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -215,14 +243,14 @@ async def test_aws_connection(
 
 
 # ---------------------------------------------------------
-# 6. 워크스페이스 생성 (POST /workspaces)
+# 8. 워크스페이스 생성 (POST /workspaces)
 # ---------------------------------------------------------
 @router.post(
     "",
     response_model=SuccessResponse[WorkspaceCreateResponse],
     status_code=201,
 )
-async def create_workspace(
+def create_workspace(
     req: WorkspaceCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

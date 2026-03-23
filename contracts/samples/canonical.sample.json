@@ -134,6 +134,105 @@
         "status": "OK"
       }
     },
+    "access_analyzer_collection_status": {
+      "access_analyzer.list_analyzers.ap-northeast-2": {
+        "status": "OK",
+        "raw_s3_uri": "s3://dndn-data/.../raw/access_analyzer/list_analyzers_ap-northeast-2.json",
+        "analyzer_count": 1
+      },
+      "access_analyzer.list_findings.ap-northeast-2.default": {
+        "status": "OK",
+        "raw_s3_uri": "s3://dndn-data/.../raw/access_analyzer/list_findings_ap-northeast-2_default.json",
+        "finding_count": 2
+      }
+    },
+    "access_analyzer_findings": [
+      {
+        "id": "fnd-001",
+        "status": "ACTIVE",
+        "resource_type": "AWS::S3::Bucket",
+        "resource": "arn:aws:s3:::public-example-bucket",
+        "resource_owner_account": "123456789012",
+        "is_public": true,
+        "principal_count": 1,
+        "action_count": 1,
+        "source_count": 1,
+        "created_at": "2026-02-24T10:00:00+09:00",
+        "updated_at": "2026-02-24T10:00:00+09:00",
+        "region": "ap-northeast-2",
+        "analyzer_name": "default",
+        "analyzer_type": "ACCOUNT",
+        "evidence": {
+          "raw_s3_uri": "s3://dndn-data/.../raw/access_analyzer/list_findings_ap-northeast-2_default.json"
+        }
+      }
+    ],
+    "access_analyzer_rollup": {
+      "analyzer_count": 1,
+      "finding_count": 2,
+      "public_finding_count": 1,
+      "resource_type_counts": {
+        "AWS::S3::Bucket": 2
+      }
+    },
+    "cost_explorer_collection_status": {
+      "ce.get_cost_and_usage": {
+        "status": "OK",
+        "raw_s3_uri": "s3://dndn-data/.../raw/cost_explorer/get_cost_and_usage.json",
+        "group_count": 2
+      }
+    },
+    "cost_explorer_groups": [
+      {
+        "service": "Amazon Elastic Compute Cloud - Compute",
+        "amount": 124.321,
+        "unit": "USD"
+      },
+      {
+        "service": "Amazon Relational Database Service",
+        "amount": 48.115,
+        "unit": "USD"
+      }
+    ],
+    "cost_explorer_summary": {
+      "total_unblended_cost": 172.436,
+      "unit": "USD",
+      "service_count": 2,
+      "start_date": "2026-02-23",
+      "end_date_exclusive": "2026-03-02"
+    },
+    "cloudwatch_collection_status": {
+      "cloudwatch.describe_alarms.ap-northeast-2": {
+        "status": "OK",
+        "raw_s3_uri": "s3://dndn-data/.../raw/cloudwatch/describe_alarms_ap-northeast-2.json",
+        "alarm_count": 3
+      }
+    },
+    "cloudwatch_alarms": [
+      {
+        "region": "ap-northeast-2",
+        "alarm_name": "prod-rds-cpu-high",
+        "alarm_type": "METRIC",
+        "state_value": "ALARM",
+        "state_reason": "Threshold Crossed",
+        "namespace": "AWS/RDS",
+        "metric_name": "CPUUtilization",
+        "evaluation_periods": 3,
+        "threshold": 80.0,
+        "comparison_operator": "GreaterThanThreshold",
+        "evidence": {
+          "raw_s3_uri": "s3://dndn-data/.../raw/cloudwatch/describe_alarms_ap-northeast-2.json"
+        }
+      }
+    ],
+    "cloudwatch_rollup": {
+      "alarm_count": 3,
+      "active_alarm_count": 1,
+      "state_counts": {
+        "ALARM": 1,
+        "OK": 2
+      }
+    },
     "stats": {
       "advisor_checks_count": 4,
       "note": "optional non-MVP"
@@ -148,6 +247,7 @@
       "version": "0.1.0"
     },
     "evidence": {
+      "index_s3_uri": "s3://dndn-data/account_id=123456789012/type=WEEKLY/year=2026/week=09/run_id=01J0EXAMPLEULID1234/raw/index.json",
       "normalized_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=WEEKLY/year=2026/week=09/run_id=01J0EXAMPLEULID1234/normalized/",
       "raw_prefix_s3_uri": "s3://dndn-data/account_id=123456789012/type=WEEKLY/year=2026/week=09/run_id=01J0EXAMPLEULID1234/raw/"
     },

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 # --- 스케줄 항목 (공통) ---
 class ScheduleItem(BaseModel):
-    id: int
+    id: str
     title: str
     preset: str  # daily / weekly / monthly
     dayOfWeek: Optional[int] = None  # 1=월 ~ 7=일 (weekly 시)
@@ -46,7 +46,7 @@ class ScheduleCreateRequest(BaseModel):
 
 
 class ScheduleCreateResponse(BaseModel):
-    id: int  # 생성된 스케줄 ID
+    id: str  # 생성된 스케줄 ID
 
 
 # --- 6. 이벤트 설정 저장 (PATCH /report-settings/events) ---

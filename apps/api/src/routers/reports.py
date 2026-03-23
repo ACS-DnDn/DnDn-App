@@ -1,8 +1,14 @@
 # apps/api/routers/reports.py
 
+import json
+import os
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import boto3
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, Depends, HTTPException, Header, Security, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
@@ -16,6 +22,40 @@ from apps.api.src.schemas.report_settings import (
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
+_REPORT_QUEUE_URL = os.environ.get("REPORT_REQUEST_QUEUE_URL", "")
+_INTERNAL_KEY = os.environ.get("INTERNAL_API_KEY", "")
+_AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
+_S3_BUCKET = os.environ.get("S3_BUCKET", "")
+_STS_ROLE_NAME = os.environ.get("STS_ROLE_NAME", "DnDnOpsAgentRole")
+_STS_EXTERNAL_ID = os.environ.get("STS_EXTERNAL_ID", "")
+
+# auto_error=False — X-Internal-Key 경로에서 Authorization 없어도 403 대신 None 반환
+_security_optional = HTTPBearer(auto_error=False)
+
+
+async def _get_caller(
+    x_internal_key: Optional[str] = Header(default=None, alias="X-Internal-Key"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(_security_optional),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    두 가지 인증 경로 지원:
+    - X-Internal-Key 헤더: Lambda(VPC 내부) 호출 → None 반환 (사용자 불필요)
+    - Authorization Bearer: 일반 사용자 JWT 인증 → User 반환
+    """
+    if x_internal_key is not None:
+        if not _INTERNAL_KEY or x_internal_key != _INTERNAL_KEY:
+            raise HTTPException(status_code=403, detail="FORBIDDEN")
+        return None  # 내부 호출 신뢰 — 사용자 객체 불필요
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="UNAUTHORIZED",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await get_current_user(credentials=credentials, db=db)
+
 
 # ---------------------------------------------------------
 # 현황 보고서 즉시 생성 (POST /reports/summary)
@@ -25,36 +65,73 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
     response_model=SuccessResponse[SummaryCreateResponse],
     status_code=202,
 )
-async def create_summary_report(
+def create_summary_report(
     req: SummaryCreateRequest,
     workspaceId: str,
+    caller: Optional[User] = Depends(_get_caller),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """
     현황 보고서를 즉시 생성 요청한다.
-    Worker가 비동기로 수집·생성하며, runId로 진행 상태를 조회할 수 있다.
+    - 일반 사용자: JWT 인증 + 워크스페이스 소유자 확인
+    - 내부 Lambda(스케줄 트리거): X-Internal-Key 인증, 소유자 확인 생략
+    Worker가 SQS 메시지를 수신하여 비동기로 보고서를 생성한다.
     """
-    # 1. 워크스페이스 존재 여부 확인 (404)
     ws = db.query(Workspace).filter(Workspace.id == workspaceId).first()
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
-    # 2. 소유자 권한 확인 (403)
-    if ws.owner_id != current_user.id:
+    # 일반 사용자 호출 시 소유자 권한 확인
+    if caller is not None and ws.owner_id != caller.id:
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
-    # 3. 필수값 검증 (400) — startDate/endDate는 Pydantic datetime으로 자동 검증
     if not req.title or not req.title.strip():
         raise HTTPException(status_code=400, detail="BAD_REQUEST")
 
-    # 4. TODO: Worker 큐에 보고서 생성 작업 전달
-    #    현재는 stub — reportId와 runId만 반환
+    if not _REPORT_QUEUE_URL:
+        raise HTTPException(status_code=503, detail="QUEUE_NOT_CONFIGURED")
+
     run_id = str(uuid.uuid4())
+
+    # Worker 스키마(contracts/payload/job_payload.schema.json) 준수 payload 조립
+    job_payload = {
+        "type": "WEEKLY",
+        "run_id": run_id,
+        "account_id": ws.acct_id,
+        "regions": [_AWS_REGION],
+        "assume_role": {
+            "role_arn": f"arn:aws:iam::{ws.acct_id}:role/{_STS_ROLE_NAME}",
+            "external_id": _STS_EXTERNAL_ID,
+        },
+        "s3": {
+            "bucket": _S3_BUCKET,
+            "prefix": f"account_id={ws.acct_id}/type=WEEKLY/run_id={run_id}",
+        },
+        "time_range": {
+            "start": req.startDate.isoformat(),
+            "end": req.endDate.isoformat(),
+            "timezone": "Asia/Seoul",
+        },
+        "trigger": {
+            "source": "API",
+            "title": req.title,
+            "workspace_id": workspaceId,
+        },
+    }
+
+    # SQS에 보고서 생성 작업 전달
+    try:
+        sqs = boto3.client("sqs", region_name=_AWS_REGION)
+        sqs.send_message(
+            QueueUrl=_REPORT_QUEUE_URL,
+            MessageBody=json.dumps(job_payload),
+        )
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail="QUEUE_ERROR") from e
 
     return SuccessResponse(
         data=SummaryCreateResponse(
-            reportId=0,  # Worker 연동 후 실제 ID로 교체
+            reportId=0,  # Worker가 보고서 생성 후 별도 API로 ID 전달 예정
             runId=run_id,
         )
     )
