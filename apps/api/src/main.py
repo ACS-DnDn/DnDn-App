@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,26 +34,38 @@ app = FastAPI(
 
 # 3. CORS 설정 (프론트엔드 도메인 허용)
 # 개발 환경이므로 일단 모든 출처를 허용(*)합니다. 실무에서는 프론트 주소만 넣으세요.
+_ALLOWED_ORIGINS = [
+    "https://www.dndn.cloud",
+    "https://dndn.cloud",
+    "https://www.dndnhr.cloud",
+    "https://dndnhr.cloud",
+    "http://localhost:3000",   # 로컬 개발
+    "http://localhost:5173",   # Vite 기본 포트
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 예: ["http://localhost:3000"]
-    allow_credentials=False,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 4. 라우터 등록 (여기서 URL들이 합쳐집니다)
-app.include_router(auth.router)
-app.include_router(dashboard.router)
-app.include_router(documents.router)
-app.include_router(org.router)
-app.include_router(github.router)
-app.include_router(report_settings.router)
-app.include_router(reports.router)
-app.include_router(workspaces.router)
-app.include_router(hr_users.router)
-app.include_router(hr_departments.router)
-app.include_router(slack.router)
+# 4. 라우터 등록 — /api prefix 아래에 묶음
+#    프론트엔드가 /api/auth/login 등으로 호출하고,
+#    프로덕션 ALB도 /api prefix를 그대로 전달하므로 일치시킴
+api = APIRouter(prefix="/api")
+api.include_router(auth.router)
+api.include_router(dashboard.router)
+api.include_router(documents.router)
+api.include_router(org.router)
+api.include_router(github.router)
+api.include_router(report_settings.router)
+api.include_router(reports.router)
+api.include_router(workspaces.router)
+api.include_router(hr_users.router)
+api.include_router(hr_departments.router)
+api.include_router(slack.router)
+app.include_router(api)
 
 
 # 💡 1. 우리가 발생시키는 모든 HTTPException을 가로채서 공통 포맷으로 변경

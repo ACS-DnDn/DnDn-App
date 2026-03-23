@@ -16,7 +16,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 # ── 환경 변수 ──────────────────────────────────────────────
-REGION = os.getenv("AWS_REGION", "us-east-1")
+REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "")
 CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "")
 
