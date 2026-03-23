@@ -23,6 +23,7 @@ permissions:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: 387721658341.dkr.ecr.ap-northeast-2.amazonaws.com
+  BASTION_HOST: 13.124.119.204
 
 jobs:
   # ── 변경된 앱 감지 ─────────────────────────────────────────────────────
@@ -179,3 +180,51 @@ jobs:
           docker push $REPO:${{ github.sha }}
           docker push $REPO:latest
           echo "Web image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy: 빌드된 앱 자동 롤아웃 ──────────────────────────────────────
+  deploy:
+    name: Rollout Restart
+    needs: [detect, publish-api, publish-worker, publish-report, publish-web]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/bastion.pem
+          chmod 600 ~/.ssh/bastion.pem
+          ssh-keyscan -H ${{ env.BASTION_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rollout restart changed apps
+        run: |
+          SSH="ssh -i ~/.ssh/bastion.pem -o StrictHostKeyChecking=no ec2-user@${{ env.BASTION_HOST }}"
+          APPS=""
+          if [ "${{ needs.detect.outputs.api }}" = "true" ] && [ "${{ needs.publish-api.result }}" = "success" ]; then
+            APPS="$APPS deployment/dndn-api -n dndn-api"
+          fi
+          if [ "${{ needs.detect.outputs.worker }}" = "true" ] && [ "${{ needs.publish-worker.result }}" = "success" ]; then
+            APPS="$APPS deployment/dndn-worker -n dndn-worker"
+          fi
+          if [ "${{ needs.detect.outputs.report }}" = "true" ] && [ "${{ needs.publish-report.result }}" = "success" ]; then
+            APPS="$APPS deployment/dndn-report -n dndn-report"
+          fi
+          if [ "${{ needs.detect.outputs.web }}" = "true" ] && [ "${{ needs.publish-web.result }}" = "success" ]; then
+            APPS="$APPS deployment/dndn-web -n dndn-web"
+          fi
+          if [ -z "$APPS" ]; then
+            echo "No apps to deploy"
+            exit 0
+          fi
+          # Rollout restart each app
+          for pair in api worker report web; do
+            case "$pair" in
+              api)    [ "${{ needs.detect.outputs.api }}" = "true" ] && [ "${{ needs.publish-api.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-api -n dndn-api" && echo "✓ api" ;;
+              worker) [ "${{ needs.detect.outputs.worker }}" = "true" ] && [ "${{ needs.publish-worker.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-worker -n dndn-worker" && echo "✓ worker" ;;
+              report) [ "${{ needs.detect.outputs.report }}" = "true" ] && [ "${{ needs.publish-report.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-report -n dndn-report" && echo "✓ report" ;;
+              web)    [ "${{ needs.detect.outputs.web }}" = "true" ] && [ "${{ needs.publish-web.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-web -n dndn-web" && echo "✓ web" ;;
+            esac
+          done
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/bastion.pem
