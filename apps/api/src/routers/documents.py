@@ -374,6 +374,21 @@ def get_document_detail(
             }
         )
 
+    # Terraform 코드 (S3에서 조회)
+    terraform_data = _s3_get_json(doc.terraform_key) if doc.terraform_key else None
+
+    # 현재 사용자의 결재 액션 (approve/rejected 가능 여부)
+    my_approval = (
+        db.query(Approval)
+        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
+        .first()
+    )
+    action = None
+    if my_approval and my_approval.status == "current":
+        action = "approve"
+    elif my_approval and my_approval.status == "rejected":
+        action = "rejected"
+
     return SuccessResponse(
         data=DocumentDetailResponse(
             id=str(doc.id),
@@ -381,9 +396,11 @@ def get_document_detail(
             title=doc.title,
             type=doc.type,
             status=doc.status,
+            action=action,
             author={"name": doc.author.name if doc.author else "알수없음", "role": doc.author.position if doc.author else ""},
             createdAt=doc.created_at.isoformat() if doc.created_at else None,
             content=content,
+            terraform=terraform_data,
             refDocs=ref_docs,
             attachments=attachments_list,
             approvalLine=approval_line,

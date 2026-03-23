@@ -88,8 +88,8 @@ export function PlanPage() {
   const [ws, setWs] = useState<{ id: string; alias: string; acctId: string } | null>(null);
 
   useEffect(() => {
-    apiFetch<{ data: OrgDept[] }>('/org/members')
-      .then(res => setOrgData(res.data))
+    apiFetch<{ data: { items: OrgDept[] } }>('/org/members')
+      .then(res => setOrgData(res.data.items))
       .catch(() => {});
     getDocuments({ pageSize: 100 })
       .then(res => setDocList(res.items))

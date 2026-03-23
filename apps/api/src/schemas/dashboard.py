@@ -18,6 +18,7 @@ class NoticeItem(BaseModel):
 
 
 class DashboardDocItem(BaseModel):
+    id: str
     docNum: str
     title: str
     status: Optional[str] = None  # completedDocs에는 status가 없으므로 옵셔널 처리

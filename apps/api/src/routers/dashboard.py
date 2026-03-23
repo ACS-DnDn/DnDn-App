@@ -43,6 +43,7 @@ def get_dashboard(
         doc_status_for_me = "rejected" if doc.status == "rejected" else "waiting"
         pending_docs.append(
             {
+                "id": str(doc.id),
                 "docNum": str(doc.id)[:8],
                 "title": doc.title,
                 "status": doc_status_for_me,
@@ -60,6 +61,7 @@ def get_dashboard(
     for doc in my_docs:
         completed_docs.append(
             {
+                "id": str(doc.id),
                 "docNum": str(doc.id)[:8],
                 "title": doc.title,
                 "type": doc.type if doc.type else "작업 계획서",

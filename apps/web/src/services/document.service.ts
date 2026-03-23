@@ -58,13 +58,14 @@ export async function getDocuments(params?: {
 
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
-    const res = await apiFetch<{
+    const raw = await apiFetch<{ success: boolean; data: {
       id: string; title: string; type: string; status: string; action?: string | null;
       author?: { name: string }; createdAt?: string; workspace?: string;
       content?: string; terraform?: Record<string, string>;
       refDocs?: { id: string; title: string; type: string }[];
       approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
-    }>(`/documents/${id}`);
+    } }>(`/documents/${id}`);
+    const res = raw.data;
     return {
       id: res.id,
       name: res.title,
