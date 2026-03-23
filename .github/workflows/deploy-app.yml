@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'apps/**'
-      - '!apps/web/**'
       - 'contracts/payload/job_payload.schema.json'
       - 'contracts/canonical_model.schema.json'
       - 'contracts/event_model.schema.json'
@@ -28,6 +27,7 @@ jobs:
       api:     ${{ steps.filter.outputs.api }}
       worker:  ${{ steps.filter.outputs.worker }}
       report:  ${{ steps.filter.outputs.report }}
+      web:     ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -41,6 +41,7 @@ jobs:
               - 'contracts/canonical_model.schema.json'
               - 'contracts/event_model.schema.json'
             report: ['apps/report/**']
+            web:    ['apps/web/**']
 
   # ── API ───────────────────────────────────────────────────────────────
   publish-api:
@@ -121,29 +122,26 @@ jobs:
           echo "- dndn-report-worker" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Web ───────────────────────────────────────────────────────────────
-  # Web Dockerfile은 프론트 담당 브랜치에서 별도로 정리 중이므로
-  # 이 브랜치에서는 apps/web 변경만으로는 workflow가 돌지 않게 제외하고,
-  # image publish job도 함께 잠시 비활성화합니다.
-  # publish-web:
-  #   name: Publish Web Image
-  #   needs: detect
-  #   if: needs.detect.outputs.web == 'true'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Configure AWS credentials (OIDC)
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
-  #         aws-region: ${{ env.AWS_REGION }}
-  #
-  #     - name: Login to ECR
-  #       uses: aws-actions/amazon-ecr-login@v2
-  #
-  #     - name: Build & Push
-  #       run: |
-  #         IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
-  #         docker build -t $IMAGE apps/web/
-  #         docker push $IMAGE
-  #         echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+  publish-web:
+    name: Publish Web Image
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        run: |
+          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
+          docker build -t $IMAGE apps/web/
+          docker push $IMAGE
+          echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
