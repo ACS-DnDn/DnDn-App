@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
-import { getDocumentById } from '@/services/document.service';
+import { getDocumentById, getAttachmentDownloadUrl } from '@/services/document.service';
 import { apiFetch } from '@/services/api';
 import './ViewerPage.css';
 
@@ -74,29 +74,7 @@ function mapApprovalLine(items: import('@/mocks/types/document').ApprovalLineIte
   return { mainSteps, collabSteps };
 }
 
-/* ── 첨부 파일 mock ── */
-const ATTACHMENTS = [
-  { name: 'CPU_usage_peaktime.png', size: '1.2 MB' },
-  { name: 'cloudwatch_metrics_0224.csv', size: '85 KB' },
-  { name: 'eks_plan_output.txt', size: '4 KB' },
-];
-
-const TF_PLAN_HTML = `<div class="tf-plan-box"><span class="pl-ok">\u2713 terraform plan 성공</span>
-
-Terraform will perform the following actions:
-
-<span class="pl-add">~ aws_eks_node_group.production_ng</span>
-    instance_types: [
-        - "t3.medium"
-        + "t3.large"
-    ]
-    update_config.max_unavailable: 1
-
-<span class="pl-warn">Plan: 0 to add, 1 to change, 0 to destroy.</span>
-
-<span class="pl-ok">\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</span>
-Note: You didn't use the -out option to save this plan.
-Next steps: Review \u2192 Merge PR \u2192 apply will run automatically.</div>`;
+const TF_PLAN_EMPTY = '<div style="padding:2rem;text-align:center;color:#888;font-size:13px;">최종 결재 후 GitHub PR이 생성되면 CI/CD에서 terraform plan이 실행됩니다.</div>';
 
 /* ── 상태 맵 ── */
 const STATUS_MAP: Record<string, [string, string]> = {
@@ -138,9 +116,13 @@ export function ViewerPage() {
   /* 참조 문서 목록 — API가 직접 반환하는 refDocs 사용 */
   const refDocList = (doc?.refDocs ?? []).map(r => ({ id: r.id, name: r.title, type: r.type }));
 
+  /* 첨부파일 — API 응답 사용 */
+  const attachments = doc?.attachments ?? [];
+
   /* 패널 탭 */
   const [panelTab, setPanelTab] = useState<'refs' | 'attach'>('refs');
-  const [attachChecked, setAttachChecked] = useState<boolean[]>(ATTACHMENTS.map(() => false));
+  const [attachChecked, setAttachChecked] = useState<boolean[]>([]);
+  useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
 
   /* 모달 */
@@ -246,15 +228,26 @@ export function ViewerPage() {
           </div>
           <div className={`panel-tab-content${panelTab === 'attach' ? ' active' : ''}`}>
             <div className="attach-list">
-              {ATTACHMENTS.map((a, i) => (
-                <div className="attach-item" key={i}>
-                  <input type="checkbox" className="attach-check" checked={attachChecked[i]} onChange={() => setAttachChecked(prev => prev.map((c, j) => j === i ? !c : c))} />
+              {attachments.length === 0 ? (
+                <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)' }}>첨부 파일 없음</div>
+              ) : attachments.map((a, i) => (
+                <div className="attach-item" key={a.id}>
+                  <input type="checkbox" className="attach-check" checked={attachChecked[i] ?? false} onChange={() => setAttachChecked(prev => prev.map((c, j) => j === i ? !c : c))} />
                   <span className="attach-name">{a.name}</span>
-                  <span className="attach-size">{a.size}</span>
+                  <span className="attach-size">{a.sizeKb ? `${a.sizeKb} KB` : ''}</span>
                 </div>
               ))}
             </div>
-            <button className="btn-attach-dl" disabled={checkedCount === 0}>
+            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={async () => {
+              if (!doc) return;
+              const selected = attachments.filter((_, i) => attachChecked[i]);
+              for (const a of selected) {
+                try {
+                  const url = await getAttachmentDownloadUrl(doc.id, a.id);
+                  window.open(url, '_blank');
+                } catch { /* skip */ }
+              }
+            }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2v8M5 7l3 3 3-3" /><path d="M3 13h10" /></svg>
               <span>{checkedCount > 0 ? `${checkedCount}개 다운로드` : '다운로드'}</span>
             </button>
@@ -350,7 +343,7 @@ export function ViewerPage() {
             <button type="button" className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</button>
           </div>
           <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: tfHtml }} />
-          <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_HTML }} />
+          <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_EMPTY }} />
         </div>
       </div>
 

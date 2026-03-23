@@ -1,7 +1,6 @@
 import os
 import json
 from urllib.parse import quote
-from fastapi.responses import FileResponse
 
 import boto3
 from botocore.exceptions import ClientError
@@ -711,6 +710,57 @@ def get_ref_document_detail(
     )
 
 
+_PRESIGNED_EXPIRES = int(os.getenv("S3_PRESIGNED_EXPIRES", "3600"))
+_MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100")) * 1024 * 1024  # bytes
+
+
+@router.post("/{documentId}/attachments/presign", summary="첨부파일 업로드 presigned URL 발급")
+def presign_upload(
+    documentId: str,
+    fileName: str = Query(..., description="업로드할 파일명"),
+    fileSizeKb: int = Query(0, description="파일 크기 (KB)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """S3 presigned PUT URL을 발급한다. 프론트에서 이 URL로 직접 업로드."""
+    doc = db.query(Document).filter(Document.id == documentId).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+    if doc.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+    if not _S3_BUCKET:
+        raise HTTPException(status_code=503, detail="S3_NOT_CONFIGURED")
+
+    attachment_id = str(__import__("uuid").uuid4())
+    workspace_id = doc.workspace_id or "default"
+    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{fileName}"
+
+    # presigned PUT URL 생성
+    s3 = _get_s3_client()
+    presigned_url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": _S3_BUCKET, "Key": s3_key},
+        ExpiresIn=_PRESIGNED_EXPIRES,
+    )
+
+    # DB에 첨부파일 메타 저장
+    att = Attachment(
+        id=attachment_id,
+        document_id=documentId,
+        original_name=fileName,
+        file_path=s3_key,
+        size_kb=fileSizeKb,
+    )
+    db.add(att)
+    db.commit()
+
+    return SuccessResponse(data={
+        "attachmentId": attachment_id,
+        "uploadUrl": presigned_url,
+        "s3Key": s3_key,
+    })
+
+
 @router.get("/{documentId}/attachments/{fileId}/download", summary="첨부파일 다운로드")
 def download_attachment(
     documentId: str,
@@ -718,13 +768,11 @@ def download_attachment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 문서 존재 여부 및 접근 권한 확인 (404, 403)
+    """S3 presigned GET URL을 발급하여 리다이렉트."""
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    # 💡 [보안] 명세서의 '403 FORBIDDEN' 처리:
-    # 이 문서의 작성자이거나, 결재선에 포함된 사람만 다운로드할 수 있도록 막아줍니다.
     is_author = doc.author_id == current_user.id
     is_approver = (
         db.query(Approval)
@@ -732,35 +780,64 @@ def download_attachment(
         .first()
         is not None
     )
-
     if not (is_author or is_approver):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
-    # 2. 첨부파일 DB 정보 조회 (404 FILE_NOT_FOUND)
     attachment = (
         db.query(Attachment)
         .filter(Attachment.id == fileId, Attachment.document_id == documentId)
         .first()
     )
-
     if not attachment:
         raise HTTPException(status_code=404, detail="FILE_NOT_FOUND")
 
-    # 3. 실제 서버에 파일이 존재하는지 검증
-    # (나중에 AWS S3를 쓰신다면 boto3를 이용해 S3에서 스트리밍으로 가져오는 로직으로 바뀝니다!)
-    file_path = attachment.file_path
-    if not os.path.exists(file_path):
+    if not _S3_BUCKET:
+        raise HTTPException(status_code=503, detail="S3_NOT_CONFIGURED")
+
+    s3 = _get_s3_client()
+    encoded_filename = quote(attachment.original_name)
+    presigned_url = s3.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": _S3_BUCKET,
+            "Key": attachment.file_path,
+            "ResponseContentDisposition": f"attachment; filename*=utf-8''{encoded_filename}",
+        },
+        ExpiresIn=_PRESIGNED_EXPIRES,
+    )
+
+    return SuccessResponse(data={"downloadUrl": presigned_url})
+
+
+@router.delete("/{documentId}/attachments/{fileId}", summary="첨부파일 삭제")
+def delete_attachment(
+    documentId: str,
+    fileId: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = db.query(Document).filter(Document.id == documentId).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+    if doc.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    attachment = (
+        db.query(Attachment)
+        .filter(Attachment.id == fileId, Attachment.document_id == documentId)
+        .first()
+    )
+    if not attachment:
         raise HTTPException(status_code=404, detail="FILE_NOT_FOUND")
 
-    # 4. 한국어 파일명 깨짐 방지 (URL 인코딩)
-    encoded_filename = quote(attachment.original_name)
+    # S3에서 삭제
+    if _S3_BUCKET:
+        try:
+            _get_s3_client().delete_object(Bucket=_S3_BUCKET, Key=attachment.file_path)
+        except ClientError:
+            pass  # S3 삭제 실패는 무시 (DB에서만 제거)
 
-    # 5. FileResponse로 바이너리 반환! (이 API는 SuccessResponse로 감싸지 않습니다)
-    return FileResponse(
-        path=file_path,
-        filename=attachment.original_name,
-        # 브라우저가 직접 열지 않고 무조건 "다운로드" 하도록 강제하는 헤더
-        headers={
-            "Content-Disposition": f"attachment; filename*=utf-8''{encoded_filename}"
-        },
-    )
+    db.delete(attachment)
+    db.commit()
+
+    return SuccessResponse(data={"deleted": True})

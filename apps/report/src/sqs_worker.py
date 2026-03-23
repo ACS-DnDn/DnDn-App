@@ -1,4 +1,4 @@
-"""SQS Worker — S3 이벤트 알림 수신 → HTML 자동 생성 → S3 저장
+"""SQS Worker — S3 canonical 이벤트 알림 수신 → HTML 자동 생성 → S3 저장
 
 실행:
     python -m src.sqs_worker
@@ -8,6 +8,11 @@
     AWS_REGION      - 리전 (기본: ap-northeast-2)
     S3_BUCKET       - S3 버킷명 (기본: dndn-reports)
     POLL_INTERVAL   - 폴링 대기 없을 때 sleep 초 (기본: 5)
+
+S3 canonical 경로 규칙:
+    canonical/{workspace_id}/findings/{YYYY/MM/DD}/{id}.json  — SecurityHub Finding
+    canonical/{workspace_id}/health/{YYYY/MM/DD}/{id}.json    — AWS Health Event
+    canonical/{workspace_id}/weekly/{job_id}.json             — 주간 보고서 (Worker)
 """
 
 import json
@@ -26,7 +31,9 @@ from .ai_generator import (
     generate_weekly_report,
     generate_health_event_report,
 )
-from .s3_client import get_report, save_report_html, _client as _s3_client, S3_BUCKET
+from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
+from .database import SessionLocal
+from .models import Document
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,9 +47,9 @@ def _sqs_client():
     return boto3.client("sqs", region_name=REGION)
 
 
-def _html_exists(doc_id: str, account_id: str) -> bool:
+def _html_exists(doc_id: str, workspace_id: str) -> bool:
     """이미 HTML이 S3에 존재하면 스킵"""
-    key = f"{account_id}/reports/{doc_id}.html"
+    key = f"{workspace_id}/reports/{doc_id}.html"
     try:
         _s3_client().head_object(Bucket=S3_BUCKET, Key=key)
         return True
@@ -50,15 +57,15 @@ def _html_exists(doc_id: str, account_id: str) -> bool:
         return False
 
 
-def _parse_s3_event(body: str) -> list[tuple[str, str]]:
-    """SQS 메시지 body에서 (account_id, doc_id) 목록 추출.
+def _parse_s3_event(body: str) -> list[tuple[str, str, str]]:
+    """SQS 메시지 body에서 (workspace_id, event_type, s3_key) 목록 추출.
 
     S3 이벤트 알림 포맷:
     {
       "Records": [{
         "s3": {
-          "bucket": {"name": "dndn-reports"},
-          "object": {"key": "default/reports/doc-123.json"}
+          "bucket": {"name": "dndn-prod-s3"},
+          "object": {"key": "canonical/{workspace_id}/{type}/{YYYY/MM/DD}/{id}.json"}
         }
       }]
     }
@@ -73,32 +80,49 @@ def _parse_s3_event(body: str) -> list[tuple[str, str]]:
             key = urllib.parse.unquote_plus(
                 record.get("s3", {}).get("object", {}).get("key", "")
             )
-            # 형식: {account_id}/reports/{doc_id}.json
+            if not key.endswith(".json"):
+                continue
+            # 형식: canonical/{workspace_id}/{type}/{YYYY}/{MM}/{DD}/{id}.json
             parts = key.split("/")
-            if len(parts) < 3:
+            if len(parts) < 3 or parts[0] != "canonical":
+                logger.warning("canonical prefix 아님, 스킵: %s", key)
                 continue
-            if parts[1] != "reports":
-                continue
-            filename = parts[-1]
-            if not filename.endswith(".json"):
-                continue
-            account_id = parts[0]
-            doc_id = filename[:-5]
-            if doc_id:
-                results.append((account_id, doc_id))
+            workspace_id = parts[1]
+            event_type = parts[2] if len(parts) > 2 else "unknown"
+            results.append((workspace_id, event_type, key))
     except Exception as e:
         logger.warning("S3 이벤트 파싱 실패: %s", e)
     return results
 
 
-def _process(account_id: str, doc_id: str):
-    if _html_exists(doc_id, account_id):
+def _read_canonical_from_s3(s3_key: str) -> dict:
+    """S3 key에서 직접 canonical JSON 읽기"""
+    resp = _s3_client().get_object(Bucket=S3_BUCKET, Key=s3_key)
+    return json.loads(resp["Body"].read())
+
+
+def _doc_id_from_key(s3_key: str) -> str:
+    """S3 key에서 doc_id 추출 (파일명에서 .json 제거)"""
+    filename = s3_key.split("/")[-1]
+    return filename[:-5] if filename.endswith(".json") else filename
+
+
+def _process(workspace_id: str, event_type: str, s3_key: str):
+    doc_id = _doc_id_from_key(s3_key)
+
+    if _html_exists(doc_id, workspace_id):
         logger.info("스킵 (HTML 이미 존재): %s", doc_id)
         return
 
-    logger.info("HTML 생성 시작: %s (account: %s)", doc_id, account_id)
-    canonical = get_report(doc_id, account_id)
+    logger.info("HTML 생성 시작: %s (workspace: %s, type: %s)", doc_id, workspace_id, event_type)
 
+    # S3에서 canonical JSON 직접 읽기
+    canonical = _read_canonical_from_s3(s3_key)
+
+    # canonical JSON을 reports/ 경로에도 저장 (API에서 조회용)
+    save_report(doc_id, canonical, workspace_id)
+
+    # meta.type 기반으로 HTML 생성
     meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
     if meta_type == "WEEKLY":
         html = generate_weekly_report(canonical)
@@ -107,8 +131,39 @@ def _process(account_id: str, doc_id: str):
     else:
         html = generate_event_report(canonical)
 
-    save_report_html(doc_id, html, account_id)
-    logger.info("HTML 저장 완료: %s", doc_id)
+    # HTML 저장 → {workspace_id}/reports/{doc_id}.html
+    html_key = save_report_html(doc_id, html, workspace_id)
+
+    # DB에 Document 레코드 생성
+    doc_type = {
+        "findings": "이벤트보고서",
+        "health": "헬스이벤트보고서",
+        "weekly": "주간보고서",
+    }.get(event_type, "이벤트보고서")
+
+    db = SessionLocal()
+    try:
+        existing = db.query(Document).filter(Document.id == doc_id).first()
+        if not existing:
+            title = canonical.get("meta", {}).get("title", doc_id)
+            doc = Document(
+                id=doc_id,
+                title=title,
+                type=doc_type,
+                html_key=html_key,
+                json_key=f"{workspace_id}/reports/{doc_id}.json",
+                workspace_id=workspace_id,
+                status="done",
+            )
+            db.add(doc)
+            db.commit()
+    except Exception as e:
+        logger.error("Document DB 저장 실패 (%s): %s", doc_id, e, exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
+
+    logger.info("HTML 저장 완료: %s → %s", doc_id, html_key)
 
 
 def run():
@@ -134,14 +189,13 @@ def run():
             receipt = msg["ReceiptHandle"]
             try:
                 records = _parse_s3_event(msg["Body"])
-                for account_id, doc_id in records:
+                for workspace_id, event_type, s3_key in records:
                     try:
-                        _process(account_id, doc_id)
+                        _process(workspace_id, event_type, s3_key)
                     except Exception as e:
                         logger.error(
-                            "문서 처리 실패 (%s): %s", doc_id, e, exc_info=True
+                            "문서 처리 실패 (%s): %s", s3_key, e, exc_info=True
                         )
-                        # 개별 문서 실패는 메시지 삭제 (재처리 없음)
                 sqs.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt)
             except Exception as e:
                 logger.error("메시지 처리 실패: %s", e, exc_info=True)

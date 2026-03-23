@@ -1,19 +1,21 @@
 import { apiFetch } from '@/services/api';
-import type { ReportSettings, Schedule, EventSettings, SchedulePreset } from '@/mocks';
-import { reportSettings as mockSettings } from '@/mocks';
+import type { Schedule, EventSettings, SchedulePreset } from '@/mocks';
+
+interface ReportSettingsData {
+  schedules: Schedule[];
+  eventSettings: EventSettings;
+}
 
 interface ApiReportSettingsResponse {
   success: boolean;
   data: { schedules: Schedule[]; eventSettings: EventSettings };
 }
 
-export async function getReportSettings(workspaceId: string): Promise<ReportSettings> {
+export async function getReportSettings(workspaceId: string): Promise<ReportSettingsData> {
   const res = await apiFetch<ApiReportSettingsResponse>(
     `/report-settings?workspaceId=${encodeURIComponent(workspaceId)}`,
   );
-  // summary, opa는 API 미제공 — mock 기본값 유지
   return {
-    ...mockSettings,
     schedules: res.data.schedules,
     eventSettings: res.data.eventSettings,
   };

@@ -18,6 +18,12 @@ export interface RefDocItem {
   type: string;
 }
 
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  sizeKb?: number;
+}
+
 export interface Document {
   id: string;
   docNum?: string;
@@ -33,6 +39,7 @@ export interface Document {
   terraform?: Record<string, string>;
   refDocIds?: string[];
   refDocs?: RefDocItem[];
+  attachments?: AttachmentItem[];
   approvalLine?: ApprovalLineItem[];
 }
 

@@ -56,6 +56,43 @@ export async function getDocuments(params?: {
   return { total: res.data.total, items: res.data.items.map(mapDoc) };
 }
 
+// ── 첨부파일 ──────────────────────────────────────────────
+
+export async function getAttachmentUploadUrl(
+  documentId: string,
+  fileName: string,
+  fileSizeKb: number,
+): Promise<{ attachmentId: string; uploadUrl: string }> {
+  const qs = new URLSearchParams({ fileName, fileSizeKb: String(fileSizeKb) });
+  const res = await apiFetch<{ success: boolean; data: { attachmentId: string; uploadUrl: string } }>(
+    `/documents/${documentId}/attachments/presign?${qs}`,
+    { method: 'POST' },
+  );
+  return res.data;
+}
+
+export async function uploadAttachment(uploadUrl: string, file: File): Promise<void> {
+  await fetch(uploadUrl, { method: 'PUT', body: file });
+}
+
+export async function getAttachmentDownloadUrl(
+  documentId: string,
+  fileId: string,
+): Promise<string> {
+  const res = await apiFetch<{ success: boolean; data: { downloadUrl: string } }>(
+    `/documents/${documentId}/attachments/${fileId}/download`,
+  );
+  return res.data.downloadUrl;
+}
+
+export async function deleteAttachment(documentId: string, fileId: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/documents/${documentId}/attachments/${fileId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── 문서 상세 ─────────────────────────────────────────────
+
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
     const raw = await apiFetch<{ success: boolean; data: {
@@ -63,6 +100,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       author?: { name: string }; createdAt?: string; workspace?: string;
       content?: string; terraform?: Record<string, string>;
       refDocs?: { id: string; title: string; type: string }[];
+      attachments?: { id: string; name: string; sizeKb?: number }[];
       approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
     } }>(`/documents/${id}`);
     const res = raw.data;
@@ -80,6 +118,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       terraform: res.terraform,
       refDocs: res.refDocs,
       refDocIds: res.refDocs?.map(d => d.id),
+      attachments: res.attachments,
       approvalLine: res.approvalLine,
     };
   } catch (err) {

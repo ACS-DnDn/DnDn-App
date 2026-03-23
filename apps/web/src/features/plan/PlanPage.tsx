@@ -677,7 +677,7 @@ export function PlanPage() {
             <iframe
               ref={iframeRef}
               className="plan-iframe"
-              {...(iframeSrc ? { src: iframeSrc } : { src: '/mock/plan-sample.html' })}
+              {...(iframeSrc ? { src: iframeSrc } : {})}
               onLoad={() => {
                 const doc = iframeRef.current?.contentDocument;
                 if (doc) {
