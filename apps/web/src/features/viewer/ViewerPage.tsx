@@ -169,15 +169,11 @@ export function ViewerPage() {
     setApproveModalOpen(false);
     setActionLoading(true);
     try {
-      const res = await apiFetch<{ success: boolean; data: { newStatus: string } }>(
+      await apiFetch<{ success: boolean; data: { newStatus: string } }>(
         `/documents/${id}/approve`,
         { method: 'POST', body: JSON.stringify({ comment: approveOpinion.trim() || null }) }
       );
-      if (res.data.newStatus === 'done') {
-        navigate('/documents', { replace: true });
-      } else {
-        navigate('/documents', { replace: true });
-      }
+      navigate('/documents', { replace: true });
     } catch {
       alert('결재 처리 중 오류가 발생했습니다.');
     } finally {

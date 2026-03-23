@@ -246,8 +246,8 @@ export function PlanPage() {
   async function pollJob(jobId: string): Promise<Record<string, unknown>> {
     for (let i = 0; i < 120; i++) {
       await new Promise<void>(r => setTimeout(r, 1000));
-      const json = await apiFetch<{ status: string; result?: Record<string, unknown>; error?: { message: string } }>(`/documents/generate/${jobId}`);
-      const { status, result, error } = json;
+      const raw = await apiFetch<{ success: boolean; data: { status: string; result?: Record<string, unknown>; error?: { message: string } } }>(`/documents/generate/${jobId}`);
+      const { status, result, error } = raw.data;
       if (status === 'done') return result ?? {};
       if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
     }
@@ -264,7 +264,7 @@ export function PlanPage() {
     setLogEntries([]);
     setDraftDocumentId(null);
     try {
-      const json = await apiFetch<{ jobId: string }>('/documents/generate/plan', {
+      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/plan', {
         method: 'POST',
         body: JSON.stringify({
           workspaceId: ws?.id,
@@ -273,15 +273,15 @@ export function PlanPage() {
           ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
         }),
       });
-      const { jobId } = json;
+      const { jobId } = raw.data;
       const result = await pollJob(jobId);
       setDraftDocumentId(result.documentId as string);
       // API 응답의 htmlContent로 Blob URL 생성 (S3 CORS 우회)
       const blob = new Blob([result.htmlContent as string], { type: 'text/html' });
+      if (iframeSrc) URL.revokeObjectURL(iframeSrc);
       setIframeSrc(URL.createObjectURL(blob));
       setDocState('ready');
     } catch (err) {
-      console.error('workplan API error:', err);
       setDocState('blank');
       alert('계획서 생성 중 오류가 발생했습니다: ' + String(err));
     }
@@ -326,8 +326,7 @@ export function PlanPage() {
         }),
       });
       navigate(`/viewer/${res.data.id}`);
-    } catch (err) {
-      console.error('결재 상신 실패:', err);
+    } catch {
       alert('결재 상신에 실패했습니다. 다시 시도해 주세요.');
     }
   }
@@ -344,11 +343,11 @@ export function PlanPage() {
     addLog('작업 계획서 분석 중...', 'muted', 0);
     addLog('Terraform 코드 생성 중...', 'run', 0);
     try {
-      const json = await apiFetch<{ jobId: string }>('/documents/generate/terraform', {
+      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
         method: 'POST',
         body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
       });
-      const { jobId } = json;
+      const { jobId } = raw.data;
       const result = await pollJob(jobId);
       const rawFiles = (result.files as Record<string, string>) ?? {};
       const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
@@ -362,7 +361,6 @@ export function PlanPage() {
       setTfStatusText('생성 완료');
       await runValidation(files, files.map(f => f.code));
     } catch (err) {
-      console.error('terraform API error:', err);
       setTfState('blank');
       setTfStatus('pending');
       setTfStatusText('대기 중');
@@ -371,7 +369,7 @@ export function PlanPage() {
   }
 
   async function _doValidate(fileMap: Record<string, string>) {
-    return apiFetch<ValidationResult>('/documents/generate/terraform/validate', {
+    return apiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
       method: 'POST',
       body: JSON.stringify({ files: fileMap, workspaceId: ws?.id }),
     });
@@ -388,7 +386,8 @@ export function PlanPage() {
     try {
       const fileMap: Record<string, string> = {};
       files.forEach((f, i) => { fileMap[f.name] = codes[i] ?? f.code; });
-      const result = await _doValidate(fileMap);
+      const raw = await _doValidate(fileMap);
+      const result = raw.data;
       setLastValidation(result);
 
       updateLog(secId,
@@ -421,7 +420,7 @@ export function PlanPage() {
         const fixLogId = Math.random().toString(36).slice(2);
         setLogEntries(prev => [...prev, { id: fixLogId, time: now(), msg: '이슈 자동 수정 중...', type: 'run', tab: -1 }]);
         try {
-          const fixResult = await apiFetch<{ files: Record<string, string> }>('/documents/generate/terraform/fix', {
+          const fixRaw = await apiFetch<{ success: boolean; data: { files: Record<string, string> } }>('/documents/generate/terraform/fix', {
             method: 'POST',
             body: JSON.stringify({
               files: fileMap,
@@ -430,7 +429,7 @@ export function PlanPage() {
               opaWarns: result.opa.warns ?? [],
             }),
           });
-          const fixedFiles = Object.entries(fixResult.files).map(([name, code]) => ({ name, code }));
+          const fixedFiles = Object.entries(fixRaw.data.files).map(([name, code]) => ({ name, code }));
           setGeneratedTfFiles(fixedFiles);
           setTfCodes(fixedFiles.map(f => f.code));
           updateLog(fixLogId, '코드 수정 완료 → 재검증 중...', 'ok');
