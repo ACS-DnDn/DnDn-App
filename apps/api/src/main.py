@@ -91,3 +91,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.get("/", tags=["System"])
 async def root():
     return {"message": "AI Document System API Server is Running!"}
+
+
+@app.get("/health", tags=["System"])
+async def health():
+    return {"status": "ok"}
