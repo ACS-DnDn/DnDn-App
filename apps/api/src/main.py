@@ -33,7 +33,7 @@ app = FastAPI(
 )
 
 # 3. CORS 설정 (프론트엔드 도메인 허용)
-# 개발 환경이므로 일단 모든 출처를 허용(*)합니다. 실무에서는 프론트 주소만 넣으세요.
+# 프로덕션 도메인과 로컬 개발 환경만 허용합니다.
 _ALLOWED_ORIGINS = [
     "https://www.dndn.cloud",
     "https://dndn.cloud",

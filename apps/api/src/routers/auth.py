@@ -8,6 +8,7 @@ from typing import Union
 import urllib.request
 import json
 import datetime
+import logging
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User
@@ -74,8 +75,7 @@ def get_jwks():
             if not cache_valid and (jwks_cache is None or "data" not in jwks_cache):
                 raise
             # 이전 캐시가 있으면 로그만 남기고 기존 캐시를 계속 사용한다.
-            import logging as _logging
-            _logging.getLogger(__name__).warning("JWKS fetch error, using cached JWKS: %s", e)
+            logging.getLogger(__name__).warning("JWKS fetch error, using cached JWKS: %s", e)
 
     if isinstance(jwks_cache, dict) and "data" in jwks_cache:
         return jwks_cache["data"]
