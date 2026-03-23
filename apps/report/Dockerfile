@@ -12,9 +12,9 @@ RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 # non-root 실행을 위해 venv 권한 설정
 RUN chmod -R o+rx /app/.venv
 
-# 소스 복사
-COPY src/ ./src/
+# import 경로가 apps.report.src.* 이므로 컨테이너 안에서도 동일한 경로를 유지
+COPY src ./apps/report/src
 
 EXPOSE 8000
 
-CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "apps.report.src.main:app", "--host", "0.0.0.0", "--port", "8000"]
