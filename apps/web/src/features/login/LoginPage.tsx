@@ -13,22 +13,33 @@ const PW_RULES = [
   { label: '특수문자 포함', test: (v: string) => /[^A-Za-z0-9]/.test(v) },
 ];
 
+type PageMode = 'login' | 'challenge' | 'forgot' | 'reset';
+
 export function LoginPage() {
   const navigate = useNavigate();
   const { isDark, toggle } = useTheme();
-  const { login, challenge } = useAuth();
+  const { login, challenge, forgotPassword, confirmResetPassword } = useAuth();
 
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const pwRef = useRef<HTMLInputElement>(null);
 
+  // 페이지 모드
+  const [mode, setMode] = useState<PageMode>('login');
+
   // challenge 상태 (NEW_PASSWORD_REQUIRED)
-  const [challengeMode, setChallengeMode] = useState(false);
   const [challengeSession, setChallengeSession] = useState('');
   const [challengeEmail, setChallengeEmail] = useState('');
 
-  // 모달 상태
+  // forgot password 상태
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotDestination, setForgotDestination] = useState('');
+
+  // reset 상태
+  const [resetCode, setResetCode] = useState('');
+
+  // 모달 상태 (challenge + reset 공용)
   const [modalError, setModalError] = useState('');
   const [modalLoading, setModalLoading] = useState(false);
   const newPwRef = useRef<HTMLInputElement>(null);
@@ -38,6 +49,16 @@ export function LoginPage() {
   const [showRules, setShowRules] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
+
+  function resetModalState() {
+    setModalError('');
+    setModalLoading(false);
+    setNewPwValue('');
+    setConfirmPwValue('');
+    setShowRules(false);
+    setShowNewPw(false);
+    setShowConfirmPw(false);
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -54,7 +75,8 @@ export function LoginPage() {
       if (result.type === 'challenge') {
         setChallengeEmail(email);
         setChallengeSession(result.session);
-        setChallengeMode(true);
+        resetModalState();
+        setMode('challenge');
       } else {
         navigate('/dashboard');
       }
@@ -97,6 +119,54 @@ export function LoginPage() {
     }
   }
 
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!forgotEmail) { setError('이메일을 입력해 주세요.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail)) { setError('올바른 이메일 형식을 입력해 주세요.'); return; }
+
+    setError('');
+    setIsLoading(true);
+    try {
+      const destination = await forgotPassword(forgotEmail);
+      setForgotDestination(destination);
+      resetModalState();
+      setResetCode('');
+      setMode('reset');
+    } catch {
+      setError('인증 코드 발송에 실패했습니다. 이메일을 확인해 주세요.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleConfirmReset(e: React.FormEvent) {
+    e.preventDefault();
+    const newPw = newPwRef.current?.value ?? '';
+    const confirmPw = confirmPwRef.current?.value ?? '';
+
+    if (!resetCode.trim()) { setModalError('인증 코드를 입력해 주세요.'); return; }
+    if (!newPw) { setModalError('새 비밀번호를 입력해 주세요.'); newPwRef.current?.focus(); return; }
+
+    const failedRule = PW_RULES.find((r) => !r.test(newPw));
+    if (failedRule) { setModalError(`${failedRule.label} 조건을 충족해야 합니다.`); newPwRef.current?.focus(); return; }
+
+    if (newPw !== confirmPw) { setModalError('비밀번호가 일치하지 않습니다.'); confirmPwRef.current?.focus(); return; }
+
+    setModalError('');
+    setModalLoading(true);
+    try {
+      await confirmResetPassword(forgotEmail, resetCode.trim(), newPw);
+      setMode('login');
+      setError('');
+      // 비밀번호 변경 성공 메시지를 login 화면 에러 영역에 표시 (초록색 아님, 단순 안내)
+      setError('비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.');
+    } catch {
+      setModalError('비밀번호 재설정에 실패했습니다. 인증 코드를 확인해 주세요.');
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
   return (
     <>
       <button type="button" className="mode-toggle" onClick={toggle} aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}>
@@ -110,18 +180,47 @@ export function LoginPage() {
           <AnimatedLogo variant={isDark ? 'dark' : 'light'} className="login-logo-obj" />
         </div>
 
-        <form className="form" onSubmit={handleLogin} noValidate>
-          <div className="field">
-            <input className="field-input" ref={emailRef} type="email" placeholder="이메일" autoComplete="email" />
-          </div>
-          <div className="field">
-            <input className="field-input" ref={pwRef} type="password" placeholder="비밀번호" autoComplete="current-password" />
-            <div className={`error-msg${error ? ' show' : ''}`}>{error}</div>
-          </div>
-          <button className="btn-login" type="submit" disabled={isLoading}>
-            {isLoading ? '로그인 중...' : 'LOGIN'}
-          </button>
-        </form>
+        {mode === 'login' && (
+          <form className="form" onSubmit={handleLogin} noValidate>
+            <div className="field">
+              <input className="field-input" ref={emailRef} type="email" placeholder="이메일" autoComplete="email" />
+            </div>
+            <div className="field">
+              <input className="field-input" ref={pwRef} type="password" placeholder="비밀번호" autoComplete="current-password" />
+              <div className={`error-msg${error ? ' show' : ''}`}>{error}</div>
+            </div>
+            <button className="btn-login" type="submit" disabled={isLoading}>
+              {isLoading ? '로그인 중...' : 'LOGIN'}
+            </button>
+            <button type="button" className="forgot-link" onClick={() => { setMode('forgot'); setError(''); setForgotEmail(''); }}>
+              비밀번호를 잊으셨나요?
+            </button>
+          </form>
+        )}
+
+        {mode === 'forgot' && (
+          <form className="form" onSubmit={handleForgotPassword} noValidate>
+            <p className="forgot-desc">가입한 이메일을 입력하면 비밀번호 재설정 코드를 보내드립니다.</p>
+            <div className="field">
+              <input
+                className="field-input"
+                type="email"
+                placeholder="이메일"
+                autoComplete="email"
+                autoFocus
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+              />
+              <div className={`error-msg${error ? ' show' : ''}`}>{error}</div>
+            </div>
+            <button className="btn-login" type="submit" disabled={isLoading}>
+              {isLoading ? '발송 중...' : '인증 코드 발송'}
+            </button>
+            <button type="button" className="forgot-link" onClick={() => { setMode('login'); setError(''); }}>
+              로그인으로 돌아가기
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="version">DnDn v2.0</div>
@@ -149,8 +248,8 @@ export function LoginPage() {
         </a>
       </div>
 
-      {/* ── 비밀번호 변경 모달 ── */}
-      {challengeMode && (
+      {/* ── 비밀번호 변경 모달 (challenge) ── */}
+      {mode === 'challenge' && (
         <div className="pw-modal-overlay">
           <div className="pw-modal">
             <h3 className="pw-modal-title">비밀번호를 변경해주세요</h3>
@@ -211,6 +310,88 @@ export function LoginPage() {
               <p className={`pw-modal-error${modalError ? ' pw-modal-error--show' : ''}`}>{modalError || '\u00A0'}</p>
               <button className="pw-modal-btn" type="submit" disabled={modalLoading}>
                 {modalLoading ? '변경 중...' : '비밀번호 변경'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 비밀번호 재설정 모달 (코드 + 새 비밀번호) ── */}
+      {mode === 'reset' && (
+        <div className="pw-modal-overlay">
+          <div className="pw-modal">
+            <h3 className="pw-modal-title">비밀번호 재설정</h3>
+            <p className="pw-modal-desc">{forgotDestination}으로 발송된 인증 코드를 입력해 주세요.</p>
+            <form onSubmit={handleConfirmReset} noValidate>
+              <div className="pw-modal-field">
+                <input
+                  className="pw-modal-input"
+                  type="text"
+                  placeholder="인증 코드"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value)}
+                />
+              </div>
+              <div className="pw-modal-field pw-modal-field--has-rules pw-modal-field--toggle">
+                <input
+                  className="pw-modal-input"
+                  ref={newPwRef}
+                  type={showNewPw ? 'text' : 'password'}
+                  placeholder="새 비밀번호"
+                  autoComplete="new-password"
+                  value={newPwValue}
+                  onChange={(e) => setNewPwValue(e.target.value)}
+                  onFocus={() => setShowRules(true)}
+                  onBlur={() => setShowRules(false)}
+                />
+                <button type="button" className={`pw-eye-btn${showNewPw ? ' pw-eye-btn--active' : ''}`} onClick={() => setShowNewPw(!showNewPw)} tabIndex={-1} aria-label={showNewPw ? '비밀번호 숨기기' : '비밀번호 보기'}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+                {showRules && (
+                  <div className="pw-rules-tooltip">
+                    {PW_RULES.map((rule) => {
+                      const passed = rule.test(newPwValue);
+                      return (
+                        <div key={rule.label} className={`pw-rule ${passed ? 'pw-rule--pass' : ''}`}>
+                          <span className="pw-rule-icon">{passed ? '✓' : '✗'}</span>
+                          {rule.label}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="pw-modal-field pw-modal-field--toggle">
+                <input
+                  className="pw-modal-input"
+                  ref={confirmPwRef}
+                  type={showConfirmPw ? 'text' : 'password'}
+                  placeholder="새 비밀번호 확인"
+                  autoComplete="new-password"
+                  value={confirmPwValue}
+                  onChange={(e) => setConfirmPwValue(e.target.value)}
+                />
+                {confirmPwValue && newPwValue && confirmPwValue === newPwValue && (
+                  <span className="pw-match-icon">✓</span>
+                )}
+                <button type="button" className={`pw-eye-btn${showConfirmPw ? ' pw-eye-btn--active' : ''}`} onClick={() => setShowConfirmPw(!showConfirmPw)} tabIndex={-1} aria-label={showConfirmPw ? '비밀번호 숨기기' : '비밀번호 보기'}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </div>
+              <p className={`pw-modal-error${modalError ? ' pw-modal-error--show' : ''}`}>{modalError || '\u00A0'}</p>
+              <button className="pw-modal-btn" type="submit" disabled={modalLoading}>
+                {modalLoading ? '변경 중...' : '비밀번호 변경'}
+              </button>
+              <button type="button" className="pw-modal-back" onClick={() => { setMode('login'); setError(''); }}>
+                로그인으로 돌아가기
               </button>
             </form>
           </div>

@@ -51,3 +51,29 @@ class RefreshResponse(BaseModel):
     expiresIn: int
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v: str) -> str:
+        if not _EMAIL_RE.match(v):
+            raise ValueError("올바른 이메일 형식이 아닙니다.")
+        return v.strip().lower()
+
+
+class ForgotPasswordResponse(BaseModel):
+    destination: str
+
+
+class ConfirmResetRequest(BaseModel):
+    email: str
+    code: str = Field(..., min_length=1)
+    newPassword: str = Field(..., min_length=8)
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v: str) -> str:
+        if not _EMAIL_RE.match(v):
+            raise ValueError("올바른 이메일 형식이 아닙니다.")
+        return v.strip().lower()
