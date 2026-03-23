@@ -122,26 +122,28 @@ jobs:
           echo "- dndn-report-worker" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Web ───────────────────────────────────────────────────────────────
-  publish-web:
-    name: Publish Web Image
-    needs: detect
-    if: needs.detect.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & Push
-        run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
-          docker build -t $IMAGE apps/web/
-          docker push $IMAGE
-          echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+  # Web Dockerfile은 프론트 담당 브랜치에서 별도로 정리 중이므로
+  # 이 브랜치에서는 image publish job을 잠시 비활성화합니다.
+  # publish-web:
+  #   name: Publish Web Image
+  #   needs: detect
+  #   if: needs.detect.outputs.web == 'true'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
+  #         aws-region: ${{ env.AWS_REGION }}
+  #
+  #     - name: Login to ECR
+  #       uses: aws-actions/amazon-ecr-login@v2
+  #
+  #     - name: Build & Push
+  #       run: |
+  #         IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
+  #         docker build -t $IMAGE apps/web/
+  #         docker push $IMAGE
+  #         echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
