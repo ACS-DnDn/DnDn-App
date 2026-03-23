@@ -122,9 +122,11 @@ class DocumentDetailResponse(BaseModel):
     title: str
     type: str
     status: str
+    action: Optional[str] = None
     author: DocumentAuthor
     createdAt: Optional[str] = None
     content: Optional[str] = None
+    terraform: Optional[Dict[str, Any]] = None
     refDocs: List[DocumentRefDoc]
     attachments: List[DocumentAttachment]
     approvalLine: List[DocumentApprovalLine]

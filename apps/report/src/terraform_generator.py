@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import boto3
@@ -7,6 +8,10 @@ import threading
 import time
 from typing import Any
 from github import Github
+
+from .database import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")  # Legacy
@@ -241,10 +246,80 @@ def _run_checkov_scan(files: list) -> dict:
 
 
 # ─────────────────────────────────────────────────
+# OPA 정책 조회 (DB)
+# ─────────────────────────────────────────────────
+
+def _load_opa_policies(workspace_id: str) -> list[dict]:
+    """workspaces 테이블의 opa_settings JSON 컬럼에서 정책을 읽는다."""
+    from sqlalchemy import text
+
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text("SELECT opa_settings FROM workspaces WHERE id = :ws_id"),
+            {"ws_id": workspace_id},
+        ).fetchone()
+        if not row or not row[0]:
+            return []
+        settings = row[0] if isinstance(row[0], list) else json.loads(row[0])
+        return settings
+    except Exception as e:
+        logger.warning("OPA 정책 조회 실패 (계속 진행): %s", e)
+        return []
+    finally:
+        db.close()
+
+
+def _format_opa_for_prompt(policies: list[dict]) -> str:
+    """OPA 정책을 Bedrock 프롬프트에 삽입할 자연어 제약조건 텍스트로 변환한다."""
+    if not policies:
+        return ""
+
+    lines = []
+    for category in policies:
+        cat_name = category.get("category", "")
+        items = category.get("items", [])
+        active_items = [it for it in items if it.get("on")]
+        if not active_items:
+            continue
+
+        lines.append(f"\n### {cat_name}")
+        for item in active_items:
+            severity = item.get("severity", "warn").upper()
+            label = item.get("label", "")
+            line = f"- [{severity}] {label}"
+
+            params = item.get("params")
+            if params:
+                p_type = params.get("type")
+                if p_type == "list":
+                    values = params.get("values", [])
+                    if values:
+                        line += f" (허용 값: {', '.join(values)})"
+                elif p_type == "number":
+                    line += f" (최소값: {params.get('value', '')} {params.get('unit', '')})"
+                elif p_type == "services":
+                    values = params.get("values", [])
+                    if values:
+                        line += f" (적용 서비스: {', '.join(values)})"
+
+            exceptions = item.get("exceptions", [])
+            if exceptions:
+                line += f" — 예외: {', '.join(exceptions)}"
+
+            lines.append(line)
+
+    if not lines:
+        return ""
+
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────
 # Bedrock 호출
 # ─────────────────────────────────────────────────
 
-def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
+def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "") -> dict:
     client = boto3.client("bedrock-runtime", region_name=REGION)
 
     aws_docs_section = (
@@ -256,7 +331,13 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
         if mcp_context.get("best_practices") else ""
     )
 
-    system = """
+    opa_rule = ""
+    opa_section = ""
+    if opa_text:
+        opa_rule = "\n5. 워크스페이스 인프라 정책(OPA)을 반드시 준수하세요. BLOCK 정책 위반 시 해당 리소스 설정을 정책에 맞게 수정하세요."
+        opa_section = f"\n## 워크스페이스 인프라 정책 (OPA)\n아래 정책을 반드시 준수하여 코드를 생성하세요. BLOCK은 필수 준수, WARN은 권고 사항입니다.\n{opa_text}\n"
+
+    system = f"""
 당신은 AWS 인프라 테라폼 코드 전문가입니다.
 작업계획서, 기존 테라폼 코드, AWS 공식 문서를 분석하여 바로 apply 가능한 테라폼 코드를 생성하세요.
 
@@ -264,8 +345,8 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
 1. 기존 코드의 네이밍 컨벤션, 변수 스타일, 태그 구조를 반드시 따르세요
 2. AWS Provider 공식 문서의 최신 argument를 사용하세요
 3. AWS Best Practices를 반드시 준수하세요
-4. Checkov 보안 스캔을 통과할 수 있도록 보안 설정을 포함하세요
-5. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
+4. Checkov 보안 스캔을 통과할 수 있도록 보안 설정을 포함하세요{opa_rule}
+6. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
 """.strip()
 
     user = f"""
@@ -276,6 +357,7 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict) -> dict:
 {existing_tf}
 {aws_docs_section}
 {best_practices_section}
+{opa_section}
 
 위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
 
@@ -322,26 +404,40 @@ def generate_terraform_code(
     workplan: dict,
     repo_name: str,
     github_token: str = None,
+    workspace_id: str | None = None,
 ) -> dict:
     """
-    작업계획서 + MCP(AWS Provider 문서 + Checkov) → 테라폼 코드 생성
+    작업계획서 + OPA 정책 + MCP(AWS Provider 문서 + Checkov) → 테라폼 코드 생성
 
     흐름:
     1. GitHub .tf 수집 (기존 스타일 학습)
-    2. MCP로 AWS Provider 문서 + Best Practices 조회
-    3. Bedrock으로 코드 생성
-    4. MCP Checkov로 보안 스캔
+    2. DB에서 워크스페이스 OPA 정책 조회
+    3. MCP로 AWS Provider 문서 + Best Practices 조회
+    4. Bedrock으로 코드 생성 (OPA 정책 포함)
+    5. MCP Checkov로 보안 스캔
     """
-    print("[1/4] GitHub .tf 코드 수집 중...")
+    print("[1/5] GitHub .tf 코드 수집 중...")
     existing_tf = load_tf_from_github(repo_name, github_token)
 
-    print("[2/4] MCP로 AWS 문서 조회 중...")
+    opa_text = ""
+    if workspace_id:
+        print("[2/5] DB에서 OPA 정책 조회 중...")
+        opa_policies = _load_opa_policies(workspace_id)
+        opa_text = _format_opa_for_prompt(opa_policies)
+        if opa_text:
+            print(f"[2/5] OPA 정책 {sum(len(c.get('items', [])) for c in opa_policies)}개 항목 로드 완료")
+        else:
+            print("[2/5] 활성화된 OPA 정책 없음")
+    else:
+        print("[2/5] workspace_id 없음 — OPA 정책 스킵")
+
+    print("[3/5] MCP로 AWS 문서 조회 중...")
     mcp_context = _fetch_mcp_context(workplan)
 
-    print("[3/4] Bedrock으로 코드 생성 중...")
-    generated = _call_bedrock(workplan, existing_tf, mcp_context)
+    print("[4/5] Bedrock으로 코드 생성 중...")
+    generated = _call_bedrock(workplan, existing_tf, mcp_context, opa_text)
 
-    print("[4/4] MCP Checkov 보안 스캔 중...")
+    print("[5/5] MCP Checkov 보안 스캔 중...")
     checkov_result = _run_checkov_scan(generated.get("files", []))
 
     return {**generated, "checkov": checkov_result}

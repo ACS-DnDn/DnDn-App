@@ -2091,7 +2091,30 @@ def run_job_from_payload(
                     retryable=True,
                 ) from sync_err
 
+        # canonical/ prefix에 복사 → S3 알림 → SQS → Reporter 자동 트리거
+        _copy_canonical_for_reporter(bucket, prefix, result_path.name)
+
         return result_path
+
+    def _copy_canonical_for_reporter(bucket: str, prefix: str, result_filename: str) -> None:
+        """normalized 결과를 canonical/{workspace_id}/weekly/{run_id}.json에 복사.
+        S3 Event Notification(canonical/ prefix) → SQS → Reporter sqs_worker 트리거.
+        """
+        ws_id = (payload.get("trigger") or {}).get("workspace_id")
+        if not ws_id:
+            return
+        source_key = f"{prefix}/normalized/{result_filename}"
+        canonical_key = f"canonical/{ws_id}/weekly/{run_id}.json"
+        try:
+            storage_session.client("s3").copy_object(
+                Bucket=bucket,
+                CopySource={"Bucket": bucket, "Key": source_key},
+                Key=canonical_key,
+                ServerSideEncryption="AES256",
+            )
+            print(f"[run_job] canonical 복사 완료: s3://{bucket}/{canonical_key}")
+        except Exception as e:
+            print(f"[run_job] canonical 복사 실패 (Reporter 트리거 불가): {e}")
 
     collection_status: Dict[str, Any] = {
         "assume_role": {"status": "NA", "na_reason": "UNKNOWN", "message": "not started"},

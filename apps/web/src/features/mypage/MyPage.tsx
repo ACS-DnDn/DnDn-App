@@ -61,31 +61,48 @@ export function MyPage() {
       .catch(() => setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true }));
   }, []);
 
-  // Slack OAuth 팝업 + postMessage 처리
+  // Slack OAuth 팝업 + localStorage 이벤트 처리
   const handleSlackConnect = useCallback(async () => {
     if (saving) return;
     setSaving(true);
     try {
       const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/slack/auth');
+      localStorage.removeItem('slack-oauth-result');
       const popup = window.open(res.data.authorizeUrl, 'slack-oauth', 'width=600,height=700');
+      if (!popup) { setSaving(false); return; }
 
-      const onMessage = async (e: MessageEvent) => {
-        if (e.origin !== window.location.origin || e.data?.type !== 'slack-oauth') return;
-        window.removeEventListener('message', onMessage);
-        popup?.close();
-
-        if (e.data.error) { setSaving(false); return; }
+      const onStorage = async (e: StorageEvent) => {
+        if (e.key !== 'slack-oauth-result' || !e.newValue) return;
+        window.removeEventListener('storage', onStorage);
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        localStorage.removeItem('slack-oauth-result');
 
         try {
-          const cb = await apiFetch<{ success: boolean; data: SlackStatus }>(
-            `/slack/callback?code=${encodeURIComponent(e.data.code)}&state=${encodeURIComponent(e.data.state)}`,
-          );
-          setSlack(cb.data);
+          const result = JSON.parse(e.newValue);
+          if (!result.error) {
+            const status = await apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status');
+            setSlack(status.data);
+          }
         } catch { /* ignore */ } finally {
           setSaving(false);
         }
       };
-      window.addEventListener('message', onMessage);
+      window.addEventListener('storage', onStorage);
+
+      let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+        if (popup?.closed) {
+          setTimeout(() => {
+            const stored = localStorage.getItem('slack-oauth-result');
+            if (stored) {
+              onStorage({ key: 'slack-oauth-result', newValue: stored } as StorageEvent);
+            } else {
+              window.removeEventListener('storage', onStorage);
+              setSaving(false);
+            }
+          }, 1500);
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+      }, 1000);
     } catch {
       setSaving(false);
     }
@@ -160,7 +177,7 @@ export function MyPage() {
                 {AUTH_LABELS[session.auth] || session.auth}
               </span>
             </div>
-            <div className="banner-role">{session.role}</div>
+            <div className="banner-role">{session.position || session.role}</div>
             <div className="banner-company">{session.company.name}</div>
           </div>
         </div>

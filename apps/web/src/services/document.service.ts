@@ -56,26 +56,73 @@ export async function getDocuments(params?: {
   return { total: res.data.total, items: res.data.items.map(mapDoc) };
 }
 
+// ── 첨부파일 ──────────────────────────────────────────────
+
+export async function getAttachmentUploadUrl(
+  documentId: string,
+  fileName: string,
+  fileSizeKb: number,
+): Promise<{ attachmentId: string; uploadUrl: string }> {
+  const qs = new URLSearchParams({ fileName, fileSizeKb: String(fileSizeKb) });
+  const res = await apiFetch<{ success: boolean; data: { attachmentId: string; uploadUrl: string } }>(
+    `/documents/${documentId}/attachments/presign?${qs}`,
+    { method: 'POST' },
+  );
+  return res.data;
+}
+
+export async function uploadAttachment(uploadUrl: string, file: File): Promise<void> {
+  const res = await fetch(uploadUrl, { method: 'PUT', body: file });
+  if (!res.ok) {
+    throw new Error(`업로드 실패: ${res.status} ${res.statusText}`);
+  }
+}
+
+export async function getAttachmentDownloadUrl(
+  documentId: string,
+  fileId: string,
+): Promise<string> {
+  const res = await apiFetch<{ success: boolean; data: { downloadUrl: string } }>(
+    `/documents/${documentId}/attachments/${fileId}/download`,
+  );
+  return res.data.downloadUrl;
+}
+
+export async function deleteAttachment(documentId: string, fileId: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/documents/${documentId}/attachments/${fileId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── 문서 상세 ─────────────────────────────────────────────
+
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
-    const res = await apiFetch<{
-      id: string; title: string; type: string; status: string;
-      author?: { name: string }; date?: string; workspace?: string;
-      content?: string; terraform?: Record<string, string>; ref_doc_ids?: string[];
-    }>(`/documents/${id}`);
+    const raw = await apiFetch<{ success: boolean; data: {
+      id: string; title: string; type: string; status: string; action?: string | null;
+      author?: { name: string }; createdAt?: string; workspace?: string;
+      content?: string; terraform?: Record<string, string>;
+      refDocs?: { id: string; title: string; type: string }[];
+      attachments?: { id: string; name: string; sizeKb?: number }[];
+      approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
+    } }>(`/documents/${id}`);
+    const res = raw.data;
     return {
       id: res.id,
       name: res.title,
       author: res.author?.name ?? '',
-      date: res.date ?? '',
+      date: res.createdAt ?? '',
       type: res.type as Document['type'],
       status: res.status as Document['status'],
-      action: null,
+      action: (res.action ?? null) as Document['action'],
       icon: '📄',
       workspace: res.workspace ?? '',
       content: res.content,
       terraform: res.terraform,
-      refDocIds: res.ref_doc_ids,
+      refDocs: res.refDocs,
+      refDocIds: res.refDocs?.map(d => d.id),
+      attachments: res.attachments,
+      approvalLine: res.approvalLine,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;

@@ -1,6 +1,28 @@
-export type DocType = '계획서' | '이벤트보고서' | '주간보고서';
+export type DocType = '계획서' | '작업계획서' | '이벤트보고서' | '주간보고서' | '헬스이벤트보고서';
 export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed';
 export type DocAction = 'approve' | 'rejected' | null;
+
+export interface ApprovalLineItem {
+  seq: number;
+  type: string;       // "작성자" | "결재" | "협조" | "참조"
+  name: string;
+  role: string;
+  status: string;     // "author" | "current" | "wait" | "approved" | "rejected"
+  date?: string;
+  comment?: string;
+}
+
+export interface RefDocItem {
+  id: string;
+  title: string;
+  type: string;
+}
+
+export interface AttachmentItem {
+  id: string;
+  name: string;
+  sizeKb?: number;
+}
 
 export interface Document {
   id: string;
@@ -16,6 +38,9 @@ export interface Document {
   content?: string;
   terraform?: Record<string, string>;
   refDocIds?: string[];
+  refDocs?: RefDocItem[];
+  attachments?: AttachmentItem[];
+  approvalLine?: ApprovalLineItem[];
 }
 
 export interface RefDocMeta {

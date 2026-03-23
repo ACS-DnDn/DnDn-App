@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getReportSettings } from '@/services/report.service';
+import { getReportSettings, createSchedule, updateSchedule, deleteSchedule, updateEventSettings, createSummaryReport } from '@/services/report.service';
+import { getWorkspaces } from '@/services/workspace.service';
 import type { Schedule, SchedulePreset, EventSettingsKey } from '@/mocks';
 import './ReportSettingsPage.css';
 
@@ -136,10 +137,13 @@ export function ReportSettingsPage() {
   });
   const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
 
+  /* 워크스페이스 */
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+
   /* 스케줄 */
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [schTitle, setSchTitle] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [schTime, setSchTime] = useState('06:00');
@@ -156,14 +160,23 @@ export function ReportSettingsPage() {
   useEffect(() => {
     setSettingsLoading(true);
     setSettingsError(false);
-    getReportSettings().then(settings => {
-      setSchedules([...settings.schedules]);
-      setEvtSettings({ ...settings.eventSettings });
-    }).catch(() => {
-      setSettingsError(true);
-    }).finally(() => {
-      setSettingsLoading(false);
-    });
+    getWorkspaces()
+      .then(ws => {
+        if (ws.length === 0) throw new Error('NO_WORKSPACE');
+        const wsId = ws[0]!.id;
+        setWorkspaceId(wsId);
+        return getReportSettings(wsId);
+      })
+      .then(settings => {
+        setSchedules([...settings.schedules]);
+        setEvtSettings({ ...settings.eventSettings });
+      })
+      .catch(() => {
+        setSettingsError(true);
+      })
+      .finally(() => {
+        setSettingsLoading(false);
+      });
   }, []);
   const [openDescs, setOpenDescs] = useState<Set<string>>(new Set());
 
@@ -177,7 +190,7 @@ export function ReportSettingsPage() {
   }, []);
 
   /* 스케줄 모달 */
-  function openSchModal(id?: number) {
+  function openSchModal(id?: string) {
     const sch = id ? schedules.find(s => s.id === id) : undefined;
     setEditId(id ?? null);
     setSchTitle(sch ? sch.title : '');
@@ -218,36 +231,47 @@ export function ReportSettingsPage() {
     return days === 1 ? `${schTitle} ${de}` : `${schTitle} (${ds} ~ ${de})`;
   }
 
-  function saveSch() {
+  async function saveSch() {
     if (!schTitle.trim()) { showToast('보고서 이름을 입력해주세요.'); return; }
     if (!selectedPreset) { showToast('반복 주기를 선택해주세요.'); return; }
-    const obj: Schedule = {
-      id: editId ?? (schedules.reduce((m, s) => Math.max(m, s.id), 0) + 1),
+    if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
+    const req = {
       title: schTitle,
       preset: selectedPreset as SchedulePreset,
       time: schTime,
       includeRange: schIncludeRange,
+      dayOfWeek: selectedPreset === 'weekly' ? schDayOfWeek : undefined,
+      dayOfMonth: (selectedPreset === 'monthly' || selectedPreset === 'quarterly') ? schDayOfMonth : undefined,
     };
-    if (selectedPreset === 'weekly') obj.dayOfWeek = schDayOfWeek;
-    if (selectedPreset === 'monthly' || selectedPreset === 'quarterly') obj.dayOfMonth = schDayOfMonth;
-
-    if (editId) {
-      setSchedules(prev => prev.map(s => s.id === editId ? obj : s));
-    } else {
-      setSchedules(prev => [...prev, obj]);
+    try {
+      if (editId) {
+        await updateSchedule(workspaceId, editId, req);
+        setSchedules(prev => prev.map(s => s.id === editId ? { ...req, id: editId } : s));
+      } else {
+        const { id } = await createSchedule(workspaceId, req);
+        setSchedules(prev => [...prev, { ...req, id }]);
+      }
+      closeSchModal();
+      showToast(editId ? '스케줄이 수정되었습니다.' : '스케줄이 추가되었습니다.');
+    } catch {
+      showToast('저장 중 오류가 발생했습니다.');
     }
-    closeSchModal();
-    showToast(editId ? '스케줄이 수정되었습니다.' : '스케줄이 추가되었습니다.');
   }
 
-  function delSchedule(id: number) {
-    setSchedules(prev => prev.filter(s => s.id !== id));
-    showToast('스케줄이 삭제되었습니다.');
+  async function delSchedule(id: string) {
+    if (!workspaceId) return;
+    try {
+      await deleteSchedule(workspaceId, id);
+      setSchedules(prev => prev.filter(s => s.id !== id));
+      showToast('스케줄이 삭제되었습니다.');
+    } catch {
+      showToast('삭제 중 오류가 발생했습니다.');
+    }
   }
 
   /* 이벤트 토글 */
   function toggleEvt(key: EventSettingsKey) {
-    setEvtSettings(prev => ({ ...prev, [key]: !prev[key] }));
+    setEvtSettings(prev => ({ ...prev, [key]: !(prev[key] !== false) }));
   }
   function toggleDesc(key: string) {
     setOpenDescs(prev => {
@@ -258,10 +282,16 @@ export function ReportSettingsPage() {
   }
 
   /* 현황 보고서 생성 */
-  function generateNow() {
+  async function generateNow() {
     if (!summaryStart || !summaryEnd) { showToast('기간을 선택해주세요.'); return; }
     if (summaryStart > summaryEnd) { showToast('시작일시가 종료일시보다 클 수 없습니다.'); return; }
-    showToast('현황보고서 생성을 요청했습니다.');
+    if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
+    try {
+      await createSummaryReport(workspaceId, reportTitle, new Date(summaryStart).toISOString(), new Date(summaryEnd).toISOString());
+      showToast('현황보고서 생성을 요청했습니다.');
+    } catch {
+      showToast('보고서 생성 요청 중 오류가 발생했습니다.');
+    }
   }
 
   /* 섹션 전환 시 breadcrumb */
@@ -366,7 +396,15 @@ export function ReportSettingsPage() {
                   <span className="rpt-card-title">이벤트 보고서</span>
                   <p className="rpt-card-desc">AWS 이벤트 발생 시 자동으로 보고서를 생성합니다</p>
                 </div>
-                <button className="btn-save" onClick={() => showToast('이벤트 보고서 설정이 저장되었습니다.')} disabled={settingsLoading || settingsError}>설정 저장</button>
+                <button className="btn-save" onClick={async () => {
+                  if (!workspaceId) return;
+                  try {
+                    await updateEventSettings(workspaceId, evtSettings);
+                    showToast('이벤트 보고서 설정이 저장되었습니다.');
+                  } catch {
+                    showToast('설정 저장 중 오류가 발생했습니다.');
+                  }
+                }} disabled={settingsLoading || settingsError}>설정 저장</button>
               </div>
             </div>
 

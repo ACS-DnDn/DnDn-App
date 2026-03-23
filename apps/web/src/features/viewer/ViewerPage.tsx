@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
-import { getDocumentById } from '@/services/document.service';
+import { getDocumentById, getAttachmentDownloadUrl } from '@/services/document.service';
+import { apiFetch } from '@/services/api';
 import './ViewerPage.css';
 
 function escHtml(s: string) {
@@ -13,7 +14,7 @@ function renderTerraform(terraform: Record<string, string>): string {
   ).join('');
 }
 
-/* ── 결재선 mock 데이터 ── */
+/* ── 결재선 헬퍼 ── */
 interface ApprovalStep {
   seq: string;
   name: string;
@@ -23,47 +24,57 @@ interface ApprovalStep {
   statusCls: string;
   date?: string;
   comment?: string;
-  commentCls?: string;
 }
 
-const APPROVAL_STEPS: ApprovalStep[] = [
-  { seq: '기안', name: '이서연', role: '엔지니어', dot: 'dot-author', status: '기안', statusCls: 'author', date: '2026.02.24 14:22', comment: 'EKS CPU 이슈 2주 지속되어 긴급 스케일업 요청드립니다. 비용 증가 사전 승인 부탁드립니다.' },
-  { seq: '1차', name: '박지훈', role: '팀장', dot: 'dot-approved', status: '결재', statusCls: 'approved', date: '2026.02.24 16:05', comment: '피크타임 CPU 수치 확인했습니다. 비용 증가 합리적인 수준으로 판단하여 결재합니다.' },
-  { seq: '2차', name: '정지은', role: '선임연구원', dot: 'dot-current', status: '대기', statusCls: 'current' },
-  { seq: '3차', name: '최현우', role: '매니저', dot: 'dot-wait', status: '대기', statusCls: 'wait' },
-];
+function fmtDate(iso?: string | null): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
-const COLLAB_STEPS: ApprovalStep[] = [
-  { seq: '협조', name: '홍길동', role: '선임', dot: 'dot-approved', status: '확인', statusCls: 'approved', date: '2026.02.25 09:12' },
-  { seq: '협조', name: '이수진', role: '과장', dot: 'dot-wait', status: '대기', statusCls: 'wait' },
-  { seq: '참조', name: '김민준', role: '매니저', dot: 'dot-approved', status: '확인', statusCls: 'approved', date: '2026.02.25 11:40' },
-  { seq: '참조', name: '박소연', role: '과장', dot: 'dot-wait', status: '대기', statusCls: 'wait' },
-  { seq: '참조', name: '장우진', role: '담당', dot: 'dot-wait', status: '대기', statusCls: 'wait' },
-];
+const DOT_MAP: Record<string, string> = {
+  author: 'dot-author', approved: 'dot-approved', current: 'dot-current',
+  wait: 'dot-wait', rejected: 'dot-wait',
+};
+const STATUS_LABEL: Record<string, string> = {
+  author: '기안', approved: '결재', current: '대기', wait: '대기', rejected: '반려',
+};
 
-/* ── 첨부 파일 mock ── */
-const ATTACHMENTS = [
-  { name: 'CPU_usage_peaktime.png', size: '1.2 MB' },
-  { name: 'cloudwatch_metrics_0224.csv', size: '85 KB' },
-  { name: 'eks_plan_output.txt', size: '4 KB' },
-];
+function mapApprovalLine(items: import('@/mocks/types/document').ApprovalLineItem[]) {
+  const mainSteps: ApprovalStep[] = [];
+  const collabSteps: ApprovalStep[] = [];
+  let approvalIdx = 0;
+  for (const item of items) {
+    const dot = DOT_MAP[item.status] ?? 'dot-wait';
+    const statusLbl = STATUS_LABEL[item.status] ?? item.status;
+    const step: ApprovalStep = {
+      seq: '',
+      name: item.name,
+      role: item.role,
+      dot,
+      status: statusLbl,
+      statusCls: item.status,
+      date: fmtDate(item.date),
+      comment: item.comment ?? undefined,
+    };
+    if (item.type === '작성자') {
+      step.seq = '기안';
+      mainSteps.push(step);
+    } else if (item.type === '결재') {
+      approvalIdx++;
+      step.seq = `${approvalIdx}차`;
+      mainSteps.push(step);
+    } else {
+      step.seq = item.type; // '협조' | '참조'
+      collabSteps.push(step);
+    }
+  }
+  return { mainSteps, collabSteps };
+}
 
-const TF_PLAN_HTML = `<div class="tf-plan-box"><span class="pl-ok">\u2713 terraform plan 성공</span>
-
-Terraform will perform the following actions:
-
-<span class="pl-add">~ aws_eks_node_group.production_ng</span>
-    instance_types: [
-        - "t3.medium"
-        + "t3.large"
-    ]
-    update_config.max_unavailable: 1
-
-<span class="pl-warn">Plan: 0 to add, 1 to change, 0 to destroy.</span>
-
-<span class="pl-ok">\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</span>
-Note: You didn't use the -out option to save this plan.
-Next steps: Review \u2192 Merge PR \u2192 apply will run automatically.</div>`;
+const TF_PLAN_EMPTY = '<div style="padding:2rem;text-align:center;color:#888;font-size:13px;">최종 결재 후 GitHub PR이 생성되면 CI/CD에서 terraform plan이 실행됩니다.</div>';
 
 /* ── 상태 맵 ── */
 const STATUS_MAP: Record<string, [string, string]> = {
@@ -77,9 +88,8 @@ export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // mock: localStorage에 저장된 문서가 있으면 /mock/ URL 사용, 나중에 API 연동 시 S3 URL로 대체
-  const savedDocUrl = localStorage.getItem(`doc-${id}`) ? '/mock/plan-sample.html' : null;
   const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [docNotFound, setDocNotFound] = useState(false);
   const [fetchError, setFetchError] = useState(false);
 
@@ -94,22 +104,25 @@ export function ViewerPage() {
     }).catch(() => setFetchError(true));
   }, [id]);
 
-  /* 참조 문서 목록 */
-  const [refDocList, setRefDocList] = useState<{ id: string; name: string; date: string }[]>([]);
+  /* Blob URL for iframe isolation (prevents AI HTML from polluting parent font) */
   useEffect(() => {
-    setRefDocList([]);
-    if (!doc?.refDocIds?.length) return;
-    Promise.all(doc.refDocIds.map(refId => getDocumentById(refId)))
-      .then(results => setRefDocList(
-        results.filter((d): d is NonNullable<typeof d> => d !== undefined)
-          .map(d => ({ id: d.id, name: d.name, date: d.date }))
-      ))
-      .catch(() => setRefDocList([]));
-  }, [doc?.id]);
+    if (!doc?.content) { setBlobUrl(null); return; }
+    const blob = new Blob([doc.content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [doc?.content]);
+
+  /* 참조 문서 목록 — API가 직접 반환하는 refDocs 사용 */
+  const refDocList = (doc?.refDocs ?? []).map(r => ({ id: r.id, name: r.title, type: r.type }));
+
+  /* 첨부파일 — API 응답 사용 */
+  const attachments = doc?.attachments ?? [];
 
   /* 패널 탭 */
   const [panelTab, setPanelTab] = useState<'refs' | 'attach'>('refs');
-  const [attachChecked, setAttachChecked] = useState<boolean[]>(ATTACHMENTS.map(() => false));
+  const [attachChecked, setAttachChecked] = useState<boolean[]>([]);
+  useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
 
   /* 모달 */
@@ -119,27 +132,53 @@ export function ViewerPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   if (docNotFound) return <Navigate to="/documents" replace />;
   if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
   if (!doc) return null;
 
-  const isReport = doc.type !== '계획서';
+  const isReport = doc.type !== '계획서' && doc.type !== '작업계획서';
   const viewMode = doc.action === 'approve' ? 'approver' : 'completed';
+  const { mainSteps, collabSteps } = mapApprovalLine(doc.approvalLine ?? []);
   const hasTerraform = !!doc.terraform && Object.keys(doc.terraform).length > 0;
   const tfHtml = hasTerraform ? renderTerraform(doc.terraform!) : '';
 
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
-  function handleApproveConfirm() {
+  async function handleApproveConfirm() {
+    if (!id) return;
     setApproveModalOpen(false);
-    alert(`결재 완료!${approveOpinion ? '\n의견: "' + approveOpinion + '"' : ''}\n\n다음 결재자에게 알림이 전송됩니다.`);
+    setActionLoading(true);
+    try {
+      await apiFetch<{ success: boolean; data: { newStatus: string } }>(
+        `/documents/${id}/approve`,
+        { method: 'POST', body: JSON.stringify({ comment: approveOpinion.trim() || null }) }
+      );
+      navigate('/documents', { replace: true });
+    } catch {
+      alert('결재 처리 중 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(false);
+    }
   }
 
-  function handleReject() {
+  async function handleReject() {
     if (!rejectReason.trim()) { alert('반려 사유를 입력해주세요.'); return; }
+    if (!id) return;
     setRejectModalOpen(false);
-    alert(`반려 처리되었습니다.\n사유: "${rejectReason}"\n\n이전 결재자와 작성자에게 알림이 전송됩니다.`);
+    setActionLoading(true);
+    try {
+      await apiFetch(`/documents/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ comment: rejectReason.trim() }),
+      });
+      navigate('/documents', { replace: true });
+    } catch {
+      alert('반려 처리 중 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   return (
@@ -156,10 +195,8 @@ export function ViewerPage() {
           )}
         </div>
         <div className="doc-scroll">
-          {savedDocUrl ? (
-            <iframe className="viewer-iframe" src={savedDocUrl} title="문서 미리보기" />
-          ) : doc.content ? (
-            <div dangerouslySetInnerHTML={{ __html: doc.content }} />
+          {blobUrl ? (
+            <iframe className="viewer-iframe" src={blobUrl} title="문서 미리보기" />
           ) : (
             <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13 }}>문서 내용을 불러올 수 없습니다.</div>
           )}
@@ -183,7 +220,7 @@ export function ViewerPage() {
                   <div className="sidebar-ref-no">{rd.id}</div>
                   <div className="sidebar-ref-row">
                     <span className="sidebar-ref-name">{rd.name}</span>
-                    <span className="sidebar-ref-date">{rd.date}</span>
+                    <span className="sidebar-ref-date">{rd.type}</span>
                   </div>
                 </div>
               ))}
@@ -191,15 +228,26 @@ export function ViewerPage() {
           </div>
           <div className={`panel-tab-content${panelTab === 'attach' ? ' active' : ''}`}>
             <div className="attach-list">
-              {ATTACHMENTS.map((a, i) => (
-                <div className="attach-item" key={i}>
-                  <input type="checkbox" className="attach-check" checked={attachChecked[i]} onChange={() => setAttachChecked(prev => prev.map((c, j) => j === i ? !c : c))} />
+              {attachments.length === 0 ? (
+                <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)' }}>첨부 파일 없음</div>
+              ) : attachments.map((a, i) => (
+                <div className="attach-item" key={a.id}>
+                  <input type="checkbox" className="attach-check" checked={attachChecked[i] ?? false} onChange={() => setAttachChecked(prev => prev.map((c, j) => j === i ? !c : c))} />
                   <span className="attach-name">{a.name}</span>
-                  <span className="attach-size">{a.size}</span>
+                  <span className="attach-size">{a.sizeKb ? `${a.sizeKb} KB` : ''}</span>
                 </div>
               ))}
             </div>
-            <button className="btn-attach-dl" disabled={checkedCount === 0}>
+            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={async () => {
+              if (!doc) return;
+              const selected = attachments.filter((_, i) => attachChecked[i]);
+              for (const a of selected) {
+                try {
+                  const url = await getAttachmentDownloadUrl(doc.id, a.id);
+                  window.open(url, '_blank');
+                } catch { /* skip */ }
+              }
+            }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2v8M5 7l3 3 3-3" /><path d="M3 13h10" /></svg>
               <span>{checkedCount > 0 ? `${checkedCount}개 다운로드` : '다운로드'}</span>
             </button>
@@ -215,7 +263,7 @@ export function ViewerPage() {
             </div>
             <div className="approval-scroll">
               <div className="approval-line">
-                {APPROVAL_STEPS.map((s, i) => (
+                {mainSteps.map((s, i) => (
                   <div className="approval-step" key={i}>
                     <div className={`step-dot ${viewMode === 'completed' && (s.dot === 'dot-current' || s.dot === 'dot-wait') ? 'dot-approved' : s.dot}`} />
                     <div className="step-content">
@@ -228,27 +276,29 @@ export function ViewerPage() {
                           {viewMode === 'completed' && (s.statusCls === 'current' || s.statusCls === 'wait') ? '결재' : s.status}
                         </div>
                       </div>
-                      {s.comment && <div className={`step-comment${s.commentCls ? ' ' + s.commentCls : ''}`}>{s.comment}</div>}
+                      {s.comment && <div className="step-comment">{s.comment}</div>}
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="collab-area">
-                {COLLAB_STEPS.map((s, i) => (
-                  <div className="approval-step" key={i}>
-                    <div className={`step-dot ${s.dot}`} />
-                    <div className="step-content">
-                      <div className="step-header">
-                        <span className="step-seq">{s.seq}</span>
-                        <span className="step-name">{s.name}</span>
-                        <span className="step-role">{s.role}</span>
-                        {s.date && <span className="step-date">{s.date}</span>}
-                        <div className={`step-status ${s.statusCls}`}>{s.status}</div>
+              {collabSteps.length > 0 && (
+                <div className="collab-area">
+                  {collabSteps.map((s, i) => (
+                    <div className="approval-step" key={i}>
+                      <div className={`step-dot ${s.dot}`} />
+                      <div className="step-content">
+                        <div className="step-header">
+                          <span className="step-seq">{s.seq}</span>
+                          <span className="step-name">{s.name}</span>
+                          <span className="step-role">{s.role}</span>
+                          {s.date && <span className="step-date">{s.date}</span>}
+                          <div className={`step-status ${s.statusCls}`}>{s.status}</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -266,11 +316,11 @@ export function ViewerPage() {
         {/* 결재 액션 (계획서 + 결재자) */}
         {!isReport && viewMode === 'approver' && (
           <div className="sidebar-actions">
-            <button className="btn-approve" onClick={() => { setApproveOpinion(''); setApproveModalOpen(true); }}>
+            <button className="btn-approve" disabled={actionLoading} onClick={() => { setApproveOpinion(''); setApproveModalOpen(true); }}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 8l4 4 6-6" /></svg>
-              결재
+              {actionLoading ? '처리 중...' : '결재'}
             </button>
-            <button className="btn-reject" onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}>
+            <button className="btn-reject" disabled={actionLoading} onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8" /></svg>
               반려
             </button>
@@ -293,7 +343,7 @@ export function ViewerPage() {
             <button type="button" className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</button>
           </div>
           <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: tfHtml }} />
-          <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_HTML }} />
+          <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_EMPTY }} />
         </div>
       </div>
 

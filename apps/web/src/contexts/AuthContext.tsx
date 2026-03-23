@@ -9,6 +9,7 @@ interface ApiMeResponse {
     name: string;
     email: string;
     role: string;
+    position: string | null;
     company: { name: string; logoUrl: string };
     createdAt: string | null;
   };
@@ -66,16 +67,26 @@ function clearTokens() {
 
 async function fetchMe(): Promise<Session> {
   const res = await apiFetch<ApiMeResponse>('/auth/me');
-  const { id, name, email, role, company, createdAt } = res.data;
+  const { id, name, email, role, position, company, createdAt } = res.data;
   return {
     id,
     name,
     email,
     role,
+    position: position ?? null,
     auth: roleToAuth(role),
     company: { name: company.name, logoUrl: company.logoUrl, logoDarkUrl: company.logoUrl },
     createdAt: createdAt ?? null,
   };
+}
+
+async function fetchAllowedMe(): Promise<Session> {
+  const me = await fetchMe();
+  if (me.role === 'hr') {
+    clearTokens();
+    throw new Error('HR_ACCESS_DENIED');
+  }
+  return me;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -86,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('dndn-access-token');
     if (!token) { setIsLoading(false); return; }
-    fetchMe()
+    fetchAllowedMe()
       .then(setSession)
       .catch(clearTokens)
       .finally(() => setIsLoading(false));
@@ -102,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { type: 'challenge', session: data.session };
     }
     saveTokens(data as ApiLoginData);
-    setSession(await fetchMe());
+    const me = await fetchAllowedMe();
+    setSession(me);
     return { type: 'success' };
   }, []);
 
@@ -112,7 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { method: 'POST', body: JSON.stringify({ email, newPassword, session: sess }) },
     );
     saveTokens(res.data);
-    setSession(await fetchMe());
+    const me = await fetchAllowedMe();
+    setSession(me);
   }, []);
 
   const logout = useCallback(async () => {

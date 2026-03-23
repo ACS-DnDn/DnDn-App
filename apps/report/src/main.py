@@ -137,7 +137,7 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
         # 2. Terraform 생성
         token = req.github_token or GITHUB_TOKEN
 
-        result = generate_terraform_code(workplan, repo, token)
+        result = generate_terraform_code(workplan, repo, token, workspace_id=req.workspace_id)
 
         # result = { "main.tf": "...", "vars.tf": "..." }
 

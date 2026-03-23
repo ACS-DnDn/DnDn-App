@@ -8,7 +8,7 @@ export interface SummarySettings {
 }
 
 export interface Schedule {
-  id: number;
+  id: string;
   title: string;
   preset: SchedulePreset;
   dayOfWeek?: number;

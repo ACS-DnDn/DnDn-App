@@ -5,6 +5,7 @@ export const session: Session = {
   name: '정지은',
   email: 'jjeong@cslee.io',
   role: '선임연구원',
+  position: null,
   auth: 'leader',
   company: {
     name: 'CSLEE.',

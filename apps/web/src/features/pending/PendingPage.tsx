@@ -40,7 +40,7 @@ export function PendingPage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const datePickerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { getDocuments().then(({ items }) => setAllDocs(items)).catch(console.error); }, []);
+  useEffect(() => { getDocuments({ tab: 'action' }).then(({ items }) => setAllDocs(items)).catch(console.error); }, []);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

@@ -47,7 +47,7 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getDocuments({ pageSize: 200 }).then(({ items }) => setAllDocs(items)).catch(console.error);
+    getDocuments({ pageSize: 100 }).then(({ items }) => setAllDocs(items)).catch(console.error);
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
