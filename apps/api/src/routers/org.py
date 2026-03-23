@@ -31,15 +31,8 @@ async def get_org_members(
 
     for user in users:
         # 💡 DB에 부서/직급 컬럼이 없다면 기본값으로 처리되도록 유연하게 작성
-        raw_dept = getattr(user, "department", "클라우드엔지니어링팀")
-        # dept_name을 문자열로 정규화하여 lower() 호출이 항상 가능하도록 처리
-        if raw_dept is None:
-            dept_name = "클라우드엔지니어링팀"
-        elif isinstance(raw_dept, str):
-            dept_name = raw_dept
-        else:
-            dept_name = getattr(raw_dept, "name", None) or str(raw_dept)
-        rank_name = getattr(user, "rank", "연구원")
+        dept_name = user.department.name if user.department else "클라우드엔지니어링팀"
+        rank_name = user.position or "연구원"
 
         # 3. 검색어(keyword) 필터링 로직 (파이썬 레벨에서 검사)
         if keyword:
