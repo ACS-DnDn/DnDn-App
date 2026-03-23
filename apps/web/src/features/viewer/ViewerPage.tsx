@@ -48,62 +48,6 @@ const ATTACHMENTS = [
   { name: 'eks_plan_output.txt', size: '4 KB' },
 ];
 
-/* ── Terraform 코드 mock ── */
-const TF_CODE_HTML = `<div class="tf-code-block">
-<div class="tf-code-file"><span class="f-dot f-dot-purple"></span>eks_node_group.tf</div>
-<pre class="tf-pre"><span class="tf-kw">resource</span> <span class="tf-str">"aws_eks_node_group"</span> <span class="tf-str">"production_ng"</span> {
-  <span class="tf-attr">cluster_name</span>    = <span class="tf-val">aws_eks_cluster.main.name</span>
-  <span class="tf-attr">node_group_name</span> = <span class="tf-str">"production-ng"</span>
-  <span class="tf-attr">node_role_arn</span>   = <span class="tf-val">aws_iam_role.node.arn</span>
-  <span class="tf-attr">subnet_ids</span>      = <span class="tf-val">var.private_subnet_ids</span>
-
-  <span class="tf-attr">instance_types</span> = [<span class="tf-str">"t3.large"</span>]
-  <span class="tf-cmt"># 변경: t3.medium → t3.large</span>
-
-  <span class="tf-kw">scaling_config</span> {
-    <span class="tf-attr">desired_size</span> = <span class="tf-num">3</span>
-    <span class="tf-attr">min_size</span>     = <span class="tf-num">2</span>
-    <span class="tf-attr">max_size</span>     = <span class="tf-num">6</span>
-  }
-
-  <span class="tf-kw">update_config</span> {
-    <span class="tf-attr">max_unavailable</span> = <span class="tf-num">1</span>
-  }
-
-  <span class="tf-kw">tags</span> = {
-    <span class="tf-attr">Environment</span> = <span class="tf-str">"production"</span>
-    <span class="tf-attr">ManagedBy</span>   = <span class="tf-str">"terraform"</span>
-    <span class="tf-attr">ChangedBy</span>   = <span class="tf-str">"dndn"</span>
-    <span class="tf-attr">RFC</span>         = <span class="tf-str">"PLAN-2026-0224-001"</span>
-  }
-}</pre>
-</div>
-<div class="tf-code-block">
-<div class="tf-code-file"><span class="f-dot f-dot-purple"></span>iam_node_role.tf</div>
-<pre class="tf-pre"><span class="tf-kw">resource</span> <span class="tf-str">"aws_iam_role"</span> <span class="tf-str">"node"</span> {
-  <span class="tf-attr">name</span> = <span class="tf-str">"eks-node-role"</span>
-
-  <span class="tf-attr">assume_role_policy</span> = <span class="tf-val">jsonencode</span>({
-    <span class="tf-attr">Version</span>   = <span class="tf-str">"2012-10-17"</span>
-    <span class="tf-attr">Statement</span> = [{
-      <span class="tf-attr">Action</span>    = <span class="tf-str">"sts:AssumeRole"</span>
-      <span class="tf-attr">Effect</span>    = <span class="tf-str">"Allow"</span>
-      <span class="tf-attr">Principal</span> = {
-        <span class="tf-attr">Service</span> = <span class="tf-str">"ec2.amazonaws.com"</span>
-      }
-    }]
-  })
-}</pre>
-</div>
-<div class="tf-code-block">
-<div class="tf-code-file"><span class="f-dot f-dot-purple"></span>rollback_vars.tf</div>
-<pre class="tf-pre"><span class="tf-cmt"># 롤백용 원본 설정 보존</span>
-<span class="tf-kw">variable</span> <span class="tf-str">"rollback_instance_type"</span> {
-  <span class="tf-attr">description</span> = <span class="tf-str">"이전 인스턴스 타입 (롤백 시 참조)"</span>
-  <span class="tf-attr">default</span>     = <span class="tf-str">"t3.medium"</span>
-}</pre>
-</div>`;
-
 const TF_PLAN_HTML = `<div class="tf-plan-box"><span class="pl-ok">\u2713 terraform plan 성공</span>
 
 Terraform will perform the following actions:

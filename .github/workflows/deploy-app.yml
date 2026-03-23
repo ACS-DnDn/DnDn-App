@@ -1,4 +1,4 @@
-name: Deploy App
+name: Build App Images
 
 on:
   push:
@@ -17,7 +17,6 @@ permissions:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: 387721658341.dkr.ecr.ap-northeast-2.amazonaws.com
-  EKS_CLUSTER: dndn-prd
 
 jobs:
   # ── 변경된 앱 감지 ─────────────────────────────────────────────────────
@@ -44,12 +43,9 @@ jobs:
             report: ['apps/report/**']
             web:    ['apps/web/**']
 
-  # ── 공통: AWS 인증 + EKS kubeconfig ───────────────────────────────────
-  # (각 job에서 재사용 — GitHub Actions는 job 간 공유가 안 되므로 각 job에 포함)
-
   # ── API ───────────────────────────────────────────────────────────────
-  deploy-api:
-    name: Deploy API
+  publish-api:
+    name: Publish API Image
     needs: detect
     if: needs.detect.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -70,19 +66,11 @@ jobs:
           IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-api:${{ github.sha }}
           docker build -t $IMAGE apps/api/
           docker push $IMAGE
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
-
-      - name: Deploy to EKS
-        run: |
-          helm upgrade --install dndn-api k8s/helm/apps/api \
-            --namespace dndn-api --create-namespace \
-            --set image.tag=${{ github.sha }}
+          echo "API image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Worker ────────────────────────────────────────────────────────────
-  deploy-worker:
-    name: Deploy Worker
+  publish-worker:
+    name: Publish Worker Image
     needs: detect
     if: needs.detect.outputs.worker == 'true'
     runs-on: ubuntu-latest
@@ -103,19 +91,11 @@ jobs:
           IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-worker:${{ github.sha }}
           docker build -f apps/worker/Dockerfile -t $IMAGE .
           docker push $IMAGE
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
-
-      - name: Deploy to EKS
-        run: |
-          helm upgrade --install dndn-worker k8s/helm/apps/worker \
-            --namespace dndn-worker --create-namespace \
-            --set image.tag=${{ github.sha }}
+          echo "Worker image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Report ────────────────────────────────────────────────────────────
-  deploy-report:
-    name: Deploy Report
+  publish-report:
+    name: Publish Report Image
     needs: detect
     if: needs.detect.outputs.report == 'true'
     runs-on: ubuntu-latest
@@ -136,19 +116,14 @@ jobs:
           IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-report:${{ github.sha }}
           docker build -t $IMAGE apps/report/
           docker push $IMAGE
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
-
-      - name: Deploy to EKS
-        run: |
-          helm upgrade --install dndn-report k8s/helm/apps/report \
-            --namespace dndn-report --create-namespace \
-            --set image.tag=${{ github.sha }}
+          echo "Report image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deploy units using this image:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- dndn-report-api" >> "$GITHUB_STEP_SUMMARY"
+          echo "- dndn-report-worker" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Web ───────────────────────────────────────────────────────────────
-  deploy-web:
-    name: Deploy Web
+  publish-web:
+    name: Publish Web Image
     needs: detect
     if: needs.detect.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -169,12 +144,4 @@ jobs:
           IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
           docker build -t $IMAGE apps/web/
           docker push $IMAGE
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
-
-      - name: Deploy to EKS
-        run: |
-          helm upgrade --install dndn-web k8s/helm/apps/web \
-            --namespace dndn-web --create-namespace \
-            --set image.tag=${{ github.sha }}
+          echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
