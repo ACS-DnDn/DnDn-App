@@ -31,6 +31,12 @@ class LoginResult:
 
 
 @dataclass
+class ChallengeResult:
+    challenge: str  # e.g. "NEW_PASSWORD_REQUIRED"
+    session: str
+
+
+@dataclass
 class RefreshResult:
     access_token: str
     expires_in: int
@@ -77,8 +83,11 @@ def _handle_error(exc: ClientError) -> None:
 
 
 # ── 로그인 ────────────────────────────────────────────────
-def login(username: str, password: str) -> LoginResult:
-    """Cognito USER_PASSWORD_AUTH 로그인."""
+def login(username: str, password: str) -> LoginResult | ChallengeResult:
+    """Cognito USER_PASSWORD_AUTH 로그인.
+
+    초기 비밀번호(AdminCreateUser) 상태면 ChallengeResult를 반환한다.
+    """
     try:
         resp = _client().initiate_auth(
             ClientId=CLIENT_ID,
@@ -91,6 +100,38 @@ def login(username: str, password: str) -> LoginResult:
     except ClientError as e:
         _handle_error(e)
         raise  # unreachable — _handle_error always raises
+
+    # 챌린지 반환 (NEW_PASSWORD_REQUIRED 등)
+    if "ChallengeName" in resp:
+        return ChallengeResult(
+            challenge=resp["ChallengeName"],
+            session=resp["Session"],
+        )
+
+    auth = resp["AuthenticationResult"]
+    return LoginResult(
+        access_token=auth["AccessToken"],
+        refresh_token=auth["RefreshToken"],
+        id_token=auth["IdToken"],
+        expires_in=auth["ExpiresIn"],
+    )
+
+
+def respond_new_password(username: str, new_password: str, session: str) -> LoginResult:
+    """NEW_PASSWORD_REQUIRED 챌린지에 새 비밀번호로 응답."""
+    try:
+        resp = _client().respond_to_auth_challenge(
+            ClientId=CLIENT_ID,
+            ChallengeName="NEW_PASSWORD_REQUIRED",
+            Session=session,
+            ChallengeResponses={
+                "USERNAME": username,
+                "NEW_PASSWORD": new_password,
+            },
+        )
+    except ClientError as e:
+        _handle_error(e)
+        raise  # unreachable
 
     auth = resp["AuthenticationResult"]
     return LoginResult(
@@ -164,6 +205,81 @@ def confirm_reset_password(email: str, code: str, new_password: str) -> bool:
     else:
         return True
     return False  # unreachable — _handle_error always raises
+
+
+# ── HR 관리자 전용 (Admin API) ────────────────────────────
+
+def admin_create_user(email: str, name: str) -> str:
+    """AdminCreateUser — 사용자 생성. Cognito가 임시 비밀번호 자동 생성 후 이메일 발송. Returns username."""
+    try:
+        _client().admin_create_user(
+            UserPoolId=USER_POOL_ID,
+            Username=email,
+            UserAttributes=[
+                {"Name": "email", "Value": email},
+                {"Name": "name", "Value": name},
+                {"Name": "email_verified", "Value": "true"},
+            ],
+        )
+    except ClientError as e:
+        _handle_error(e)
+        raise  # unreachable
+    return email
+
+
+def admin_delete_user(username: str) -> None:
+    """사용자 계정 영구 삭제."""
+    try:
+        _client().admin_delete_user(UserPoolId=USER_POOL_ID, Username=username)
+    except ClientError as e:
+        _handle_error(e)
+
+
+def admin_reset_user_password(username: str) -> None:
+    """임시 비밀번호 재발급 (다음 로그인 시 변경 강제)."""
+    try:
+        _client().admin_reset_user_password(UserPoolId=USER_POOL_ID, Username=username)
+    except ClientError as e:
+        _handle_error(e)
+
+
+def admin_add_to_group(username: str, group: str) -> None:
+    """사용자를 Cognito 그룹에 추가."""
+    try:
+        _client().admin_add_user_to_group(
+            UserPoolId=USER_POOL_ID, Username=username, GroupName=group
+        )
+    except ClientError as e:
+        _handle_error(e)
+
+
+def admin_remove_from_group(username: str, group: str) -> None:
+    """사용자를 Cognito 그룹에서 제거."""
+    try:
+        _client().admin_remove_user_from_group(
+            UserPoolId=USER_POOL_ID, Username=username, GroupName=group
+        )
+    except ClientError as e:
+        _handle_error(e)
+
+
+def admin_set_group(username: str, new_group: str, old_group: str | None = None) -> None:
+    """그룹 변경: old_group 제거 후 new_group 추가. old_group=None이면 추가만."""
+    if old_group and old_group != new_group:
+        admin_remove_from_group(username, old_group)
+    admin_add_to_group(username, new_group)
+
+
+def admin_get_groups(username: str) -> list[str]:
+    """사용자가 속한 Cognito 그룹 목록 반환."""
+    try:
+        resp = _client().admin_list_groups_for_user(
+            UserPoolId=USER_POOL_ID, Username=username
+        )
+    except ClientError as e:
+        _handle_error(e)
+        raise  # unreachable
+    return [g["GroupName"] for g in resp.get("Groups", [])]
 
 
 # ── JWT 검증 (보호 엔드포인트용) ──────────────────────────
