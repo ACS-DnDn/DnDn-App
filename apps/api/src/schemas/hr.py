@@ -58,3 +58,18 @@ class DepartmentCreateRequest(BaseModel):
 
 class DepartmentSetLeaderRequest(BaseModel):
     leaderId: str | None  # None이면 부서장 해제
+
+
+# ── 회사 ──────────────────────────────────────────────────
+
+class CompanyResponse(BaseModel):
+    id: int
+    name: str
+    logoUrl: str | None
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyUpdateRequest(BaseModel):
+    name: str | None = None
