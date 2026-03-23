@@ -5,11 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY apps/api/requirements.txt ./
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# import 경로가 apps.api.src.* 이므로 repo root 기준 구조 유지
-COPY apps/api/src ./apps/api/src
+# import 경로가 apps.api.src.* 이므로 컨테이너 안에서도 동일한 경로를 유지합니다.
+COPY src ./apps/api/src
 
 EXPOSE 8000
 
