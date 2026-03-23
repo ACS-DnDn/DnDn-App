@@ -18,6 +18,7 @@ export type PendingDocStatus = 'waiting' | 'rejected';
 export type PendingDocType = '이벤트' | '계획서';
 
 export interface PendingDoc {
+  id: string;
   docNum: string;
   title: string;
   status: PendingDocStatus;
@@ -30,6 +31,7 @@ export interface PendingDoc {
 export type CompletedDocType = '이벤트' | '계획서' | '주간';
 
 export interface CompletedDoc {
+  id: string;
   docNum: string;
   title: string;
   type: CompletedDocType;

@@ -127,12 +127,15 @@ export function WorkspaceCreatePage() {
     }
   };
 
-  // GitHub connect — OAuth 팝업 방식
+  // GitHub connect — OAuth 팝업 방식 (localStorage 이벤트로 결과 수신)
   const connectGH = async () => {
     setGhConnecting(true);
     try {
       const res = await apiFetch<{ success: boolean; data: { authorizeUrl: string; state: string } }>('/github/auth');
-      const { authorizeUrl, state } = res.data;
+      const { authorizeUrl } = res.data;
+
+      // 이전 결과 제거
+      localStorage.removeItem('github-oauth-result');
 
       // 팝업으로 GitHub 인증 페이지 열기
       const w = 600, h = 700;
@@ -145,53 +148,52 @@ export function WorkspaceCreatePage() {
         return;
       }
 
-      // BroadcastChannel로 콜백 수신 (GitHub COOP로 인해 window.opener 방식 불가)
-      const bc = new BroadcastChannel('github-oauth');
-      let popupCheck: ReturnType<typeof setInterval> | null = null;
-      const cleanup = () => {
-        if (popupCheck) { clearInterval(popupCheck); popupCheck = null; }
-        bc.close();
-      };
-
-      // 팝업이 사용자에 의해 닫힌 경우 감지
-      popupCheck = setInterval(() => {
-        if (popup.closed) {
-          cleanup();
-          setGhConnecting(false);
-        }
-      }, 1000);
-
-      bc.onmessage = async (e) => {
-        if (e.data?.type !== 'github-oauth') return;
-        cleanup();
+      // localStorage 변경 감지로 콜백 결과 수신
+      const onStorage = async (e: StorageEvent) => {
+        if (e.key !== 'github-oauth-result' || !e.newValue) return;
+        window.removeEventListener('storage', onStorage);
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
         try {
-          const { code, state: returnedState, error } = e.data;
-          if (error) { showToast(e.data.errorDescription || 'GitHub 인증이 거부되었습니다.'); return; }
-          if (!code || returnedState !== state) { showToast('GitHub 인증이 취소되었습니다.'); return; }
+          const result = JSON.parse(e.newValue);
+          localStorage.removeItem('github-oauth-result');
+          if (result.error) { showToast('GitHub 인증이 실패했습니다.'); return; }
 
-          // code → access token 교환
-          const exData = await apiFetch<{ success: boolean; data: { accessToken?: string; username: string; connected: boolean } }>(
-            `/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-          );
-          if (!exData.success) { showToast('GitHub 토큰 교환 실패'); return; }
-
-          setGhUsername(exData.data.username);
+          setGhUsername(result.username);
           setGhConnected(true);
 
           // 조직 목록 자동 로드
           try {
             const orgData = await apiFetch<{ success: boolean; data: { orgs: { login: string; avatarUrl: string | null }[] } }>('/github/orgs');
             if (orgData.success) {
-              setOrgList([{ login: exData.data.username, avatarUrl: null }, ...orgData.data.orgs]);
+              setOrgList([{ login: result.username, avatarUrl: null }, ...orgData.data.orgs]);
             }
-          } catch { /* org 로드 실패는 무시 — 수동 선택 가능 */ }
+          } catch { /* org 로드 실패는 무시 */ }
         } catch {
           showToast('GitHub 연동 처리 중 오류가 발생했습니다.');
         } finally {
           setGhConnecting(false);
         }
       };
+      window.addEventListener('storage', onStorage);
+
+      // 팝업 닫힘 감지 (사용자가 직접 닫은 경우)
+      let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+        if (popup.closed) {
+          // 팝업 닫힌 후 잠시 대기 후 정리
+          setTimeout(() => {
+            const stored = localStorage.getItem('github-oauth-result');
+            if (stored) {
+              // storage 이벤트가 같은 탭에서는 안 발생하므로 직접 처리
+              onStorage({ key: 'github-oauth-result', newValue: stored } as StorageEvent);
+            } else {
+              window.removeEventListener('storage', onStorage);
+              setGhConnecting(false);
+            }
+          }, 1500);
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+      }, 1000);
     } catch {
       showToast('서버 연결 실패 — 테스트 서버가 실행 중인지 확인하세요.');
       setGhConnecting(false);

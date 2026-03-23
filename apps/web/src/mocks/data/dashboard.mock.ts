@@ -17,18 +17,18 @@ export const dashboardData: DashboardData = {
   ],
 
   pendingDocs: [
-    { docNum: '2026-DnDn-0089', title: 'S3 퍼블릭 ACL 즉시 차단',    status: 'waiting',  type: '이벤트', author: '김민준', date: '2026.02.24', workspace: 'Production' },
-    { docNum: '2026-DnDn-0088', title: 'RDS 백업 주기 복구',          status: 'waiting',  type: '이벤트', author: '김민준', date: '2026.02.23', workspace: 'Production' },
-    { docNum: '2026-DnDn-0087', title: 'EKS 노드그룹 스케일 조정',    status: 'waiting',  type: '계획서', author: '이서연', date: '2026.02.22', workspace: 'Staging' },
-    { docNum: '2026-DnDn-0086', title: 'IAM svc-legacy 비활성화',     status: 'rejected', type: '계획서', author: '이서연', date: '2026.02.20', workspace: 'Development' },
+    { id: 'mock-89', docNum: '2026-DnDn-0089', title: 'S3 퍼블릭 ACL 즉시 차단',    status: 'waiting',  type: '이벤트', author: '김민준', date: '2026.02.24', workspace: 'Production' },
+    { id: 'mock-88', docNum: '2026-DnDn-0088', title: 'RDS 백업 주기 복구',          status: 'waiting',  type: '이벤트', author: '김민준', date: '2026.02.23', workspace: 'Production' },
+    { id: 'mock-87', docNum: '2026-DnDn-0087', title: 'EKS 노드그룹 스케일 조정',    status: 'waiting',  type: '계획서', author: '이서연', date: '2026.02.22', workspace: 'Staging' },
+    { id: 'mock-86', docNum: '2026-DnDn-0086', title: 'IAM svc-legacy 비활성화',     status: 'rejected', type: '계획서', author: '이서연', date: '2026.02.20', workspace: 'Development' },
   ],
 
   completedDocs: [
-    { docNum: '2026-DnDn-0085', title: '보안그룹 SSH 인바운드 제거',  type: '이벤트', author: '김민준', date: '2026.02.18', workspace: 'Production' },
-    { docNum: '2026-DnDn-0084', title: '주간 보고서 (02.10~02.16)',   type: '주간',   author: '시스템', date: '2026.02.17', workspace: 'Staging' },
-    { docNum: '2026-DnDn-0083', title: 'CloudTrail 재활성화 작업',    type: '이벤트', author: '김민준', date: '2026.02.15', workspace: 'Production' },
-    { docNum: '2026-DnDn-0082', title: 'GuardDuty IP 차단 조치',      type: '이벤트', author: '박지훈', date: '2026.02.14', workspace: 'Production' },
-    { docNum: '2026-DnDn-0081', title: 'EC2 인스턴스 스케일업',        type: '계획서', author: '이서연', date: '2026.02.13', workspace: 'Development' },
+    { id: 'mock-85', docNum: '2026-DnDn-0085', title: '보안그룹 SSH 인바운드 제거',  type: '이벤트', author: '김민준', date: '2026.02.18', workspace: 'Production' },
+    { id: 'mock-84', docNum: '2026-DnDn-0084', title: '주간 보고서 (02.10~02.16)',   type: '주간',   author: '시스템', date: '2026.02.17', workspace: 'Staging' },
+    { id: 'mock-83', docNum: '2026-DnDn-0083', title: 'CloudTrail 재활성화 작업',    type: '이벤트', author: '김민준', date: '2026.02.15', workspace: 'Production' },
+    { id: 'mock-82', docNum: '2026-DnDn-0082', title: 'GuardDuty IP 차단 조치',      type: '이벤트', author: '박지훈', date: '2026.02.14', workspace: 'Production' },
+    { id: 'mock-81', docNum: '2026-DnDn-0081', title: 'EC2 인스턴스 스케일업',        type: '계획서', author: '이서연', date: '2026.02.13', workspace: 'Development' },
   ],
 
   tasks: [

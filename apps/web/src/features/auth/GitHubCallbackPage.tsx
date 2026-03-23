@@ -1,40 +1,54 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { apiFetch } from '@/services/api';
 
 /**
  * GitHub OAuth 콜백 페이지.
- * GitHub이 ?code=...&state=... 로 리다이렉트하면
- * opener(팝업을 연 부모 창)에 메시지를 전달하고 닫힌다.
+ * 팝업에서 직접 code→token 교환 API를 호출하고,
+ * localStorage 이벤트로 부모 창에 결과를 전달한다.
  */
 export function GitHubCallbackPage() {
+  const [msg, setMsg] = useState('GitHub 인증 처리 중...');
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const state = params.get('state');
     const error = params.get('error');
-    const errorDesc = params.get('error_description');
 
-    // GitHub COOP 헤더로 인해 window.opener가 null이 될 수 있어 BroadcastChannel 사용
-    const bc = new BroadcastChannel('github-oauth');
     if (error) {
-      bc.postMessage({ type: 'github-oauth', error, errorDescription: errorDesc });
-    } else if (code && state) {
-      bc.postMessage({ type: 'github-oauth', code, state });
-    } else {
-      // 직접 접근 — 메인 페이지로 이동
-      bc.close();
+      setMsg('GitHub 인증이 거부되었습니다.');
+      localStorage.setItem('github-oauth-result', JSON.stringify({ error }));
+      setTimeout(() => window.close(), 1500);
+      return;
+    }
+
+    if (!code || !state) {
       window.location.href = '/';
       return;
     }
-    // 메시지 전달 완료 후 닫기
-    setTimeout(() => {
-      bc.close();
-      window.close();
-    }, 500);
+
+    // 콜백 페이지에서 직접 token 교환
+    (async () => {
+      try {
+        const res = await apiFetch<{ success: boolean; data: { username: string; connected: boolean } }>(
+          `/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+        );
+        setMsg('연동 완료! 창을 닫는 중...');
+        localStorage.setItem('github-oauth-result', JSON.stringify({
+          success: true,
+          username: res.data.username,
+        }));
+      } catch {
+        setMsg('토큰 교환 실패');
+        localStorage.setItem('github-oauth-result', JSON.stringify({ error: 'exchange_failed' }));
+      }
+      setTimeout(() => window.close(), 1000);
+    })();
   }, []);
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <p>GitHub 인증 처리 중...</p>
+      <p>{msg}</p>
     </div>
   );
 }

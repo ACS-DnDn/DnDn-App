@@ -117,7 +117,7 @@ export function DashboardPage() {
               {(data?.pendingDocs ?? []).map((d) => {
                 const s = statusMap[d.status];
                 return (
-                  <tr key={d.docNum} onClick={() => navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${parseInt(d.docNum.split('-').pop() ?? '1')}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
+                  <tr key={d.docNum} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                     <td className="td-num">{d.docNum}</td>
                     <td>
                       <div className="doc-title-row">
@@ -168,7 +168,7 @@ export function DashboardPage() {
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{d.type}</td>
                   <td className="td-author">{d.author}</td>
-                  <td className="td-date">{d.date.slice(0, 10)}</td>
+                  <td className="td-date">{d.date}</td>
                 </tr>
               ))}
             </tbody>

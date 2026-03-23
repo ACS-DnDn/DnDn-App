@@ -18,7 +18,13 @@ const TF_FILES = [
 interface Approver { id: string; name: string; rank: string; type: string; }
 interface PendingApprover { id: string; name: string; rank: string; type: string; }
 interface RefDoc { no: string; name: string; }
-interface LogEntry { time: string; msg: string; type: string; tab: number; }
+interface LogEntry { id: string; time: string; msg: string; type: string; tab: number; clickable?: 'security' | 'policy'; }
+interface CheckovIssue { id: string; resource: string; file?: string; line?: number; severity?: string; }
+interface OpaBlock { key: string; label: string; }
+interface ValidationResult {
+  checkov: { passed: boolean; summary: string; issues: CheckovIssue[] };
+  opa: { passed: boolean; summary: string; blocks: OpaBlock[]; warns: OpaBlock[] };
+}
 
 const DOC_PAGE_SIZE = 8;
 
@@ -61,7 +67,13 @@ export function PlanPage() {
   const [draftDocumentId, setDraftDocumentId] = useState<string | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
+  const [lastValidation, setLastValidation] = useState<ValidationResult | null>(null);
+  const [validationPopup, setValidationPopup] = useState<'security' | 'policy' | null>(null);
   const logPanelRef = useRef<HTMLDivElement>(null);
+
+  /* ── 결재 상신 모달 state ── */
+  const [submitModalOpen, setSubmitModalOpen] = useState(false);
+  const [authorComment, setAuthorComment] = useState('');
 
   /* ── approver popup state ── */
   const [apvPopupOpen, setApvPopupOpen] = useState(false);
@@ -115,7 +127,11 @@ export function PlanPage() {
 
   /* ── helpers ── */
   const addLog = useCallback((msg: string, type: string, tab: number) => {
-    setLogEntries(prev => [...prev, { time: now(), msg, type, tab }]);
+    setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: now(), msg, type, tab }]);
+  }, []);
+
+  const updateLog = useCallback((id: string, msg: string, type: string) => {
+    setLogEntries(prev => prev.map(e => e.id === id ? { ...e, msg, type, time: now() } : e));
   }, []);
 
   /* ══════════════════════════════
@@ -260,10 +276,8 @@ export function PlanPage() {
       const { jobId } = json;
       const result = await pollJob(jobId);
       setDraftDocumentId(result.documentId as string);
-      // S3 URL은 cross-origin → contentDocument 접근 불가. Blob URL로 변환
-      const htmlResp = await fetch(result.contentUrl as string);
-      const htmlText = await htmlResp.text();
-      const blob = new Blob([htmlText], { type: 'text/html' });
+      // API 응답의 htmlContent로 Blob URL 생성 (S3 CORS 우회)
+      const blob = new Blob([result.htmlContent as string], { type: 'text/html' });
       setIframeSrc(URL.createObjectURL(blob));
       setDocState('ready');
     } catch (err) {
@@ -288,24 +302,30 @@ export function PlanPage() {
     autoSaveRef.current = setTimeout(doAutoSave, 2000);
   }, []);
 
-  async function saveDoc() {
+  function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
     if (approvers.length === 0) { alert('결재자를 1명 이상 지정해 주세요.'); return; }
+    setAuthorComment('');
+    setSubmitModalOpen(true);
+  }
 
+  async function saveDoc() {
+    setSubmitModalOpen(false);
     try {
       const terraformObj = Object.fromEntries(generatedTfFiles.map(f => [f.name, f.code]));
-      const res = await apiFetch<{ id: string; docNum: string; status: string }>('/documents', {
+      const res = await apiFetch<{ success: boolean; data: { id: string; docNum: string; status: string } }>('/documents', {
         method: 'POST',
         body: JSON.stringify({
           documentId: draftDocumentId,
-          type: 'plan',
+          workspaceId: ws?.id ?? '',
           terraform: generatedTfFiles.length > 0 ? terraformObj : undefined,
           refDocIds: refDocs.map(rd => rd.no),
           approvers: approvers.map((a, i) => ({ userId: a.id, seq: i + 1, type: a.type })),
           isDraft: false,
+          authorComment: authorComment.trim() || undefined,
         }),
       });
-      navigate(`/viewer/${res.id}`);
+      navigate(`/viewer/${res.data.id}`);
     } catch (err) {
       console.error('결재 상신 실패:', err);
       alert('결재 상신에 실패했습니다. 다시 시도해 주세요.');
@@ -324,14 +344,11 @@ export function PlanPage() {
     addLog('작업 계획서 분석 중...', 'muted', 0);
     addLog('Terraform 코드 생성 중...', 'run', 0);
     try {
-      const res = await fetch('/todo/documents/generate/terraform', {
+      const json = await apiFetch<{ jobId: string }>('/documents/generate/terraform', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId: draftDocumentId }),
+        body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const { jobId } = json.data ?? json;
+      const { jobId } = json;
       const result = await pollJob(jobId);
       const rawFiles = (result.files as Record<string, string>) ?? {};
       const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
@@ -343,6 +360,7 @@ export function PlanPage() {
       files.forEach((f, i) => addLog(`${f.name} 생성 완료`, 'ok', i));
       setTfStatus('ok');
       setTfStatusText('생성 완료');
+      await runValidation(files, files.map(f => f.code));
     } catch (err) {
       console.error('terraform API error:', err);
       setTfState('blank');
@@ -352,8 +370,85 @@ export function PlanPage() {
     }
   }
 
+  async function _doValidate(fileMap: Record<string, string>) {
+    return apiFetch<ValidationResult>('/documents/generate/terraform/validate', {
+      method: 'POST',
+      body: JSON.stringify({ files: fileMap, workspaceId: ws?.id }),
+    });
+  }
+
+  async function runValidation(files: { name: string; code: string }[], codes: string[], isRetry = false) {
+    const secId = Math.random().toString(36).slice(2);
+    const opaId = Math.random().toString(36).slice(2);
+    setLogEntries(prev => [
+      ...prev,
+      { id: secId, time: now(), msg: '보안 검증 중...', type: 'run', tab: -1, clickable: 'security' },
+      { id: opaId, time: now(), msg: '정책 검증 중...', type: 'run', tab: -1, clickable: 'policy' },
+    ]);
+    try {
+      const fileMap: Record<string, string> = {};
+      files.forEach((f, i) => { fileMap[f.name] = codes[i] ?? f.code; });
+      const result = await _doValidate(fileMap);
+      setLastValidation(result);
+
+      updateLog(secId,
+        result.checkov.passed ? `보안 검증 통과 ✓ (${result.checkov.summary})` : `보안 검증 이슈: ${result.checkov.summary}`,
+        result.checkov.passed ? 'ok' : 'warn'
+      );
+      if (!isRetry) {
+        result.checkov.issues?.slice(0, 10).forEach(issue => {
+          const loc = issue.file && issue.line ? ` (${issue.file}:${issue.line})` : '';
+          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • ${issue.id}: ${issue.resource}${loc}`, type: 'muted', tab: -1 }]);
+        });
+      }
+
+      updateLog(opaId,
+        result.opa.passed ? `정책 검증 통과 ✓ (${result.opa.summary})` : `정책 위반 감지: ${result.opa.summary}`,
+        result.opa.passed ? 'ok' : (result.opa.blocks.length > 0 ? 'err' : 'warn')
+      );
+      if (!isRetry) {
+        result.opa.blocks?.forEach(b => {
+          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [차단] ${b.label}`, type: 'muted', tab: -1 }]);
+        });
+        result.opa.warns?.forEach(w => {
+          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [경고] ${w.label}`, type: 'muted', tab: -1 }]);
+        });
+      }
+
+      // 이슈 있고 첫 번째 시도면 자동 수정
+      const hasIssues = !result.checkov.passed || !result.opa.passed;
+      if (hasIssues && !isRetry) {
+        const fixLogId = Math.random().toString(36).slice(2);
+        setLogEntries(prev => [...prev, { id: fixLogId, time: now(), msg: '이슈 자동 수정 중...', type: 'run', tab: -1 }]);
+        try {
+          const fixResult = await apiFetch<{ files: Record<string, string> }>('/documents/generate/terraform/fix', {
+            method: 'POST',
+            body: JSON.stringify({
+              files: fileMap,
+              checkovIssues: result.checkov.issues ?? [],
+              opaBlocks: result.opa.blocks ?? [],
+              opaWarns: result.opa.warns ?? [],
+            }),
+          });
+          const fixedFiles = Object.entries(fixResult.files).map(([name, code]) => ({ name, code }));
+          setGeneratedTfFiles(fixedFiles);
+          setTfCodes(fixedFiles.map(f => f.code));
+          updateLog(fixLogId, '코드 수정 완료 → 재검증 중...', 'ok');
+          await runValidation(fixedFiles, fixedFiles.map(f => f.code), true);
+        } catch {
+          updateLog(fixLogId, '자동 수정 실패 — 수동으로 수정 후 재검증하세요', 'warn');
+        }
+      }
+    } catch (err) {
+      updateLog(secId, '보안 검증 오류: ' + String(err), 'muted');
+      updateLog(opaId, '정책 검증 오류: ' + String(err), 'muted');
+    }
+  }
+
   function revalidate() {
+    if (generatedTfFiles.length === 0) { setLogEntries([]); return; }
     setLogEntries([]);
+    runValidation(generatedTfFiles, tfCodes);
   }
 
   /* ── auto-resize textarea ── */
@@ -552,7 +647,7 @@ export function PlanPage() {
           {lastSaved && <span className="auto-save-label">마지막 저장 {lastSaved}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <button className="btn-tf" disabled={docState !== 'ready' || tfState === 'loading'} onClick={generateTerraform}>Terraform 코드 생성</button>
-            <button className="plan-btn-save" onClick={saveDoc}>
+            <button className="plan-btn-save" onClick={openSubmitModal}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 10l4 4 8-9"/></svg>
               결재 상신
             </button>
@@ -663,11 +758,16 @@ export function PlanPage() {
             </button>
           </div>
           <div className="tf-log-panel active" ref={logPanelRef}>
-            {logEntries.filter(e => e.tab === tfTab).map((e, i) => (
-              <div key={i} className={`tf-log-entry log-${e.type}`}>
+            {logEntries.filter(e => e.tab === tfTab || e.tab === -1).map((e, i) => (
+              <div
+                key={i}
+                className={`tf-log-entry log-${e.type}${e.clickable ? ' tf-log-clickable' : ''}`}
+                onClick={e.clickable ? () => setValidationPopup(e.clickable!) : undefined}
+              >
                 <span className="tf-log-time">{e.time}</span>
                 <div className="tf-log-dot" />
                 <span className="tf-log-msg">{e.msg}</span>
+                {e.clickable && <span className="tf-log-detail-hint">상세 ›</span>}
               </div>
             ))}
           </div>
@@ -793,6 +893,105 @@ export function PlanPage() {
         </div>
       </div>
     </div>
+
+    {/* ══════════════════════════════
+       팝업: 결재 상신 (기안 의견)
+    ══════════════════════════════ */}
+    {submitModalOpen && (
+      <div className="plan-popup-overlay open" onClick={e => { if (e.target === e.currentTarget) setSubmitModalOpen(false); }}>
+        <div className="plan-popup" style={{ width: 480 }}>
+          <div className="plan-popup-header">
+            <span className="plan-popup-title">결재 상신</span>
+            <button className="plan-popup-close" onClick={() => setSubmitModalOpen(false)}>&times;</button>
+          </div>
+          <div style={{ padding: '16px 20px' }}>
+            <textarea
+              style={{ width: '100%', minHeight: 96, padding: '10px 12px', fontSize: 13, border: '1px solid var(--border)', borderRadius: 8, resize: 'vertical', background: 'var(--bg-secondary)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
+              placeholder="기안 의견 (선택)"
+              value={authorComment}
+              onChange={e => setAuthorComment(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="plan-popup-footer" style={{ justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn-popup-cancel" onClick={() => setSubmitModalOpen(false)}>취소</button>
+            <button className="btn-popup-submit" onClick={saveDoc}>상신</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══════════════════════════════
+       팝업: 검증 상세
+    ══════════════════════════════ */}
+    {validationPopup && lastValidation && (
+      <div className="plan-popup-overlay open" onClick={e => { if (e.target === e.currentTarget) setValidationPopup(null); }}>
+        <div className="plan-popup vd-popup">
+          <div className="plan-popup-header">
+            <span className="plan-popup-title">
+              {validationPopup === 'security' ? '보안 검증 상세' : '정책 검증 상세'}
+            </span>
+            <button className="plan-popup-close" onClick={() => setValidationPopup(null)}>&times;</button>
+          </div>
+          <div className="vd-body">
+            {validationPopup === 'security' ? (
+              <>
+                <div className={`vd-summary ${lastValidation.checkov.passed ? 'pass' : 'fail'}`}>
+                  {lastValidation.checkov.passed ? '✓ 보안 검증 통과' : '✗ 이슈 발견'} — {lastValidation.checkov.summary}
+                </div>
+                {lastValidation.checkov.issues.length === 0 ? (
+                  <div className="vd-empty">이슈가 없습니다.</div>
+                ) : (
+                  <table className="vd-table">
+                    <thead>
+                      <tr>
+                        <th>규칙 ID</th>
+                        <th>리소스</th>
+                        <th>위치</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lastValidation.checkov.issues.map((issue, i) => (
+                        <tr key={i}>
+                          <td><span className="vd-rule-id">{issue.id}</span></td>
+                          <td className="vd-resource">{issue.resource}</td>
+                          <td className="vd-loc">{issue.file}{issue.line != null ? `:${issue.line}` : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : (
+              <>
+                <div className={`vd-summary ${lastValidation.opa.passed ? 'pass' : 'fail'}`}>
+                  {lastValidation.opa.passed ? '✓ 정책 검증 통과' : '✗ 정책 위반 감지'} — {lastValidation.opa.summary}
+                </div>
+                {lastValidation.opa.blocks.length > 0 && (
+                  <div className="vd-section">
+                    <div className="vd-section-title err">차단 항목</div>
+                    {lastValidation.opa.blocks.map((b, i) => (
+                      <div key={i} className="vd-item err">{b.label}</div>
+                    ))}
+                  </div>
+                )}
+                {lastValidation.opa.warns.length > 0 && (
+                  <div className="vd-section">
+                    <div className="vd-section-title warn">경고 항목</div>
+                    {lastValidation.opa.warns.map((w, i) => (
+                      <div key={i} className="vd-item warn">{w.label}</div>
+                    ))}
+                  </div>
+                )}
+                {lastValidation.opa.blocks.length === 0 && lastValidation.opa.warns.length === 0 && (
+                  <div className="vd-empty">이슈가 없습니다.</div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

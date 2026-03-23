@@ -59,23 +59,27 @@ export async function getDocuments(params?: {
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
     const res = await apiFetch<{
-      id: string; title: string; type: string; status: string;
-      author?: { name: string }; date?: string; workspace?: string;
-      content?: string; terraform?: Record<string, string>; ref_doc_ids?: string[];
+      id: string; title: string; type: string; status: string; action?: string | null;
+      author?: { name: string }; createdAt?: string; workspace?: string;
+      content?: string; terraform?: Record<string, string>;
+      refDocs?: { id: string; title: string; type: string }[];
+      approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
     }>(`/documents/${id}`);
     return {
       id: res.id,
       name: res.title,
       author: res.author?.name ?? '',
-      date: res.date ?? '',
+      date: res.createdAt ?? '',
       type: res.type as Document['type'],
       status: res.status as Document['status'],
-      action: null,
+      action: (res.action ?? null) as Document['action'],
       icon: '📄',
       workspace: res.workspace ?? '',
       content: res.content,
       terraform: res.terraform,
-      refDocIds: res.ref_doc_ids,
+      refDocs: res.refDocs,
+      refDocIds: res.refDocs?.map(d => d.id),
+      approvalLine: res.approvalLine,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;
