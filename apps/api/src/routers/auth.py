@@ -148,7 +148,7 @@ async def get_current_user(
 
         cognito_user_id = payload.get("sub")
         email = payload.get("email")
-        username = payload.get("cognito:username", "알수없는유저")
+        username = payload.get("cognito:username", "unknown")
 
         if cognito_user_id is None:
             raise credentials_exception
@@ -173,7 +173,7 @@ async def get_current_user(
         user = User(
             id=str(_uuid.uuid4()),
             cognito_sub=cognito_user_id,
-            email=email if email else f"{username}@placeholder.com",
+            email=email or f"{username}@placeholder.local",
             name=username,
             role="member",
         )
