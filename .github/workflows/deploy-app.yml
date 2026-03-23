@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'apps/**'
+      - 'contracts/payload/job_payload.schema.json'
+      - 'contracts/canonical_model.schema.json'
+      - 'contracts/event_model.schema.json'
+      - '.github/workflows/deploy-app.yml'
 
 permissions:
   id-token: write
@@ -32,7 +36,11 @@ jobs:
         with:
           filters: |
             api:    ['apps/api/**']
-            worker: ['apps/worker/**']
+            worker:
+              - 'apps/worker/**'
+              - 'contracts/payload/job_payload.schema.json'
+              - 'contracts/canonical_model.schema.json'
+              - 'contracts/event_model.schema.json'
             report: ['apps/report/**']
             web:    ['apps/web/**']
 
@@ -93,7 +101,7 @@ jobs:
       - name: Build & Push
         run: |
           IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-worker:${{ github.sha }}
-          docker build -t $IMAGE apps/worker/
+          docker build -f apps/worker/Dockerfile -t $IMAGE .
           docker push $IMAGE
 
       - name: Update kubeconfig
