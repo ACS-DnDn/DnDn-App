@@ -96,10 +96,11 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-api:${{ github.sha }}
-          docker build -t $IMAGE apps/api/
-          docker push $IMAGE
-          echo "API image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-api
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/api/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "API image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Worker ────────────────────────────────────────────────────────────
   publish-worker:
@@ -121,10 +122,11 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-worker:${{ github.sha }}
-          docker build -f apps/worker/Dockerfile -t $IMAGE .
-          docker push $IMAGE
-          echo "Worker image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-worker
+          docker build -f apps/worker/Dockerfile -t $REPO:${{ github.sha }} -t $REPO:latest .
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Worker image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Report ────────────────────────────────────────────────────────────
   publish-report:
@@ -146,13 +148,11 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-report:${{ github.sha }}
-          docker build -t $IMAGE apps/report/
-          docker push $IMAGE
-          echo "Report image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deploy units using this image:" >> "$GITHUB_STEP_SUMMARY"
-          echo "- dndn-report-api" >> "$GITHUB_STEP_SUMMARY"
-          echo "- dndn-report-worker" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-report
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/report/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Report image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Web ───────────────────────────────────────────────────────────────
   publish-web:
@@ -174,7 +174,8 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
-          docker build -t $IMAGE apps/web/
-          docker push $IMAGE
-          echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-web
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/web/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Web image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
