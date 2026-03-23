@@ -23,7 +23,6 @@ permissions:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: 387721658341.dkr.ecr.ap-northeast-2.amazonaws.com
-  BASTION_HOST: 13.124.119.204
 
 jobs:
   # ── 변경된 앱 감지 ─────────────────────────────────────────────────────
@@ -181,50 +180,62 @@ jobs:
           docker push $REPO:latest
           echo "Web image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Deploy: 빌드된 앱 자동 롤아웃 ──────────────────────────────────────
-  deploy:
-    name: Rollout Restart
+  # ── Deploy: GitOps image tag 업데이트 → ArgoCD 자동 sync ────────────────
+  update-gitops:
+    name: Update GitOps manifests
     needs: [detect, publish-api, publish-worker, publish-report, publish-web]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/bastion.pem
-          chmod 600 ~/.ssh/bastion.pem
-          ssh-keyscan -H ${{ env.BASTION_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Checkout Infra repo
+        uses: actions/checkout@v4
+        with:
+          repository: ACS-DnDn/DnDn-Infra
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+          ref: main
 
-      - name: Rollout restart changed apps
+      - name: Update image tags
         run: |
-          SSH="ssh -i ~/.ssh/bastion.pem -o StrictHostKeyChecking=no ec2-user@${{ env.BASTION_HOST }}"
-          APPS=""
+          SHA=${{ github.sha }}
+          REGISTRY=${{ env.ECR_REGISTRY }}
+          CHANGED=false
+
+          update_tag() {
+            local file="$1" old_image="$2" new_image="$3"
+            if [ -f "$file" ]; then
+              sed -i "s|${old_image}:.*|${new_image}:${SHA}|" "$file"
+              CHANGED=true
+              echo "✓ Updated $file → ${new_image}:${SHA}"
+            fi
+          }
+
           if [ "${{ needs.detect.outputs.api }}" = "true" ] && [ "${{ needs.publish-api.result }}" = "success" ]; then
-            APPS="$APPS deployment/dndn-api -n dndn-api"
+            update_tag "gitops/environments/prod/apps/dndn-api/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-api" "${REGISTRY}/dndn-prd-api"
           fi
           if [ "${{ needs.detect.outputs.worker }}" = "true" ] && [ "${{ needs.publish-worker.result }}" = "success" ]; then
-            APPS="$APPS deployment/dndn-worker -n dndn-worker"
+            update_tag "gitops/environments/prod/apps/dndn-worker/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-worker" "${REGISTRY}/dndn-prd-worker"
           fi
           if [ "${{ needs.detect.outputs.report }}" = "true" ] && [ "${{ needs.publish-report.result }}" = "success" ]; then
-            APPS="$APPS deployment/dndn-report -n dndn-report"
+            update_tag "gitops/environments/prod/apps/dndn-report/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-report" "${REGISTRY}/dndn-prd-report"
           fi
           if [ "${{ needs.detect.outputs.web }}" = "true" ] && [ "${{ needs.publish-web.result }}" = "success" ]; then
-            APPS="$APPS deployment/dndn-web -n dndn-web"
+            update_tag "gitops/environments/prod/apps/dndn-web/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-web" "${REGISTRY}/dndn-prd-web"
           fi
-          if [ -z "$APPS" ]; then
-            echo "No apps to deploy"
+
+          if [ "$CHANGED" = "false" ]; then
+            echo "No apps to update"
             exit 0
           fi
-          # Rollout restart each app
-          for pair in api worker report web; do
-            case "$pair" in
-              api)    [ "${{ needs.detect.outputs.api }}" = "true" ] && [ "${{ needs.publish-api.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-api -n dndn-api" && echo "✓ api" ;;
-              worker) [ "${{ needs.detect.outputs.worker }}" = "true" ] && [ "${{ needs.publish-worker.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-worker -n dndn-worker" && echo "✓ worker" ;;
-              report) [ "${{ needs.detect.outputs.report }}" = "true" ] && [ "${{ needs.publish-report.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-report -n dndn-report" && echo "✓ report" ;;
-              web)    [ "${{ needs.detect.outputs.web }}" = "true" ] && [ "${{ needs.publish-web.result }}" = "success" ] && $SSH "kubectl rollout restart deployment/dndn-web -n dndn-web" && echo "✓ web" ;;
-            esac
-          done
 
-      - name: Cleanup
-        if: always()
-        run: rm -f ~/.ssh/bastion.pem
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore(gitops): update image tags from DnDn-App@${GITHUB_SHA::7}"
+          git push
