@@ -21,12 +21,17 @@ from apps.api.src.schemas.auth import (
     ChallengeRequest,
     RefreshRequest,
     RefreshResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ConfirmResetRequest,
 )
 from apps.api.src.security.cognito import (
     login,
     respond_new_password,
     refresh_token,
     logout,
+    forgot_password,
+    confirm_reset_password,
     LoginResult,
     ChallengeResult,
     CognitoError,
@@ -148,7 +153,7 @@ async def get_current_user(
 
         cognito_user_id = payload.get("sub")
         email = payload.get("email")
-        username = payload.get("cognito:username", "unknown")
+        username = payload.get("cognito:username") or f"unknown-{cognito_user_id[:8] if cognito_user_id else 'none'}"
 
         if cognito_user_id is None:
             raise credentials_exception
@@ -173,7 +178,7 @@ async def get_current_user(
         user = User(
             id=str(_uuid.uuid4()),
             cognito_sub=cognito_user_id,
-            email=email or f"{username}@placeholder.local",
+            email=email or f"{cognito_user_id}@placeholder.invalid",
             name=username,
             role="member",
         )
@@ -283,7 +288,37 @@ def auth_logout(token: str = Depends(_extract_access_token)):
 
 
 # -------------------------------------------------------------------
-# 5. 내 정보 조회 (GET /auth/me) — DB User + 회사 정보
+# 5. 비밀번호 재설정 요청 (POST /auth/forgot-password)
+# -------------------------------------------------------------------
+@router.post("/forgot-password", response_model=SuccessResponse[ForgotPasswordResponse])
+def auth_forgot_password(req: ForgotPasswordRequest):
+    """비밀번호 재설정 인증 코드를 이메일로 발송."""
+    try:
+        result = forgot_password(req.email)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(
+        data=ForgotPasswordResponse(destination=result.destination)
+    )
+
+
+# -------------------------------------------------------------------
+# 6. 비밀번호 재설정 확인 (POST /auth/confirm-reset)
+# -------------------------------------------------------------------
+@router.post("/confirm-reset", response_model=SuccessResponse[dict])
+def auth_confirm_reset(req: ConfirmResetRequest):
+    """인증 코드 + 새 비밀번호로 비밀번호 변경."""
+    try:
+        confirm_reset_password(req.email, req.code, req.newPassword)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(data={"message": "비밀번호가 변경되었습니다."})
+
+
+# -------------------------------------------------------------------
+# 7. 내 정보 조회 (GET /auth/me) — DB User + 회사 정보
 # -------------------------------------------------------------------
 @router.get(
     "/me", response_model=SuccessResponse[UserMeResponse], summary="내 정보 조회"
