@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")  # Legacy
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")  # us-east-1
 MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")
+HAIKU_MODEL_ID = os.getenv(
+    "BEDROCK_HAIKU_MODEL_ID", "apac.anthropic.claude-3-5-haiku-20241022-v1:0"
+)
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 
 def _find_uvx() -> str:
@@ -115,6 +118,47 @@ class TerraformMCPClient:
 # GitHub .tf 수집
 # ─────────────────────────────────────────────────
 
+_MAX_EXISTING_TF_CHARS = 40_000  # 이 크기 이상이면 Haiku 요약 적용
+
+
+def _summarize_tf_code(tf_text: str) -> str:
+    """기존 .tf 코드가 클 때 Haiku로 구조 요약. 리소스명/변수명/모듈 구조 보존."""
+    if len(tf_text) <= _MAX_EXISTING_TF_CHARS:
+        return tf_text
+    logger.info("[Haiku] 기존 .tf 코드 요약 시작 (%d자)", len(tf_text))
+    try:
+        client = boto3.client("bedrock-runtime", region_name=REGION)
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 8192,
+            "system": (
+                "당신은 Terraform 코드 분석 전문가입니다. "
+                "다음 기존 Terraform 코드를 분석하여 새 코드 생성 시 충돌을 방지할 수 있도록 요약하세요.\n\n"
+                "반드시 포함할 항목:\n"
+                "- 모든 resource/data/module 블록의 타입과 이름 (예: resource \"aws_instance\" \"web\")\n"
+                "- 모든 variable/output/local 이름과 타입\n"
+                "- provider 설정과 backend 설정\n"
+                "- 네이밍 컨벤션 패턴 (접두사, 태그 구조 등)\n"
+                "- 리소스 간 참조 관계 (depends_on, 변수 참조)\n\n"
+                "코드 전체를 복사하지 말고, 위 항목을 구조화된 목록으로 정리하세요."
+            ),
+            "messages": [{"role": "user", "content": tf_text}],
+        }
+        response = client.invoke_model(
+            modelId=HAIKU_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        result = json.loads(response["body"].read())
+        summary = result["content"][0]["text"]
+        logger.info("[Haiku] 기존 .tf 코드 요약 완료 (%d자 → %d자)", len(tf_text), len(summary))
+        return summary
+    except Exception as e:
+        logger.warning("[Haiku] .tf 요약 실패, truncate 폴백: %s", e)
+        return tf_text[:_MAX_EXISTING_TF_CHARS] + "\n... (truncated)"
+
+
 def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
     g = Github(token) if token else Github()
     repo = g.get_repo(repo_name)
@@ -126,7 +170,8 @@ def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
             contents.extend(repo.get_contents(f.path))
         elif f.name.endswith(".tf"):
             tf_files.append(f"# === {f.path} ===\n{f.decoded_content.decode()}")
-    return "\n\n".join(tf_files)
+    raw = "\n\n".join(tf_files)
+    return _summarize_tf_code(raw)
 
 
 # ─────────────────────────────────────────────────
@@ -319,6 +364,36 @@ def _format_opa_for_prompt(policies: list[dict]) -> str:
 # Bedrock 호출
 # ─────────────────────────────────────────────────
 
+_MAX_PROMPT_CHARS = 150_000  # Bedrock 프롬프트 전체 최대 크기
+
+
+def _build_user_prompt(workplan_json: str, existing_tf: str, aws_docs_section: str,
+                       best_practices_section: str, opa_section: str) -> str:
+    return f"""
+## 작업계획서
+{workplan_json}
+
+## 기존 테라폼 코드 (스타일/컨벤션 참고)
+{existing_tf}
+{aws_docs_section}
+{best_practices_section}
+{opa_section}
+
+위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
+
+다음 JSON 형식으로 반환하세요:
+{{
+  "files": [
+    {{
+      "filename": "파일명.tf",
+      "content": "테라폼 코드 전체 내용"
+    }}
+  ],
+  "summary": "생성된 코드 설명 (한국어, 2~3문장)"
+}}
+""".strip()
+
+
 def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "") -> dict:
     client = boto3.client("bedrock-runtime", region_name=REGION)
 
@@ -349,29 +424,16 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
 6. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
 """.strip()
 
-    user = f"""
-## 작업계획서
-{json.dumps(workplan, ensure_ascii=False, indent=2)}
+    workplan_json = json.dumps(workplan, ensure_ascii=False, indent=2)
 
-## 기존 테라폼 코드 (스타일/컨벤션 참고)
-{existing_tf}
-{aws_docs_section}
-{best_practices_section}
-{opa_section}
-
-위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
-
-다음 JSON 형식으로 반환하세요:
-{{
-  "files": [
-    {{
-      "filename": "파일명.tf",
-      "content": "테라폼 코드 전체 내용"
-    }}
-  ],
-  "summary": "생성된 코드 설명 (한국어, 2~3문장)"
-}}
-""".strip()
+    # 프롬프트 크기 안전장치: existing_tf부터 순차 축소
+    user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section)
+    total = len(system) + len(user)
+    if total > _MAX_PROMPT_CHARS:
+        over = total - _MAX_PROMPT_CHARS
+        existing_tf = existing_tf[: max(0, len(existing_tf) - over)]
+        user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section)
+        logger.warning("프롬프트 축소: %d → %d자", total, len(system) + len(user))
 
     body = {
         "anthropic_version": "bedrock-2023-05-31",
