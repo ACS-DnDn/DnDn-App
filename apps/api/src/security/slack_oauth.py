@@ -115,7 +115,58 @@ def exchange_code(code: str) -> CallbackResult:
     )
 
 
-# ── 3. 메시지 전송 ────────────────────────────────────────
+# ── 3. 채널 목록 조회 ──────────────────────────────────────
+def list_channels(token: str) -> list[dict[str, str]]:
+    """Bot이 접근 가능한 public 채널 목록 반환."""
+    channels: list[dict[str, str]] = []
+    cursor: str | None = None
+
+    while True:
+        params: dict[str, str | int] = {
+            "types": "public_channel",
+            "exclude_archived": "true",
+            "limit": 200,
+        }
+        if cursor:
+            params["cursor"] = cursor
+
+        try:
+            resp = requests.get(
+                f"{_SLACK_API}/conversations.list",
+                params=params,
+                headers=_slack_headers(token),
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as e:
+            raise SlackError(502, "SLACK_API_ERROR", "Slack 서버에 연결할 수 없습니다.") from e
+
+        if not resp.ok:
+            raise SlackError(resp.status_code, "SLACK_CHANNELS_ERROR", f"채널 목록 조회 실패: HTTP {resp.status_code}")
+
+        try:
+            data = resp.json()
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            raise SlackError(502, "SLACK_CHANNELS_ERROR", "Slack 응답을 파싱할 수 없습니다.")
+
+        if not data.get("ok"):
+            raise SlackError(400, "SLACK_CHANNELS_ERROR", data.get("error", "채널 목록 조회 실패"))
+
+        for ch in data.get("channels", []):
+            channels.append({
+                "id": ch["id"],
+                "name": ch["name"],
+                "topic": (ch.get("topic") or {}).get("value", ""),
+            })
+
+        cursor = data.get("response_metadata", {}).get("next_cursor")
+        if not cursor:
+            break
+
+    channels.sort(key=lambda c: c["name"])
+    return channels
+
+
+# ── 4. 메시지 전송 ────────────────────────────────────────
 def send_message(token: str, channel: str, text: str) -> None:
     """Slack 채널에 메시지 전송."""
     try:

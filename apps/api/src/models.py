@@ -76,7 +76,8 @@ class User(Base):
     slack_user_id = Column(String(50), nullable=True)
     slack_access_token = Column(Text, nullable=True)
     slack_workspace = Column(String(100), nullable=True)
-    slack_channel = Column(String(100), nullable=True)
+    slack_channel = Column(String(100), nullable=True)       # 채널 ID (C0xxxxx)
+    slack_channel_name = Column(String(100), nullable=True)  # 채널 표시명
     slack_notify = Column(Boolean, nullable=True)
 
     # GitHub 연동

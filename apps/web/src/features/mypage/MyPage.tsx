@@ -7,17 +7,17 @@ const AUTH_LABELS: Record<string, string> = { leader: '리더', user: '사용자
 const AUTH_CLASS: Record<string, string> = { leader: 'auth-badge-leader', user: 'auth-badge-user', auditor: 'auth-badge-auditor' };
 const AUTH_DESC: Record<string, string> = { leader: 'Leader (관리자)', user: 'User (일반 사용자)', auditor: 'Auditor (감사자)' };
 
-const CHANNELS = [
-  { id: 'general', name: '#general', desc: '전체 공지' },
-  { id: 'aws-alerts', name: '#aws-alerts', desc: 'AWS 알림 전용' },
-  { id: 'devops', name: '#devops', desc: '데브옵스 팀' },
-  { id: 'infra-events', name: '#infra-events', desc: '인프라 이벤트' },
-];
+interface SlackChannel {
+  id: string;
+  name: string;
+  topic: string;
+}
 
 interface SlackStatus {
   connected: boolean;
   workspace: string | null;
-  channel: string | null;
+  channel: string | null;       // 채널 ID
+  channelName: string | null;   // 채널 표시명
   notifyEnabled: boolean;
 }
 
@@ -38,6 +38,8 @@ function getSessionExpiry(): string {
 export function MyPage() {
   const session = useSession();
   const [slack, setSlack] = useState<SlackStatus | null>(null);
+  const [channels, setChannels] = useState<SlackChannel[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function MyPage() {
   useEffect(() => {
     apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status')
       .then((res) => setSlack(res.data))
-      .catch(() => setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true }));
+      .catch(() => setSlack({ connected: false, workspace: null, channel: null, channelName: null, notifyEnabled: true }));
   }, []);
 
   // Slack OAuth 팝업 + localStorage 이벤트 처리
@@ -91,16 +93,19 @@ export function MyPage() {
 
       let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
         if (popup?.closed) {
-          setTimeout(() => {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          setTimeout(async () => {
+            window.removeEventListener('storage', onStorage);
             const stored = localStorage.getItem('slack-oauth-result');
             if (stored) {
-              onStorage({ key: 'slack-oauth-result', newValue: stored } as StorageEvent);
-            } else {
-              window.removeEventListener('storage', onStorage);
-              setSaving(false);
+              localStorage.removeItem('slack-oauth-result');
             }
+            try {
+              const status = await apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status');
+              setSlack(status.data);
+            } catch { /* ignore */ }
+            setSaving(false);
           }, 1500);
-          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
       }, 1000);
     } catch {
@@ -113,7 +118,7 @@ export function MyPage() {
     setSaving(true);
     try {
       await apiFetch('/slack/disconnect', { method: 'DELETE' });
-      setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true });
+      setSlack({ connected: false, workspace: null, channel: null, channelName: null, notifyEnabled: true });
     } catch { /* ignore */ } finally {
       setSaving(false);
     }
@@ -133,14 +138,14 @@ export function MyPage() {
     }
   }, [slack, saving]);
 
-  const handleChannelChange = useCallback(async (channelId: string) => {
+  const handleChannelChange = useCallback(async (channelId: string, channelName: string) => {
     if (!slack || saving) return;
     setSaving(true);
     setPickerOpen(false);
     try {
       const res = await apiFetch<{ success: boolean; data: SlackStatus }>(
         '/slack/settings',
-        { method: 'PATCH', body: JSON.stringify({ channel: channelId }) },
+        { method: 'PATCH', body: JSON.stringify({ channel: channelId, channelName }) },
       );
       setSlack(res.data);
     } catch { /* ignore */ } finally {
@@ -260,25 +265,41 @@ export function MyPage() {
             <div className="integration-channel-row">
               <span className="info-label" style={{ color: 'var(--text-muted)' }}>알림 채널</span>
               <span className="channel-tag">
-                <span className="channel-tag-hash">#</span>{slack.channel ?? 'general'}
+                <span className="channel-tag-hash">#</span>{slack.channelName ?? slack.channel ?? 'general'}
               </span>
-              <button className="btn-channel-change" onClick={() => setPickerOpen(!pickerOpen)}>변경</button>
+              <button className="btn-channel-change" onClick={async () => {
+                if (!pickerOpen && channels.length === 0) {
+                  setChannelsLoading(true);
+                  try {
+                    const res = await apiFetch<{ success: boolean; data: SlackChannel[] }>('/slack/channels');
+                    setChannels(res.data);
+                  } catch { /* ignore */ }
+                  setChannelsLoading(false);
+                }
+                setPickerOpen(!pickerOpen);
+              }}>변경</button>
             </div>
             {pickerOpen && (
               <div className="channel-picker">
                 <div className="channel-picker-title">알림을 받을 채널을 선택하세요</div>
-                {CHANNELS.map((ch) => (
-                  <button
-                    type="button"
-                    key={ch.id}
-                    className={`channel-option${(slack.channel ?? 'general') === ch.id ? ' selected' : ''}`}
-                    onClick={() => handleChannelChange(ch.id)}
-                    disabled={saving}
-                  >
-                    <div className="channel-radio"><div className="channel-radio-dot" /></div>
-                    <div className="channel-option-name">{ch.name} <span>{ch.desc}</span></div>
-                  </button>
-                ))}
+                {channelsLoading ? (
+                  <div className="channel-loading">채널 목록 불러오는 중...</div>
+                ) : channels.length === 0 ? (
+                  <div className="channel-loading">채널을 찾을 수 없습니다</div>
+                ) : (
+                  channels.map((ch) => (
+                    <button
+                      type="button"
+                      key={ch.id}
+                      className={`channel-option${slack.channel === ch.id ? ' selected' : ''}`}
+                      onClick={() => handleChannelChange(ch.id, ch.name)}
+                      disabled={saving}
+                    >
+                      <div className="channel-radio"><div className="channel-radio-dot" /></div>
+                      <div className="channel-option-name">#{ch.name} {ch.topic && <span>{ch.topic}</span>}</div>
+                    </button>
+                  ))
+                )}
                 <div className="channel-picker-actions">
                   <button className="btn-outline" style={{ fontSize: 12, padding: '6px 14px' }} onClick={() => setPickerOpen(false)}>취소</button>
                 </div>
