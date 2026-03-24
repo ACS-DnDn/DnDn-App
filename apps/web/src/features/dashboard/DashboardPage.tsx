@@ -114,7 +114,14 @@ export function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {(data?.pendingDocs ?? []).map((d) => {
+              {(data?.pendingDocs ?? []).length === 0 ? (
+                <tr><td colSpan={5} className="empty-row">
+                  <div className="empty-state">
+                    <svg className="empty-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="6" width="32" height="36" rx="4"/><path d="M16 18h16M16 26h10"/><circle cx="34" cy="34" r="8" fill="var(--bg-card)" strokeWidth="2"/><path d="M31 34h6M34 31v6" strokeWidth="2"/></svg>
+                    <span>처리 대기 중인 문서가 없습니다</span>
+                  </div>
+                </td></tr>
+              ) : (data?.pendingDocs ?? []).map((d) => {
                 const s = statusMap[d.status];
                 return (
                   <tr key={d.docNum} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
@@ -162,7 +169,14 @@ export function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {recentDocs.map((d) => (
+              {recentDocs.length === 0 ? (
+                <tr><td colSpan={5} className="empty-row">
+                  <div className="empty-state">
+                    <svg className="empty-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="6" width="32" height="36" rx="4"/><path d="M16 18h16M16 26h10"/></svg>
+                    <span>등록된 문서가 없습니다</span>
+                  </div>
+                </td></tr>
+              ) : recentDocs.map((d) => (
                 <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                   <td className="td-num">{d.docNum ?? String(d.id)}</td>
                   <td><div className="doc-title">{d.name}</div></td>
