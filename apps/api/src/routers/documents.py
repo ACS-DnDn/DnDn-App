@@ -11,7 +11,7 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone
 
 from apps.api.src.database import get_db
-from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment
+from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment, Workspace
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.documents import (
@@ -101,8 +101,16 @@ def get_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 기본 쿼리 시작
-    query = db.query(Document)
+    # 1. 기본 쿼리 — 내 워크스페이스(같은 회사·부서) 문서만 조회
+    my_ws_ids = (
+        db.query(Workspace.id)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
+    )
+    query = db.query(Document).filter(Document.workspace_id.in_(my_ws_ids))
 
     # 💡 [호환성 로직] 참조 문서 검색에서 archived=true로 찌른 경우
     if archived:
