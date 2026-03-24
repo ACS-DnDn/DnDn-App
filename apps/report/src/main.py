@@ -46,7 +46,6 @@ logger = logging.getLogger(__name__)
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
-
 _raw_origins = os.getenv(
     "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
 )
@@ -103,6 +102,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         job.content_url = content_url
         job.title = req.target
         db.commit()
+
 
     except Exception as e:
         logger.error("work_plan AI 생성 오류: %s", e, exc_info=True)
@@ -232,6 +232,7 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     db.add(doc)
     db.commit()
 
+
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
 
@@ -285,6 +286,7 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     )
     db.add(doc)
     db.commit()
+
 
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
@@ -346,6 +348,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
     )
     db.add(doc)
     db.commit()
+
 
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 

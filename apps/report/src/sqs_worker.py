@@ -22,6 +22,7 @@ import logging
 import urllib.parse
 
 import boto3
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL", "")
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
+DNDN_API_URL = os.getenv("DNDN_API_URL", "http://dndn-api.dndn-api.svc.cluster.local:8000")
 
 
 def _sqs_client():
@@ -162,6 +164,21 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         db.rollback()
     finally:
         db.close()
+
+    # dndn-api에 새 문서 알림 요청 (Slack)
+    try:
+        requests.post(
+            f"{DNDN_API_URL}/internal/notify-new-document",
+            json={
+                "documentId": doc_id,
+                "workspaceId": workspace_id,
+                "title": canonical.get("meta", {}).get("title", doc_id),
+                "docType": doc_type,
+            },
+            timeout=5,
+        )
+    except Exception as e:
+        logger.warning("Slack 알림 요청 실패: %s", e)
 
     logger.info("HTML 저장 완료: %s → %s", doc_id, html_key)
 

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Document, Approval
+from apps.api.src.models import User, Document, Approval, DocumentRead
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.dashboard import DashboardResponse
@@ -29,7 +29,15 @@ def get_dashboard(
         .filter(Document.author_id == current_user.id, Document.status == "progress")
         .count()
     )
-    new_doc_count = 5
+    read_doc_ids = (
+        db.query(DocumentRead.document_id)
+        .filter(DocumentRead.user_id == current_user.id)
+    )
+    new_doc_count = (
+        db.query(Document)
+        .filter(Document.id.notin_(read_doc_ids))
+        .count()
+    )
 
     # 3. 결재 대기 문서 (Pending Docs)
     pending_approvals = (
