@@ -162,7 +162,38 @@ def _fetch_aws_docs(event_type_code: str = "", service: str = "") -> str:
         query = f"AWS {service} best practices guide"
     if not query:
         return ""
-    return _fetch_aws_docs_by_query(query)
+    docs = _fetch_aws_docs_by_query(query)
+    # MCP 결과가 너무 크면 잘라서 반환 (토큰 초과 방지)
+    if len(docs) > _MAX_AWS_DOCS_CHARS:
+        docs = docs[:_MAX_AWS_DOCS_CHARS] + "\n... (truncated)"
+    return docs
+
+
+# ── 프롬프트 크기 제한 상수 ──
+_MAX_AWS_DOCS_CHARS = 40_000     # AWS 문서 최대 ~10K 토큰
+_MAX_REF_DOCS = 2                # 참조 문서 최대 개수
+_MAX_PROMPT_CHARS = 150_000      # 최종 user prompt 안전 상한 ~40K 토큰
+_SUMMARIZE_THRESHOLD = 20_000    # 이 글자수 이상이면 Haiku 요약 적용
+
+
+def _summarize_large_text(text: str, purpose: str = "작업계획서") -> str:
+    """큰 텍스트를 Haiku로 요약. 임계값 미만이면 원본 반환."""
+    if len(text) <= _SUMMARIZE_THRESHOLD:
+        return text
+    print(f"[Haiku] {purpose} 요약 시작 ({len(text)}자 → Haiku)")
+    try:
+        summary = _invoke_claude(
+            "당신은 AWS 인프라 문서 요약 전문가입니다. "
+            f"다음 문서를 {purpose} 작성에 필요한 핵심 정보만 한국어로 요약하세요. "
+            "영향 범위, 조치 방안, 리소스 정보, 위험 요소를 반드시 포함하세요.",
+            text,
+            model_id=HAIKU_MODEL_ID,
+        )
+        print(f"[Haiku] 요약 완료 ({len(text)}자 → {len(summary)}자)")
+        return summary
+    except Exception as e:
+        print(f"[Haiku] 요약 실패, truncate 폴백: {e}")
+        return text[:_SUMMARIZE_THRESHOLD] + "\n... (truncated)"
 
 
 def _detect_event_info(data: dict) -> tuple[str, str]:
@@ -339,7 +370,12 @@ def get_bedrock_client():
     return boto3.client("bedrock-runtime", region_name=REGION, config=config)
 
 
-def _invoke_claude(system_prompt: str, user_content: str) -> str:
+HAIKU_MODEL_ID = os.getenv(
+    "BEDROCK_HAIKU_MODEL_ID", "apac.anthropic.claude-3-5-haiku-20241022-v1:0"
+)
+
+
+def _invoke_claude(system_prompt: str, user_content: str, model_id: str | None = None) -> str:
     """Bedrock Claude 공통 호출 → raw text 반환"""
     client = get_bedrock_client()
     body = {
@@ -349,7 +385,7 @@ def _invoke_claude(system_prompt: str, user_content: str) -> str:
         "messages": [{"role": "user", "content": user_content}],
     }
     response = client.invoke_model(
-        modelId=MODEL_ID,
+        modelId=model_id or MODEL_ID,
         contentType="application/json",
         accept="application/json",
         body=json.dumps(body),
@@ -631,16 +667,19 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
             f"[MCP] 작업계획서용 AWS 문서 조회 중... (event: {event_code or service or 'unknown'})"
         )
         aws_docs = _fetch_aws_docs(event_code, service)
+    # AWS 문서: 크면 Haiku로 요약
+    aws_docs = _summarize_large_text(aws_docs, "작업계획서 — AWS 문서") if aws_docs else ""
     aws_docs_section = (
-        f"\n## AWS 공식 문서 (MCP 실시간 조회) — 작업 절차에 반영하세요\n{aws_docs}\n"
+        f"\n## AWS 공식 문서 — 작업 절차에 반영하세요\n{aws_docs}\n"
         if aws_docs
         else ""
     )
-    context_section = (
-        f"\n## 참고 컨텍스트 (이전 보고서)\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n"
-        if ctx
-        else ""
-    )
+    # 참조 문서: 크면 Haiku로 요약
+    context_section = ""
+    if ctx:
+        ctx_text = json.dumps(ctx, ensure_ascii=False, indent=2)
+        ctx_text = _summarize_large_text(ctx_text, "작업계획서 — 참조 문서")
+        context_section = f"\n## 참고 컨텍스트 (이전 보고서)\n{ctx_text}\n"
 
     system = f"""
 당신은 AWS 인프라 작업계획서 생성 전문가입니다.
@@ -655,6 +694,26 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
 """.strip()
 
     user = f"""
+다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+
+작업 대상: {target}
+작업 내용: {content}
+{context_section}
+{aws_docs_section}
+""".strip()
+
+    # 최종 안전장치: 전체 프롬프트가 너무 크면 aws_docs부터 축소
+    total = len(system) + len(user)
+    if total > _MAX_PROMPT_CHARS:
+        over = total - _MAX_PROMPT_CHARS
+        print(f"[WARN] 프롬프트 {total}자 → {_MAX_PROMPT_CHARS}자로 축소 (aws_docs {over}자 제거)")
+        aws_docs_trimmed = aws_docs[: max(0, len(aws_docs) - over)]
+        aws_docs_section = (
+            f"\n## AWS 공식 문서 (요약)\n{aws_docs_trimmed}\n... (truncated)\n"
+            if aws_docs_trimmed
+            else ""
+        )
+        user = f"""
 다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
 
 작업 대상: {target}
