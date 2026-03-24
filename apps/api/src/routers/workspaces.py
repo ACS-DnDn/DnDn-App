@@ -28,6 +28,41 @@ from apps.api.src.security.aws_sts import (
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 
+# 워크스페이스 생성 시 기본 OPA 인프라 정책
+DEFAULT_OPA_SETTINGS = [
+    {"category": "네트워크 보안", "items": [
+        {"key": "net-sg-open", "label": "보안그룹 전체 개방(0.0.0.0/0) 차단", "on": True, "severity": "block", "params": {"type": "list", "label": "허용 CIDR", "values": ["10.0.0.0/8", "172.16.0.0/12"]}, "exceptions": []},
+        {"key": "net-rds-public", "label": "RDS 퍼블릭 접근 차단", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "net-flow-log", "label": "VPC Flow Log 활성화 필수", "on": False, "severity": "warn", "params": None, "exceptions": []},
+    ]},
+    {"category": "IAM 보안", "items": [
+        {"key": "iam-wildcard", "label": "와일드카드(*) 권한 사용 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "iam-admin-attach", "label": "AdministratorAccess 정책 직접 연결 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "iam-boundary", "label": "Permission Boundary 적용 필수", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 Boundary ARN 패턴", "values": []}, "exceptions": []},
+    ]},
+    {"category": "스토리지 보안", "items": [
+        {"key": "stor-s3-public", "label": "S3 퍼블릭 접근 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "stor-s3-encrypt", "label": "S3 버킷 암호화 필수", "on": True, "severity": "warn", "params": None, "exceptions": []},
+        {"key": "stor-rds-encrypt", "label": "RDS 스토리지 암호화 필수", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "stor-ebs-encrypt", "label": "EBS 볼륨 암호화 필수", "on": False, "severity": "warn", "params": None, "exceptions": []},
+    ]},
+    {"category": "컴퓨팅 제어", "items": [
+        {"key": "comp-ec2-public-ip", "label": "EC2 퍼블릭 IP 자동 할당 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "comp-instance", "label": "허용 인스턴스 타입 제한", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 타입", "values": ["t3.micro", "t3.small", "t3.medium"]}, "exceptions": []},
+        {"key": "comp-tag", "label": "필수 태그 정책 강제", "on": True, "severity": "warn", "params": {"type": "list", "label": "필수 태그 키", "values": ["Environment", "Team", "Service"]}, "exceptions": []},
+    ]},
+    {"category": "로깅 / 모니터링", "items": [
+        {"key": "log-cloudtrail", "label": "CloudTrail 활성화 필수", "on": True, "severity": "block", "params": None, "exceptions": []},
+    ]},
+    {"category": "비용 관리", "items": [
+        {"key": "cost-region", "label": "허용 리전 제한", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 리전", "values": ["us-east-1", "ap-northeast-2"]}, "exceptions": []},
+    ]},
+    {"category": "가용성", "items": [
+        {"key": "avail-multi-az", "label": "Multi-AZ 배포 필수", "on": True, "severity": "warn", "params": {"type": "services", "label": "적용 서비스", "values": ["RDS"], "options": ["RDS", "ElastiCache", "Aurora"]}, "exceptions": []},
+        {"key": "avail-backup", "label": "백업 보존 기간 최소값", "on": True, "severity": "warn", "params": {"type": "number", "label": "최소 보존일", "value": 7, "unit": "일"}, "exceptions": []},
+    ]},
+]
+
 
 # ---------------------------------------------------------
 # 1. 워크스페이스 목록 조회 (GET /workspaces)
@@ -274,7 +309,7 @@ def create_workspace(
     if existing:
         raise HTTPException(status_code=409, detail="CONFLICT")
 
-    # 3. 워크스페이스 생성
+    # 3. 워크스페이스 생성 (기본 OPA 정책 포함)
     ws = Workspace(
         alias=req.alias,
         acct_id=req.acctId,
@@ -285,6 +320,7 @@ def create_workspace(
         icon=req.icon,
         memo=req.memo,
         owner_id=current_user.id,
+        opa_settings=DEFAULT_OPA_SETTINGS,
     )
 
     db.add(ws)
