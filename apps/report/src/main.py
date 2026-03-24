@@ -173,10 +173,16 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
 
 
 async def _merge_context(ref_doc_ids: list[str], workspace_id: str) -> dict[str, Any]:
+    from .ai_generator import _MAX_REF_DOCS
+
     merged: dict[str, Any] = {}
+    merged_count = 0
     for doc_id in ref_doc_ids:
+        if merged_count >= _MAX_REF_DOCS:
+            break
         try:
             merged.update(await asyncio.to_thread(get_report, doc_id, workspace_id))
+            merged_count += 1
         except Exception:
             pass
     return merged
