@@ -64,11 +64,12 @@ _ERROR_MAP: dict[str, tuple[int, str]] = {
 class CognitoError(Exception):
     """Cognito 서비스 에러. 라우터에서 HTTP 응답으로 변환."""
 
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(self, status: int, code: str, message: str, exception_name: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
+        self.exception_name = exception_name
 
 
 def _client():
@@ -79,7 +80,7 @@ def _handle_error(exc: ClientError) -> None:
     error_code = exc.response["Error"]["Code"]
     error_msg = exc.response["Error"].get("Message", "")
     status, code = _ERROR_MAP.get(error_code, (500, "INTERNAL_ERROR"))
-    raise CognitoError(status, code, error_msg)
+    raise CognitoError(status, code, error_msg, exception_name=error_code)
 
 
 # ── 로그인 ────────────────────────────────────────────────

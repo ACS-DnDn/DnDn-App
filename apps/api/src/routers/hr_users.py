@@ -176,7 +176,7 @@ def delete_user(
         admin_delete_user(user.email)
     except CognitoError as e:
         # Cognito에 없는 사용자(수동 DB 삽입 등)면 무시하고 DB만 삭제
-        if e.code != "INVALID_CREDENTIALS":
+        if e.exception_name != "UserNotFoundException":
             raise HTTPException(status_code=e.status, detail=e.code) from e
 
     db.delete(user)
