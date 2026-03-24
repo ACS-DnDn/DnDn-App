@@ -15,6 +15,7 @@ from apps.api.src.schemas.slack import SlackStatusResponse, SlackSettingsRequest
 from apps.api.src.security.slack_oauth import (
     get_auth_url,
     exchange_code,
+    list_channels,
     SlackError,
 )
 
@@ -100,6 +101,19 @@ def slack_callback(
 def slack_status(current_user: User = Depends(get_current_user)):
     """현재 Slack 연동 상태 반환."""
     return SuccessResponse(data=_user_status(current_user))
+
+
+# ── GET /slack/channels ────────────────────────────────────
+@router.get("/channels", response_model=SuccessResponse[list])
+def slack_channels(current_user: User = Depends(get_current_user)):
+    """연동된 Slack 워크스페이스의 public 채널 목록 반환."""
+    if not current_user.slack_access_token:
+        raise HTTPException(status_code=400, detail="SLACK_NOT_CONNECTED")
+    try:
+        channels = list_channels(current_user.slack_access_token)
+    except SlackError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+    return SuccessResponse(data=channels)
 
 
 # ── PATCH /slack/settings ──────────────────────────────────
