@@ -371,7 +371,7 @@ def get_bedrock_client():
 
 
 HAIKU_MODEL_ID = os.getenv(
-    "BEDROCK_HAIKU_MODEL_ID", "apac.anthropic.claude-3-5-haiku-20241022-v1:0"
+    "BEDROCK_HAIKU_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
 )
 
 

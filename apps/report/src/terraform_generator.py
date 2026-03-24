@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")  # us-east-1
 MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")
 HAIKU_MODEL_ID = os.getenv(
-    "BEDROCK_HAIKU_MODEL_ID", "apac.anthropic.claude-3-5-haiku-20241022-v1:0"
+    "BEDROCK_HAIKU_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
 )
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 
