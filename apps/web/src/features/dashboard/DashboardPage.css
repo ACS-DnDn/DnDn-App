@@ -39,12 +39,9 @@
 .table-card-header { padding: 14px 24px 12px; display: flex; align-items: center; justify-content: space-between; }
 .table-card-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .count-pill { background: var(--mint-soft); color: var(--mint); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
-.table-link { font-size: 12px; font-weight: 600; color: var(--mint); text-decoration: none; cursor: pointer; }
-.table-link:hover { text-decoration: underline; }
-button.table-link {
-  background: none; border: none; cursor: pointer; padding: 0;
-  font-family: inherit; font-size: inherit; color: inherit;
-}
+.table-link-ico { width: 28px; height: 28px; border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .12s; padding: 0; }
+.table-link-ico:hover { background: var(--mint-soft); color: var(--mint); }
+.table-link-ico svg { width: 14px; height: 14px; }
 
 .doc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .doc-table thead tr { border-bottom: 2px solid var(--border-med); }
