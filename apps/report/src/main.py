@@ -580,41 +580,16 @@ async def terraform_validate(req: dict):
         for c in failed_checks
     ]
 
-    # OPA 정책 검증
+    # OPA 정책 검증 (실제 OPA 엔진)
+    from .opa_engine import evaluate_opa_policies
     opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
-    opa_blocks = []
-    opa_warns = []
-    all_code = "\n".join(files_map.values()).lower()
-
-    for category in opa_policies:
-        for item in category.get("items", []):
-            if not item.get("on"):
-                continue
-            severity = item.get("severity", "warn")
-            label = item.get("label", "")
-            params = item.get("params")
-
-            violated = False
-            if params and params.get("type") == "list":
-                allowed = [v.lower() for v in params.get("values", [])]
-                if allowed:
-                    key = item.get("key", "")
-                    if "region" in key and not any(r in all_code for r in allowed):
-                        violated = True
-            if params and params.get("type") == "services":
-                services = [s.lower() for s in params.get("values", [])]
-                if services:
-                    for svc in services:
-                        if svc in all_code:
-                            violated = True
-                            break
-
-            if violated:
-                entry = {"key": item.get("key", ""), "label": label}
-                if severity == "block":
-                    opa_blocks.append(entry)
-                else:
-                    opa_warns.append(entry)
+    try:
+        opa_blocks, opa_warns = await asyncio.to_thread(
+            evaluate_opa_policies, files_map, opa_policies
+        )
+    except RuntimeError as e:
+        logger.warning("OPA 평가 실패 (계속 진행): %s", e)
+        opa_blocks, opa_warns = [], []
 
     opa_passed = len(opa_blocks) == 0
     opa_summary_parts = []
