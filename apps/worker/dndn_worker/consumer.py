@@ -4,17 +4,31 @@ import argparse
 import json
 import os
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import boto3
+from prometheus_client import Counter, Histogram, start_http_server
 
 from dndn_worker.run_job import (
     WorkerExecutionError,
     WorkerExecutionResult,
     run_job_from_payload,
     validate_with_schema,
+)
+
+
+# 메트릭 정의
+SQS_MESSAGES_TOTAL = Counter(
+    "sqs_messages_total",
+    "Total SQS messages received",
+    ["outcome"],  # outcome: processed, dropped, retried
+)
+SQS_MESSAGE_DURATION = Histogram(
+    "sqs_message_duration_seconds",
+    "SQS message processing duration in seconds",
 )
 
 
@@ -146,25 +160,31 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         message_id=message_id,
         receipt_handle=receipt_handle,
     )
+    start = time.time()
     try:
         try:
             result = process_message_body(body, config)
         except json.JSONDecodeError as exc:
             print(f"[consumer] dropping non-retryable message {message_id}: INVALID_PAYLOAD: {exc}")
             _delete_message(sqs_client, config.queue_url, receipt_handle)
+            SQS_MESSAGES_TOTAL.labels(outcome="dropped").inc()
             return None
         except WorkerExecutionError as exc:
             if exc.retryable:
                 print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
+                SQS_MESSAGES_TOTAL.labels(outcome="retried").inc()
                 return None
             print(f"[consumer] dropping non-retryable message {message_id}: {exc}")
             _delete_message(sqs_client, config.queue_url, receipt_handle)
+            SQS_MESSAGES_TOTAL.labels(outcome="dropped").inc()
             return None
         except Exception as exc:
             print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
+            SQS_MESSAGES_TOTAL.labels(outcome="retried").inc()
             return None
 
         _delete_message(sqs_client, config.queue_url, receipt_handle)
+        SQS_MESSAGES_TOTAL.labels(outcome="processed").inc()
         outcome = "already processed" if result.already_processed else "processed"
         print(
             f"[consumer] {outcome} message {message_id}: "
@@ -172,6 +192,7 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         )
         return result
     finally:
+        SQS_MESSAGE_DURATION.observe(time.time() - start)
         _stop_message_heartbeat(heartbeat)
 
 
@@ -242,6 +263,9 @@ def main() -> None:
     args = parser.parse_args()
 
     config = _build_config(args)
+    metrics_port = _env_int("DNDN_WORKER_METRICS_PORT", 9090)
+    start_http_server(metrics_port)
+    print(f"[consumer] Prometheus metrics server started on :{metrics_port}")
     sqs_client = boto3.client("sqs")
 
     if args.once:

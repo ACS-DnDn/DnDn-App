@@ -1,11 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from prometheus_client import Counter, Histogram, make_asgi_app
 from typing import Any
 import os
 import asyncio
 import logging
+import time
 from functools import partial
 from datetime import datetime, timezone
 import uuid
@@ -54,6 +56,18 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 _background_tasks: set[asyncio.Task] = set()
 
+# 메트릭 정의
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP request count",
+    ["method", "endpoint", "status"],
+)
+REQUEST_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "endpoint"],
+)
+
 app = FastAPI(title="DnDn Report API")
 
 app.add_middleware(
@@ -63,6 +77,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 메트릭 미들웨어
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+    endpoint = request.url.path
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=endpoint,
+        status=response.status_code,
+    ).inc()
+    REQUEST_DURATION.labels(
+        method=request.method,
+        endpoint=endpoint,
+    ).observe(duration)
+    return response
+
+
+# /metrics 엔드포인트
+app.mount("/metrics", make_asgi_app())
 
 
 def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
