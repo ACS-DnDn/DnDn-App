@@ -80,8 +80,9 @@ def generate_rego(policies: list[dict]) -> str:
             severity = item.get("severity", "warn")
             label = item.get("label", "")
             params = item.get("params")
+            exceptions = item.get("exceptions", [])
 
-            rule = _generate_rule(key, severity, label, params)
+            rule = _generate_rule(key, severity, label, params, exceptions)
             if rule:
                 rules.append(rule)
 
@@ -97,10 +98,16 @@ import rego.v1
     return header + "\n\n".join(rules) + "\n"
 
 
-def _generate_rule(key: str, severity: str, label: str, params: dict | None) -> str | None:
-    """정책 키별 .rego 규칙 생성"""
+def _generate_rule(key: str, severity: str, label: str, params: dict | None, exceptions: list[str] | None = None) -> str | None:
+    """정책 키별 .rego 규칙 생성 (exceptions: 검증 제외 리소스명 리스트)"""
     sev = f'"{severity}"'
     lbl = f'"{label}"'
+
+    # 예외 리소스 조건 생성 — "not name in {set}" 형태
+    exc = ""
+    if exceptions:
+        exc_set = _rego_set(exceptions)
+        exc = f"\n    not name in {exc_set}"
 
     # ── 네트워크 보안 ──
     if key == "net-sg-open":
@@ -112,7 +119,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_security_group"
-    some name, config in instances
+    some name, config in instances{exc}
     some j
     ingress := config.ingress[j]
     some cidr in ingress.cidr_blocks
@@ -128,7 +135,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_db_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     config.publicly_accessible == true
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("RDS '%s'에 퍼블릭 접근이 활성화됨", [name])}}
 }}"""
@@ -150,7 +157,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_vpc"
-    some name, _ in instances
+    some name, _ in instances{exc}
     not name in _has_flow_log
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("VPC '%s'에 Flow Log가 없습니다", [name])}}
 }}"""
@@ -164,7 +171,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt in {{"aws_iam_policy", "aws_iam_role_policy", "aws_iam_user_policy", "aws_iam_group_policy"}}
-    some name, config in instances
+    some name, config in instances{exc}
     policy_str := config.policy
     contains(policy_str, "\\"Action\\": \\"*\\"")
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("IAM 정책 '%s'에 와일드카드(*) Action 사용", [name])}}
@@ -175,7 +182,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt in {{"aws_iam_policy", "aws_iam_role_policy", "aws_iam_user_policy", "aws_iam_group_policy"}}
-    some name, config in instances
+    some name, config in instances{exc}
     policy_str := config.policy
     contains(policy_str, "\\"Resource\\": \\"*\\"")
     contains(policy_str, "\\"Effect\\": \\"Allow\\"")
@@ -190,13 +197,24 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt in {{"aws_iam_role_policy_attachment", "aws_iam_user_policy_attachment", "aws_iam_group_policy_attachment"}}
-    some name, config in instances
+    some name, config in instances{exc}
     contains(config.policy_arn, "AdministratorAccess")
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("'%s'에 AdministratorAccess 정책 직접 연결", [name])}}
 }}"""
 
     if key == "iam-boundary":
-        return None  # Permission Boundary 체크는 복잡 — 향후 구현
+        # IAM Role에 Permission Boundary가 설정되지 않은 경우 위반
+        return f"""\
+# {label}
+violations contains result if {{
+    some i
+    resource_block := input.resource[i]
+    some rt, instances in resource_block
+    rt == "aws_iam_role"
+    some name, config in instances{exc}
+    not config.permissions_boundary
+    result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("IAM Role '%s'에 Permission Boundary가 설정되지 않음", [name])}}
+}}"""
 
     # ── 스토리지 보안 ──
     if key == "stor-s3-public":
@@ -207,7 +225,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_s3_bucket"
-    some name, config in instances
+    some name, config in instances{exc}
     config.acl == "public-read"
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("S3 버킷 '%s'에 public-read ACL 설정", [name])}}
 }}
@@ -217,7 +235,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_s3_bucket_public_access_block"
-    some name, config in instances
+    some name, config in instances{exc}
     config.block_public_acls == false
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("S3 '%s' public access block이 비활성화됨", [name])}}
 }}"""
@@ -238,7 +256,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_s3_bucket"
-    some name, _ in instances
+    some name, _ in instances{exc}
     not name in _has_s3_encryption
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("S3 버킷 '%s'에 암호화 설정 없음", [name])}}
 }}"""
@@ -251,7 +269,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_db_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     not config.storage_encrypted
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("RDS '%s'의 스토리지 암호화가 비활성화됨", [name])}}
 }}"""
@@ -264,7 +282,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_ebs_volume"
-    some name, config in instances
+    some name, config in instances{exc}
     not config.encrypted
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("EBS 볼륨 '%s'이 암호화되지 않음", [name])}}
 }}"""
@@ -278,7 +296,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     config.associate_public_ip_address == true
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("EC2 '%s'에 퍼블릭 IP 자동 할당 활성화", [name])}}
 }}"""
@@ -294,7 +312,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     not config.instance_type in {allowed}
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("EC2 '%s'의 인스턴스 타입 '%s'이 허용 목록에 없음", [name, config.instance_type])}}
 }}"""
@@ -311,7 +329,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt in {{"aws_instance", "aws_s3_bucket", "aws_db_instance", "aws_vpc", "aws_subnet", "aws_security_group", "aws_lb", "aws_eks_cluster", "aws_lambda_function"}}
-    some name, config in instances
+    some name, config in instances{exc}
     not config.tags["{tag}"]
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("리소스 '%s.%s'에 필수 태그 '{tag}' 누락", [rt, name])}}
 }}""")
@@ -321,7 +339,6 @@ violations contains result if {{
     if key == "log-cloudtrail":
         return f"""\
 # {label}
-# CloudTrail은 보통 코드에 포함 — 존재 여부만 체크
 _has_cloudtrail if {{
     some i
     resource_block := input.resource[i]
@@ -364,7 +381,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_db_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     not config.multi_az
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("RDS '%s'에 Multi-AZ가 비활성화됨", [name])}}
 }}""")
@@ -375,7 +392,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_elasticache_replication_group"
-    some name, config in instances
+    some name, config in instances{exc}
     config.automatic_failover_enabled == false
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("ElastiCache '%s'에 자동 장애조치가 비활성화됨", [name])}}
 }}""")
@@ -386,7 +403,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_rds_cluster"
-    some name, config in instances
+    some name, config in instances{exc}
     count(config.availability_zones) < 2
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("Aurora 클러스터 '%s'의 AZ가 2개 미만", [name])}}
 }}""")
@@ -403,7 +420,7 @@ violations contains result if {{
     resource_block := input.resource[i]
     some rt, instances in resource_block
     rt == "aws_db_instance"
-    some name, config in instances
+    some name, config in instances{exc}
     config.backup_retention_period < {min_days}
     result := {{"severity": {sev}, "key": "{key}", "label": {lbl}, "detail": sprintf("RDS '%s'의 백업 보존 기간이 %d일 미만 (최소 {min_days}일)", [name, config.backup_retention_period])}}
 }}"""
