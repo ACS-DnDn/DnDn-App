@@ -326,15 +326,22 @@ def get_document_detail(
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    # 접근 권한 확인: 작성자 또는 결재선 포함 여부
-    is_author = doc.author_id == current_user.id
+    # 접근 권한 확인: 작성자 / 결재선 / 같은 워크스페이스(회사·부서)
+    is_author = doc.author_id is not None and doc.author_id == current_user.id
     is_approver = (
         db.query(Approval)
         .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
         .first()
         is not None
     )
-    if not (is_author or is_approver):
+    is_ws_member = False
+    if doc.workspace_id:
+        ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+        if ws:
+            owner = db.query(User).filter(User.id == ws.owner_id).first()
+            if owner and owner.company_id == current_user.company_id and owner.department_id == current_user.department_id:
+                is_ws_member = True
+    if not (is_author or is_approver or is_ws_member):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # S3에서 HTML 본문 가져오기
