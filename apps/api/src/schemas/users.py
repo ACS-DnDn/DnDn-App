@@ -15,5 +15,6 @@ class UserMeResponse(BaseModel):
     name: str
     email: str
     role: str
+    position: str | None = None
     company: CompanyResponse
     createdAt: str | None = None
