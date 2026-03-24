@@ -88,8 +88,13 @@ def slack_callback(
     current_user.slack_workspace = result.workspace
     current_user.slack_user_id = result.slack_user_id
     if not current_user.slack_channel:
-        current_user.slack_channel = "general"
-        current_user.slack_channel_name = "general"
+        try:
+            chs = list_channels(result.access_token)
+            if chs:
+                current_user.slack_channel = chs[0]["id"]
+                current_user.slack_channel_name = chs[0]["name"]
+        except SlackError:
+            pass
     if current_user.slack_notify is None:
         current_user.slack_notify = True
     db.commit()

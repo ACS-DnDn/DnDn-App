@@ -10,6 +10,7 @@ from apps.api.src.routers import (
     dashboard,
     documents,
     github,
+    internal,
     org,
     report_settings,
     reports,
@@ -68,6 +69,9 @@ api.include_router(hr_departments.router)
 api.include_router(hr_company.router)
 api.include_router(slack.router)
 app.include_router(api)
+
+# 내부 서비스 간 통신 — /api prefix 없이 등록 (ALB Ingress /api 경로에 노출 안 됨)
+app.include_router(internal.router)
 
 
 # 💡 1. 우리가 발생시키는 모든 HTTPException을 가로채서 공통 포맷으로 변경
