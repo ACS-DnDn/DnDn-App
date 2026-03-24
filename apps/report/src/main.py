@@ -584,18 +584,26 @@ async def terraform_validate(req: dict):
             for c in failed_checks
         ]
     except Exception as e:
-        logger.warning("Checkov 스캔 실패 (계속 진행): %s", e)
+        logger.warning("Checkov 스캔 실패 (계속 진행): %s", e, exc_info=True)
 
     # OPA 정책 검증 (실제 OPA 엔진)
     opa_blocks, opa_warns = [], []
     try:
         from .opa_engine import evaluate_opa_policies
+        logger.info("OPA 검증 시작 — workspace_id=%s", workspace_id)
         opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
+        logger.info("OPA 정책 로드: %d개 카테고리", len(opa_policies))
+        if opa_policies:
+            active_count = sum(
+                1 for cat in opa_policies for it in cat.get("items", []) if it.get("on")
+            )
+            logger.info("OPA 활성 정책: %d개", active_count)
         opa_blocks, opa_warns = await asyncio.to_thread(
             evaluate_opa_policies, files_map, opa_policies
         )
+        logger.info("OPA 결과: blocks=%d, warns=%d", len(opa_blocks), len(opa_warns))
     except Exception as e:
-        logger.warning("OPA 평가 실패 (계속 진행): %s", e)
+        logger.warning("OPA 평가 실패 (계속 진행): %s", e, exc_info=True)
 
     opa_passed = len(opa_blocks) == 0
     opa_summary_parts = []
