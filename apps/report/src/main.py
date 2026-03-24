@@ -34,6 +34,7 @@ from .s3_client import (
     save_report,
     save_report_html,
     get_presigned_url,
+    get_html,
     list_reports,
     get_report,
     save_terraform_files,
@@ -481,9 +482,17 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
     data = {"jobId": job.job_id, "status": job.status}
 
     if job.status == "done":
+        html_content = None
+        if job.document_id:
+            html_key = f"{job.workspace_id}/reports/{job.document_id}.html"
+            try:
+                html_content = await asyncio.to_thread(get_html, html_key)
+            except Exception:
+                pass
         data["result"] = {
             "documentId": job.document_id,
             "contentUrl": job.content_url,
+            "htmlContent": html_content,
             "title": job.title,
             "workDate": job.work_date,
             "files": job.files,

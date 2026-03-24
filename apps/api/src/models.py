@@ -8,10 +8,12 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Date,
+    Enum,
 )
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 import uuid
+import enum
 
 # app/database.py 에서 만들어둔 Base 객체를 가져옵니다.
 from apps.api.src.database import Base
@@ -76,7 +78,7 @@ class User(Base):
     slack_user_id = Column(String(50), nullable=True)
     slack_access_token = Column(Text, nullable=True)
     slack_workspace = Column(String(100), nullable=True)
-    slack_channel = Column(String(100), nullable=True)       # 채널 ID (C0xxxxx)
+    slack_channel = Column(String(100), nullable=True)  # 채널 ID (C0xxxxx)
     slack_channel_name = Column(String(100), nullable=True)  # 채널 표시명
     slack_notify = Column(Boolean, nullable=True)
 
@@ -238,3 +240,32 @@ class ReportSettings(Base):
     event_settings = Column(JSON, nullable=True)
 
     workspace = relationship("Workspace", back_populates="report_settings")
+
+
+class JobType(str, enum.Enum):
+    plan = "plan"
+    terraform = "terraform"
+
+
+# Report-api 서버에서 사용하는 테이블
+class ReportJob(Base):
+    __tablename__ = "report_jobs"
+
+    job_id = Column(String(36), primary_key=True, index=True)
+    workspace_id = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(20), nullable=False)
+
+    job_type = Column(Enum(JobType), nullable=False)
+    document_id = Column(String(36), nullable=True)
+    content_url = Column(Text, nullable=True)
+    title = Column(String(255), nullable=True)
+    work_date = Column(String(50), nullable=True)
+
+    files = Column(JSON, nullable=True)
+
+    error_code = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

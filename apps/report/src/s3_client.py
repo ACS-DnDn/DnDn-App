@@ -172,6 +172,12 @@ def get_presigned_url(key: str) -> str:
     return _presigned_url(_client(), key)
 
 
+def get_html(key: str) -> str:
+    """S3에서 HTML 파일 내용 조회"""
+    resp = _client().get_object(Bucket=S3_BUCKET, Key=key)
+    return resp["Body"].read().decode("utf-8")
+
+
 def save_terraform_files(workspace_id: str, job_id: str, files: list[dict]) -> str:
     """terraform 파일 목록을 S3에 저장하고 prefix 반환 (각 파일: {filename, content})"""
     client = _client()
