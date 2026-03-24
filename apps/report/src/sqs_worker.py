@@ -167,7 +167,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
 
     # dndn-api에 새 문서 알림 요청 (Slack)
     try:
-        requests.post(
+        notify_resp = requests.post(
             f"{DNDN_API_URL}/internal/notify-new-document",
             json={
                 "documentId": doc_id,
@@ -175,8 +175,11 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
                 "title": canonical.get("meta", {}).get("title", doc_id),
                 "docType": doc_type,
             },
+            headers={"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")},
             timeout=5,
         )
+        if not notify_resp.ok:
+            logger.warning("Slack 알림 요청 실패 (HTTP %s): %s", notify_resp.status_code, notify_resp.text)
     except Exception as e:
         logger.warning("Slack 알림 요청 실패: %s", e)
 

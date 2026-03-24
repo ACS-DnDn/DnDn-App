@@ -5,8 +5,9 @@ report-worker / report-api 등 같은 클러스터 내 서비스가 호출한다
 """
 
 import logging
+import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["Internal"])
 
+_INTERNAL_KEY = os.environ.get("INTERNAL_API_KEY", "")
+
+
+def _verify_internal_key(x_internal_key: str = Header(..., alias="X-Internal-Key")):
+    """내부 서비스 간 호출 인증 — INTERNAL_API_KEY 헤더 검증."""
+    if not _INTERNAL_KEY or x_internal_key != _INTERNAL_KEY:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
 
 class NotifyNewDocRequest(BaseModel):
     documentId: str
@@ -26,7 +35,7 @@ class NotifyNewDocRequest(BaseModel):
     docType: str
 
 
-@router.post("/notify-new-document")
+@router.post("/notify-new-document", dependencies=[Depends(_verify_internal_key)])
 def notify_new_document(req: NotifyNewDocRequest, db: Session = Depends(get_db)):
     """새 문서 생성 시 workspace owner의 Slack 채널로 알림 전송."""
 
@@ -38,8 +47,8 @@ def notify_new_document(req: NotifyNewDocRequest, db: Session = Depends(get_db))
     if not owner:
         return {"ok": False, "reason": "OWNER_NOT_FOUND"}
 
-    # 알림 토글 OFF이면 스킵
-    if not owner.slack_notify:
+    # 알림 토글 OFF이면 스킵 (None은 기본값=활성으로 처리)
+    if owner.slack_notify is False:
         return {"ok": True, "skipped": True, "reason": "NOTIFY_DISABLED"}
 
     # Slack 연동 안 됐으면 스킵
