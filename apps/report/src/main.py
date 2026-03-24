@@ -4,8 +4,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Any
 import os
+import re
+import json
 import asyncio
 import logging
+import boto3
 from functools import partial
 from datetime import datetime, timezone
 import uuid
@@ -28,7 +31,7 @@ from .ai_generator import (
     generate_work_plan,
     generate_health_event_report,
 )
-from .terraform_generator import generate_terraform_code
+from .terraform_generator import generate_terraform_code, _run_checkov_scan, _load_opa_policies
 from .s3_client import (
     save_result,
     save_report,
@@ -551,6 +554,130 @@ async def render_report(req: RenderRequest):
     except Exception as e:
         logger.error("render_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+
+
+# ── Terraform 검증 (Checkov + OPA) ─────────────────────────
+@app.post("/report-api/documents/generate/terraform/validate")
+async def terraform_validate(req: dict):
+    files_map = req.get("files", {})
+    workspace_id = req.get("workspaceId", "default")
+
+    files_list = [{"filename": k, "content": v} for k, v in files_map.items()]
+
+    # Checkov 스캔
+    checkov_raw = await asyncio.to_thread(_run_checkov_scan, files_list)
+    failed_checks = checkov_raw.get("failed_checks", [])
+    summary = checkov_raw.get("summary", {})
+    checkov_passed = summary.get("failed", 0) == 0
+    checkov_issues = [
+        {
+            "id": c.get("check_id", ""),
+            "resource": c.get("resource", ""),
+            "file": c.get("file_path", ""),
+            "line": c.get("file_line_range", [0])[0] if c.get("file_line_range") else 0,
+            "severity": c.get("severity", ""),
+        }
+        for c in failed_checks
+    ]
+
+    # OPA 정책 검증 (실제 OPA 엔진)
+    from .opa_engine import evaluate_opa_policies
+    opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
+    try:
+        opa_blocks, opa_warns = await asyncio.to_thread(
+            evaluate_opa_policies, files_map, opa_policies
+        )
+    except RuntimeError as e:
+        logger.warning("OPA 평가 실패 (계속 진행): %s", e)
+        opa_blocks, opa_warns = [], []
+
+    opa_passed = len(opa_blocks) == 0
+    opa_summary_parts = []
+    if opa_blocks:
+        opa_summary_parts.append(f"차단 {len(opa_blocks)}건")
+    if opa_warns:
+        opa_summary_parts.append(f"경고 {len(opa_warns)}건")
+
+    return {
+        "success": True,
+        "data": {
+            "checkov": {
+                "passed": checkov_passed,
+                "summary": f"passed: {summary.get('passed', 0)}, failed: {summary.get('failed', 0)}",
+                "issues": checkov_issues,
+            },
+            "opa": {
+                "passed": opa_passed,
+                "summary": ", ".join(opa_summary_parts) if opa_summary_parts else "정책 준수",
+                "blocks": opa_blocks,
+                "warns": opa_warns,
+            },
+        },
+    }
+
+
+# ── Terraform 자동 수정 ────────────────────────────────────
+@app.post("/report-api/documents/generate/terraform/fix")
+async def terraform_fix(req: dict):
+    files_map = req.get("files", {})
+    checkov_issues = req.get("checkovIssues", [])
+    opa_blocks = req.get("opaBlocks", [])
+    opa_warns = req.get("opaWarns", [])
+
+    issues_text = ""
+    if checkov_issues:
+        issues_text += "\n## Checkov 보안 이슈\n"
+        for issue in checkov_issues:
+            issues_text += f"- {issue.get('id', '')}: {issue.get('resource', '')} ({issue.get('file', '')}:{issue.get('line', '')})\n"
+    if opa_blocks:
+        issues_text += "\n## OPA 정책 위반 (차단)\n"
+        for b in opa_blocks:
+            issues_text += f"- [차단] {b.get('label', '')}\n"
+    if opa_warns:
+        issues_text += "\n## OPA 정책 경고\n"
+        for w in opa_warns:
+            issues_text += f"- [경고] {w.get('label', '')}\n"
+
+    files_text = ""
+    for fname, code in files_map.items():
+        files_text += f"\n# === {fname} ===\n{code}\n"
+
+    from .terraform_generator import MODEL_ID, REGION
+
+    client = boto3.client("bedrock-runtime", region_name=REGION)
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 8192,
+        "system": (
+            "당신은 Terraform 보안 전문가입니다. "
+            "아래 Terraform 코드에서 보안/정책 이슈를 수정하세요. "
+            "수정된 전체 코드를 JSON으로 반환하세요. "
+            '형식: {"files": {"파일명.tf": "수정된 전체 코드", ...}}'
+        ),
+        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 모두 수정한 전체 코드를 JSON으로 반환하세요."}],
+    }
+
+    try:
+        response = await asyncio.to_thread(
+            client.invoke_model,
+            modelId=MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        result = json.loads(response["body"].read())
+        text = result["content"][0]["text"]
+        clean = re.sub(r'^```\w*\n?', '', text.strip())
+        clean = re.sub(r'\n?```$', '', clean).strip()
+        fixed = json.loads(clean, strict=False)
+        fixed_files = fixed.get("files", {})
+        return {"success": True, "data": {"files": fixed_files}}
+    except Exception as e:
+        logger.error("terraform fix 실패: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": {"code": "FIX_FAILED", "message": "Terraform 코드 자동 수정에 실패했습니다."}},
+        )
 
 
 @app.get("/health")
