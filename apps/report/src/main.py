@@ -766,7 +766,7 @@ async def terraform_fix(req: dict):
         logger.error("terraform fix 실패: %s", e, exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": {"code": "FIX_FAILED", "message": "Terraform 코드 자동 수정에 실패했습니다."}},
+            content={"success": False, "error": {"code": "FIX_FAILED", "message": f"자동 수정 실패: {type(e).__name__}: {str(e)[:200]}"}},
         )
 
 

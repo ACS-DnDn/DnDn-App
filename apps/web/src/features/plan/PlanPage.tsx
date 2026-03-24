@@ -456,8 +456,9 @@ export function PlanPage() {
           updateLog(fixLogId, '코드 수정 완료 → 재검증 중...', 'ok');
           await runValidation(fixedFiles, fixedFiles.map(f => f.code), true);
         } catch (fixErr) {
-          console.error('[TF FIX]', fixErr);
-          updateLog(fixLogId, '자동 수정 실패 — 수동으로 수정 후 재검증하세요', 'warn');
+          const errMsg = fixErr instanceof Error ? fixErr.message : String(fixErr);
+          console.error('[TF FIX]', errMsg);
+          updateLog(fixLogId, `자동 수정 실패: ${errMsg}`, 'warn');
         }
       }
     } catch (err) {
