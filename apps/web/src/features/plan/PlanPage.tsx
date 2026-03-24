@@ -293,13 +293,13 @@ export function PlanPage() {
     }
   }
 
-  async function doAutoSave() {
+  const doAutoSave = useCallback(async () => {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
-    if (!html || !draftDocumentId || !ws?.id) return;
+    if (!html || !draftDocumentId) return;
     try {
       await reportApiFetch('/documents/html/save', {
         method: 'PUT',
-        body: JSON.stringify({ docId: draftDocumentId, workspaceId: ws.id, html }),
+        body: JSON.stringify({ docId: draftDocumentId, html }),
       });
     } catch {
       // S3 실패 시 localStorage fallback
@@ -309,12 +309,12 @@ export function PlanPage() {
     setLastSaved(
       `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
     );
-  }
+  }, [draftDocumentId, docId]);
 
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(doAutoSave, 2000);
-  }, []);
+    autoSaveRef.current = setTimeout(() => { void doAutoSave(); }, 2000);
+  }, [doAutoSave]);
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }

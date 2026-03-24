@@ -59,19 +59,23 @@ DOC_TYPE_CODE = {
 
 
 def _next_doc_num(db: Session, doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)"""
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001).
+
+    CAST(suffix AS INTEGER)로 최댓값을 구해 10000번 이후 정렬 오류를 방지한다.
+    """
+    from sqlalchemy import cast, Integer
+
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
     year = datetime.now(timezone.utc).year
     prefix = f"{year}-{code}-"
-    last = (
-        db.query(sa_func.max(Document.doc_num))
+
+    suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
+    max_seq = (
+        db.query(sa_func.max(cast(suffix_expr, Integer)))
         .filter(Document.doc_num.like(f"{prefix}%"))
         .scalar()
     )
-    if last:
-        seq = int(last.split("-")[-1]) + 1
-    else:
-        seq = 1
+    seq = (max_seq or 0) + 1
     return f"{prefix}{seq:04d}"
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -718,19 +722,30 @@ async def terraform_validate(req: dict):
 
 # ── 문서 HTML 저장 (편집 후 S3 덮어쓰기) ─────────────────────
 @app.put("/report-api/documents/html/save")
-async def document_html_save(req: dict):
+async def document_html_save(req: dict, db: Session = Depends(get_db)):
     doc_id = req.get("docId")
-    workspace_id = req.get("workspaceId")
     html = req.get("html")
 
-    if not doc_id or not workspace_id or not html:
+    if not doc_id or not html:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": {"code": "INVALID_PARAMS", "message": "docId, workspaceId, html은 필수입니다."}},
+            content={"success": False, "error": {"code": "INVALID_PARAMS", "message": "docId, html은 필수입니다."}},
         )
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": {"code": "NOT_FOUND", "message": "문서를 찾을 수 없습니다."}},
+        )
+
+    workspace_id = doc.workspace_id or "default"
 
     try:
         html_key = await asyncio.to_thread(save_report_html, doc_id, html, workspace_id)
+        if doc.html_key != html_key:
+            doc.html_key = html_key
+            db.commit()
         return {"success": True, "data": {"html_key": html_key}}
     except Exception as e:
         logger.error("document html save 실패: %s", e, exc_info=True)
