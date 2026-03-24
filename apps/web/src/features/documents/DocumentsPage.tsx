@@ -6,7 +6,7 @@ import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
 const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
-const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '현황보고서', '이벤트보고서': '이벤트보고서' };
+const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
   const parts = d.split(' ');
@@ -368,7 +368,7 @@ export function DocumentsPage() {
                     <select className="th-filter" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); resetPage(); }}>
                       <option value="">유형</option>
                       <option value="계획서">작업계획서</option>
-                      <option value="주간보고서">현황보고서</option>
+                      <option value="주간보고서">인프라 활동 보고서</option>
                       <option value="이벤트보고서">이벤트보고서</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>

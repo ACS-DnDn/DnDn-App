@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { getReportSettings, createSchedule, updateSchedule, deleteSchedule, updateEventSettings, createSummaryReport } from '@/services/report.service';
 import { getWorkspaces } from '@/services/workspace.service';
@@ -10,6 +11,47 @@ const PRESETS: Record<string, string> = { daily: '일일', weekly: '주간', mon
 const PRESET_NAMES: Record<string, string> = { daily: '일일보고서', weekly: '주간보고서', monthly: '월간보고서', quarterly: '분기보고서' };
 const PRESET_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+/* ── 시간 목록 (30분 단위, 구글캘린더 스타일) ── */
+const TIME_OPTIONS: string[] = [];
+for (let h = 0; h < 24; h++) { for (const m of ['00', '30']) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${m}`); }
+
+function TimePicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && listRef.current) {
+      const idx = TIME_OPTIONS.indexOf(value);
+      if (idx >= 0) listRef.current.scrollTop = idx * 34 - 68;
+    }
+  }, [open, value]);
+
+  return (
+    <div className="cal-time-group" ref={ref}>
+      <span className="cal-time-label">{label}</span>
+      <button className="time-trigger" onClick={() => setOpen(v => !v)}>
+        <svg className="time-trigger-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+        {value}
+      </button>
+      {open && (
+        <div className="time-dropdown" ref={listRef}>
+          {TIME_OPTIONS.map(t => (
+            <div key={t} className={`time-option${t === value ? ' selected' : ''}`}
+              onClick={() => { onChange(t); setOpen(false); }}>{t}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── 이벤트 정의 ── */
 interface EventItem { key: EventSettingsKey; label: string; svc: string; desc: string; }
@@ -120,22 +162,125 @@ export function ReportSettingsPage() {
   const section = params.get('section') === 'events' ? 'events' : 'summary';
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
 
-  /* 현황 보고서 */
-  const [summaryStart, setSummaryStart] = useState(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const toLastMon = day === 0 ? 13 : day + 6;
-    const mon = new Date(now); mon.setDate(now.getDate() - toLastMon); mon.setHours(0, 0, 0, 0);
-    return toLocalDateTimeInput(mon);
-  });
-  const [summaryEnd, setSummaryEnd] = useState(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const toLastMon = day === 0 ? 13 : day + 6;
-    const sun = new Date(now); sun.setDate(now.getDate() - toLastMon + 6); sun.setHours(23, 59, 0, 0);
-    return toLocalDateTimeInput(sun);
-  });
-  const reportTitle = `현황보고서 ${summaryStart.slice(0, 10)} ~ ${summaryEnd.slice(0, 10)}`;
+  /* 기간 선택 (캘린더) */
+  const PERIOD_PRESETS = [
+    { key: '1w', label: '1주', days: 7 },
+    { key: '2w', label: '2주', days: 14 },
+    { key: '1m', label: '1개월', days: 30 },
+  ] as const;
+
+  function initRange(days: number) {
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const start = new Date(now); start.setDate(now.getDate() - days);
+    return { start, end: now };
+  }
+
+  const [rangeStart, setRangeStart] = useState<Date | null>(() => initRange(7).start);
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(() => initRange(7).end);
+  const [startTime, setStartTime] = useState('00:00');
+  const [endTime, setEndTime] = useState('00:00');
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const [picking, setPicking] = useState<'start' | 'end'>('start');
+  const [calOpen, setCalOpen] = useState(false);
+  const [calPos, setCalPos] = useState({ top: 0, left: 0 });
+  const calRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  /* 드롭다운 위치 — 스크롤/리사이즈 시 실시간 추적 + 하단 여백 확보 */
+  useEffect(() => {
+    if (!calOpen) return;
+    const spacer = document.createElement('div');
+    spacer.style.height = '0';
+    spacer.dataset.calSpacer = '1';
+    document.body.appendChild(spacer);
+
+    // 드롭다운 렌더 후 필요한 만큼만 spacer 높이 설정
+    requestAnimationFrame(() => {
+      if (calRef.current) {
+        const dropRect = calRef.current.getBoundingClientRect();
+        const overflow = dropRect.bottom - window.innerHeight + 80;
+        spacer.style.height = overflow > 0 ? `${overflow}px` : '0';
+      }
+    });
+
+    function update() {
+      if (!triggerRef.current) return;
+      const r = triggerRef.current.getBoundingClientRect();
+      const dropW = 360;
+      const left = Math.min(r.left, window.innerWidth - dropW - 12);
+      setCalPos({ top: r.bottom + 6, left: Math.max(8, left) });
+    }
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+      spacer.remove();
+    };
+  }, [calOpen]);
+
+  function handlePresetClick(days: number) {
+    const { start, end } = initRange(days);
+    setRangeStart(start);
+    setRangeEnd(end);
+    setStartTime('00:00');
+    setEndTime('00:00');
+    setPicking('start');
+    setCalOpen(false);
+  }
+
+  /* 캘린더 외부 클릭 닫기 */
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (calRef.current && !calRef.current.contains(t) && triggerRef.current && !triggerRef.current.contains(t)) setCalOpen(false);
+    }
+    if (calOpen) document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [calOpen]);
+
+  function handleCalDayClick(d: Date) {
+    if (picking === 'start') {
+      setRangeStart(d);
+      setRangeEnd(null);
+      setPicking('end');
+    } else {
+      if (rangeStart && d < rangeStart) {
+        setRangeStart(d);
+        setRangeEnd(rangeStart);
+      } else {
+        setRangeEnd(d);
+      }
+      setPicking('start');
+    }
+  }
+
+  function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function dayStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+
+  function applyTime(d: Date, time: string): Date {
+    const [h, m] = time.split(':').map(Number);
+    const r = new Date(d); r.setHours(h ?? 0, m ?? 0, 0, 0);
+    return r;
+  }
+  const summaryStart = rangeStart ? toLocalDateTimeInput(applyTime(rangeStart, startTime)) : '';
+  const summaryEnd = rangeEnd ? toLocalDateTimeInput(applyTime(rangeEnd, endTime)) : '';
+  const reportTitle = rangeStart && rangeEnd ? `인프라 활동 보고서 ${dayStr(rangeStart)} ~ ${dayStr(rangeEnd)}` : '인프라 활동 보고서';
+
+  /* 캘린더 그리드 생성 */
+  function buildCalDays(base: Date): (Date | null)[] {
+    const y = base.getFullYear(), m = base.getMonth();
+    const first = new Date(y, m, 1);
+    const startDow = first.getDay(); // 0=일
+    const lastDate = new Date(y, m + 1, 0).getDate();
+    const cells: (Date | null)[] = [];
+    for (let i = 0; i < startDow; i++) cells.push(null);
+    for (let d = 1; d <= lastDate; d++) cells.push(new Date(y, m, d));
+    return cells;
+  }
+  function prevMonth() { setCalMonth(p => { const d = new Date(p); d.setMonth(d.getMonth() - 1); return d; }); }
+  function nextMonth() { setCalMonth(p => { const d = new Date(p); d.setMonth(d.getMonth() + 1); return d; }); }
 
   /* 워크스페이스 */
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -288,14 +433,14 @@ export function ReportSettingsPage() {
     if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
     try {
       await createSummaryReport(workspaceId, reportTitle, new Date(summaryStart).toISOString(), new Date(summaryEnd).toISOString());
-      showToast('현황보고서 생성을 요청했습니다.');
+      showToast('인프라 활동 보고서 생성을 요청했습니다.');
     } catch {
       showToast('보고서 생성 요청 중 오류가 발생했습니다.');
     }
   }
 
   /* 섹션 전환 시 breadcrumb */
-  const SEC_LABELS: Record<string, string> = { summary: '현황 보고서', events: '이벤트 보고서' };
+  const SEC_LABELS: Record<string, string> = { summary: '인프라 활동 보고서', events: '이벤트 보고서' };
 
   /* ── 사이드 서브메뉴 연동 ── */
   useEffect(() => {
@@ -318,7 +463,7 @@ export function ReportSettingsPage() {
             className={`preset-btn${section === 'summary' ? ' active' : ''}`}
             style={{ flex: 'none', padding: '8px 20px' }}
             onClick={() => setSection('summary')}
-          >현황 보고서</button>
+          >인프라 활동 보고서</button>
           <button
             className={`preset-btn${section === 'events' ? ' active' : ''}`}
             style={{ flex: 'none', padding: '8px 20px' }}
@@ -326,37 +471,101 @@ export function ReportSettingsPage() {
           >이벤트 보고서</button>
         </div>
 
-        {/* ═══ 섹션 1: 현황 보고서 ═══ */}
+        {/* ═══ 섹션 1: 인프라 활동 보고서 ═══ */}
         <div className={`rpt-section${section === 'summary' ? ' active' : ''}`}>
           <div className="rpt-card">
             <div className="rpt-card-header">
-              <span className="rpt-card-title">현황 보고서</span>
-              <p className="rpt-card-desc">선택한 기간의 AWS 인프라 현황을 수집·분석하여 종합 보고서를 생성합니다</p>
+              <span className="rpt-card-title">인프라 활동 보고서</span>
+              <p className="rpt-card-desc">선택한 기간의 AWS 인프라 활동 이력을 수집·분석하여 보고서를 생성합니다</p>
             </div>
             <div className="card-form">
               <div className="fg">
                 <label className="fg-label">보고서 제목</label>
-                <input type="text" className="fi-title" value={reportTitle} readOnly placeholder="현황보고서 2026-03-03 ~ 2026-03-09" />
+                <input type="text" className="fi-title" value={reportTitle} readOnly placeholder="인프라 활동 보고서" />
               </div>
-              <div className="fg-row-grid">
-                <div className="fg">
-                  <label className="fg-label">시작일시</label>
-                  <input type="datetime-local" className="fi-dt" value={summaryStart} onChange={e => setSummaryStart(e.target.value)} />
+              <div className="fg">
+                <label className="fg-label">수집 기간</label>
+                <div className="cal-row" ref={triggerRef}>
+                  {/* 시작 입력 */}
+                  <div className={`cal-input-box${picking === 'start' && calOpen ? ' active' : ''}`} onClick={() => { setPicking('start'); if (!calOpen) setCalOpen(true); }}>
+                    <svg className="cal-input-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 7h12M5 1v3M11 1v3"/></svg>
+                    <span className="cal-input-date">{rangeStart ? dayStr(rangeStart) : '시작일'}</span>
+                    <span className="cal-input-time-text">{startTime}</span>
+                  </div>
+                  <span className="cal-sep">~</span>
+                  {/* 종료 입력 */}
+                  <div className={`cal-input-box${picking === 'end' && calOpen ? ' active' : ''}`} onClick={() => { setPicking('end'); if (!calOpen) setCalOpen(true); }}>
+                    <svg className="cal-input-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 7h12M5 1v3M11 1v3"/></svg>
+                    <span className="cal-input-date">{rangeEnd ? dayStr(rangeEnd) : '종료일'}</span>
+                    <span className="cal-input-time-text">{endTime}</span>
+                  </div>
+                  {/* 프리셋 */}
+                  <div className="cal-presets">
+                    {PERIOD_PRESETS.map(p => (
+                      <button key={p.key} className="cal-preset-chip" onClick={() => handlePresetClick(p.days)}>{p.label}</button>
+                    ))}
+                  </div>
                 </div>
-                <div className="fg">
-                  <label className="fg-label">종료일시</label>
-                  <input type="datetime-local" className="fi-dt" value={summaryEnd} onChange={e => setSummaryEnd(e.target.value)} />
-                </div>
+                {/* 캘린더 드롭다운 — Portal */}
+                {calOpen && createPortal(
+                  <div className="cal-dropdown" ref={calRef} style={{ top: calPos.top, left: calPos.left }}>
+                    <div className="cal-body">
+                      <div className="cal-nav">
+                        <button className="cal-nav-btn" onClick={prevMonth}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
+                        </button>
+                        <span className="cal-nav-title">{calMonth.getFullYear()}년 {calMonth.getMonth() + 1}월</span>
+                        <button className="cal-nav-btn" onClick={nextMonth}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3l5 5-5 5"/></svg>
+                        </button>
+                      </div>
+                      <div className="cal-grid">
+                        {['일','월','화','수','목','금','토'].map(d => <div key={d} className="cal-dow">{d}</div>)}
+                        {buildCalDays(calMonth).map((d, i) => {
+                          if (!d) return <div key={`e${i}`} className="cal-cell empty" />;
+                          const today = new Date(); today.setHours(0,0,0,0);
+                          const isToday = isSameDay(d, today);
+                          const isStart = rangeStart && isSameDay(d, rangeStart);
+                          const isEnd = rangeEnd && isSameDay(d, rangeEnd);
+                          const inRange = rangeStart && rangeEnd && d > rangeStart && d < rangeEnd;
+                          const cls = ['cal-cell',
+                            isStart && 'start',
+                            isEnd && 'end',
+                            inRange && 'in-range',
+                            isToday && !isStart && !isEnd && 'today',
+                            d > today && 'future',
+                          ].filter(Boolean).join(' ');
+                          return (
+                            <div key={d.getTime()} className={cls} onClick={() => d <= today && handleCalDayClick(d)}>
+                              {d.getDate()}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="cal-time-row">
+                      <TimePicker label="시작" value={startTime} onChange={setStartTime} />
+                      <TimePicker label="종료" value={endTime} onChange={setEndTime} />
+                    </div>
+                  </div>
+                , document.body)}
               </div>
-              <button className="btn-gen" onClick={generateNow}>
+              <button className="btn-gen" onClick={generateNow} disabled={!rangeStart || !rangeEnd}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 8h10M8 3v10" /></svg>
                 보고서 생성
               </button>
             </div>
+          </div>
 
-            <div className="card-sub">
-              <span>스케줄 관리</span>
-              <button className="btn-add" onClick={() => openSchModal()}>+ 추가</button>
+          <div className="rpt-card" style={{ marginTop: 20 }}>
+            <div className="rpt-card-header">
+              <div className="rpt-card-header-row">
+                <div>
+                  <span className="rpt-card-title">스케줄 관리</span>
+                  <p className="rpt-card-desc">주기적으로 자동 생성할 보고서 스케줄을 등록합니다</p>
+                </div>
+                <button className="btn-add" onClick={() => openSchModal()}>+ 추가</button>
+              </div>
             </div>
 
             <div className="sch-list">
