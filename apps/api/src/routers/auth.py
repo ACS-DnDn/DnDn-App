@@ -340,6 +340,7 @@ def get_my_info(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "email": current_user.email,
         "role": current_user.role,
+        "position": current_user.position,
         "company": company_data,
         "createdAt": created_at,
     }

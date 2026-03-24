@@ -28,7 +28,7 @@ from apps.api.src.security.cognito import (
 
 router = APIRouter(prefix="/hr/users", tags=["HR - Users"])
 
-VALID_ROLES = {"hr", "leader", "member"}
+VALID_ROLES = {"hr", "member"}  # leader는 부서관리에서만 지정
 
 
 def _to_response(user: User) -> HrUserResponse:
@@ -132,10 +132,12 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
-    # 역할 변경 시 Cognito 그룹도 변경
+    # 역할 변경 시 Cognito 그룹도 변경 (leader는 부서관리에서만 지정)
     if req.role and req.role != user.role:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="INVALID_ROLE")
+        if user.role == "leader":
+            raise HTTPException(status_code=400, detail="LEADER_MANAGED_BY_DEPT")
         try:
             admin_set_group(user.email, req.role, old_group=user.role)
         except CognitoError as e:
@@ -173,7 +175,9 @@ def delete_user(
     try:
         admin_delete_user(user.email)
     except CognitoError as e:
-        raise HTTPException(status_code=e.status, detail=e.code) from e
+        # Cognito에 없는 사용자(수동 DB 삽입 등)면 무시하고 DB만 삭제
+        if e.exception_name != "UserNotFoundException":
+            raise HTTPException(status_code=e.status, detail=e.code) from e
 
     db.delete(user)
     db.commit()
