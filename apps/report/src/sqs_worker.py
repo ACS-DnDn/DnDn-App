@@ -167,6 +167,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     finally:
         db.close()
 
+<<<<<<< HEAD
     # dndn-api에 새 문서 알림 요청 (Slack) — 새 Document 생성 시에만
     if created:
         try:

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
-import { apiFetch } from '@/services/api';
+import { apiFetch, reportApiFetch } from '@/services/api';
 import { getDocuments } from '@/services/document.service';
 import type { Document } from '@/mocks';
 import type { OrgDept } from '@/mocks';
@@ -246,7 +246,7 @@ export function PlanPage() {
   async function pollJob(jobId: string): Promise<Record<string, unknown>> {
     for (let i = 0; i < 120; i++) {
       await new Promise<void>(r => setTimeout(r, 1000));
-      const raw = await apiFetch<{ success: boolean; data: { status: string; result?: Record<string, unknown>; error?: { message: string } } }>(`/documents/generate/${jobId}`);
+      const raw = await reportApiFetch<{ success: boolean; data: { status: string; result?: Record<string, unknown>; error?: { message: string } } }>(`/documents/generate/${jobId}`);
       const { status, result, error } = raw.data;
       if (status === 'done') return result ?? {};
       if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
@@ -264,7 +264,7 @@ export function PlanPage() {
     setLogEntries([]);
     setDraftDocumentId(null);
     try {
-      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/plan', {
+      const raw = await reportApiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/plan', {
         method: 'POST',
         body: JSON.stringify({
           workspaceId: ws?.id,
@@ -343,7 +343,7 @@ export function PlanPage() {
     addLog('작업 계획서 분석 중...', 'muted', 0);
     addLog('Terraform 코드 생성 중...', 'run', 0);
     try {
-      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
+      const raw = await reportApiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
         method: 'POST',
         body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
       });
