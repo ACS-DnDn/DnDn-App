@@ -18,7 +18,15 @@ export async function reportApiFetch<T>(path: string, init?: RequestInit): Promi
     ...init,
     headers,
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text();
+    let msg = `API ${res.status}: ${res.statusText}`;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed?.error?.message) msg = parsed.error.message;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }

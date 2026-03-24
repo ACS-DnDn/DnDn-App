@@ -358,25 +358,6 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
 @app.post("/report-api/documents/generate/plan", status_code=202)
 async def work_plan(req: WorkPlanRequest):
 
-    if not req.target:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": {"code": "MISSING_TARGET", "message": "target은 필수입니다."},
-            },
-        )
-    if not req.content:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": {
-                    "code": "MISSING_CONTENT",
-                    "message": "content는 필수입니다.",
-                },
-            },
-        )
     if not req.workspace_id:
         return JSONResponse(
             status_code=400,
