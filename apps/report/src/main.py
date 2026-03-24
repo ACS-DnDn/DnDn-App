@@ -736,10 +736,10 @@ async def terraform_fix(req: dict):
         "system": (
             "당신은 Terraform 보안 전문가입니다. "
             "아래 Terraform 코드에서 보안/정책 이슈를 수정하세요. "
-            "수정된 전체 코드를 JSON으로 반환하세요. "
+            "반드시 JSON만 출력하세요. 설명, 주석, 마크다운 코드펜스 없이 순수 JSON만 반환하세요. "
             '형식: {"files": {"파일명.tf": "수정된 전체 코드", ...}}'
         ),
-        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 모두 수정한 전체 코드를 JSON으로 반환하세요."}],
+        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 모두 수정한 전체 코드를 순수 JSON으로만 반환하세요. 설명 없이 JSON만 출력."}],
     }
 
     logger.info("terraform fix 시작 — 파일 %d개, 이슈: checkov=%d, opa_block=%d, opa_warn=%d",
@@ -757,6 +757,19 @@ async def terraform_fix(req: dict):
         logger.info("terraform fix Bedrock 응답 길이: %d자", len(text))
         clean = re.sub(r'^```\w*\n?', '', text.strip())
         clean = re.sub(r'\n?```$', '', clean).strip()
+        # Bedrock가 JSON 뒤에 설명을 붙이는 경우 — 첫 번째 JSON 객체만 추출
+        brace_count = 0
+        json_end = 0
+        for idx, ch in enumerate(clean):
+            if ch == '{':
+                brace_count += 1
+            elif ch == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    json_end = idx + 1
+                    break
+        if json_end > 0:
+            clean = clean[:json_end]
         fixed = json.loads(clean, strict=False)
         fixed_files = fixed.get("files", {})
         if not fixed_files:
