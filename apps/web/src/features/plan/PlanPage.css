@@ -279,3 +279,5 @@ html:has(.plan-page) { overflow: hidden; }
 .vd-item { padding: 7px 11px; border-radius: 7px; font-size: 12px; font-weight: 500; }
 .vd-item.err { background: rgba(255,107,107,0.08); color: #c92a2a; border: 1px solid rgba(255,107,107,0.18); }
 .vd-item.warn { background: rgba(252,196,25,0.08); color: #e67700; border: 1px solid rgba(252,196,25,0.2); }
+.vd-item-label { font-weight: 600; }
+.vd-item-detail { font-size: 11px; margin-top: 2px; opacity: 0.85; font-weight: 400; }

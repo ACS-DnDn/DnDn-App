@@ -20,7 +20,7 @@ interface PendingApprover { id: string; name: string; rank: string; type: string
 interface RefDoc { no: string; name: string; }
 interface LogEntry { id: string; time: string; msg: string; type: string; tab: number; clickable?: 'security' | 'policy'; }
 interface CheckovIssue { id: string; resource: string; file?: string; line?: number; severity?: string; }
-interface OpaBlock { key: string; label: string; }
+interface OpaBlock { key: string; label: string; detail?: string; }
 interface ValidationResult {
   checkov: { passed: boolean; summary: string; issues: CheckovIssue[] };
   opa: { passed: boolean; summary: string; blocks: OpaBlock[]; warns: OpaBlock[] };
@@ -1013,7 +1013,10 @@ export function PlanPage() {
                   <div className="vd-section">
                     <div className="vd-section-title err">차단 항목</div>
                     {lastValidation.opa.blocks.map((b, i) => (
-                      <div key={i} className="vd-item err">{b.label}</div>
+                      <div key={i} className="vd-item err">
+                        <div className="vd-item-label">{b.label}</div>
+                        {b.detail && <div className="vd-item-detail">{b.detail}</div>}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -1021,7 +1024,10 @@ export function PlanPage() {
                   <div className="vd-section">
                     <div className="vd-section-title warn">경고 항목</div>
                     {lastValidation.opa.warns.map((w, i) => (
-                      <div key={i} className="vd-item warn">{w.label}</div>
+                      <div key={i} className="vd-item warn">
+                        <div className="vd-item-label">{w.label}</div>
+                        {w.detail && <div className="vd-item-detail">{w.detail}</div>}
+                      </div>
                     ))}
                   </div>
                 )}
