@@ -351,9 +351,20 @@ export function PlanPage() {
       const { jobId } = raw.data;
       const result = await pollJob(jobId);
       // 백엔드: {files: [{filename, content}, ...], summary, checkov}
-      const rawResult = result.files ?? {};
-      const rawFiles: Array<{ filename: string; content: string }> = rawResult.files ?? [];
-      const files = rawFiles.map(f => ({ name: f.filename, code: f.content }));
+      const rawResult = result.files;
+      let files: Array<{ name: string; code: string }> = [];
+      if (rawResult && typeof rawResult === 'object') {
+        const inner = (rawResult as Record<string, unknown>).files;
+        if (Array.isArray(inner)) {
+          files = inner.map((f: { filename: string; content: string }) => ({
+            name: f.filename, code: f.content,
+          }));
+        } else if (inner && typeof inner === 'object') {
+          files = Object.entries(inner as Record<string, string>).map(
+            ([name, code]) => ({ name, code }),
+          );
+        }
+      }
       if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));

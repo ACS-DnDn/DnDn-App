@@ -4,8 +4,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Any
 import os
+import re
+import json
 import asyncio
 import logging
+import boto3
 from functools import partial
 from datetime import datetime, timezone
 import uuid
@@ -28,7 +31,7 @@ from .ai_generator import (
     generate_work_plan,
     generate_health_event_report,
 )
-from .terraform_generator import generate_terraform_code, _run_checkov_scan, _load_opa_policies, _format_opa_for_prompt
+from .terraform_generator import generate_terraform_code, _run_checkov_scan, _load_opa_policies
 from .s3_client import (
     save_result,
     save_report,
@@ -578,7 +581,7 @@ async def terraform_validate(req: dict):
     ]
 
     # OPA 정책 검증
-    opa_policies = _load_opa_policies(workspace_id)
+    opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
     opa_blocks = []
     opa_warns = []
     all_code = "\n".join(files_map.values()).lower()
@@ -665,7 +668,6 @@ async def terraform_fix(req: dict):
         files_text += f"\n# === {fname} ===\n{code}\n"
 
     from .terraform_generator import MODEL_ID, REGION
-    import boto3, json as _json
 
     client = boto3.client("bedrock-runtime", region_name=REGION)
     body = {
@@ -686,19 +688,20 @@ async def terraform_fix(req: dict):
             modelId=MODEL_ID,
             contentType="application/json",
             accept="application/json",
-            body=_json.dumps(body),
+            body=json.dumps(body),
         )
-        result = _json.loads(response["body"].read())
+        result = json.loads(response["body"].read())
         text = result["content"][0]["text"]
-        clean = text.strip().removeprefix("```json").removesuffix("```").strip()
-        fixed = _json.loads(clean, strict=False)
+        clean = re.sub(r'^```\w*\n?', '', text.strip())
+        clean = re.sub(r'\n?```$', '', clean).strip()
+        fixed = json.loads(clean, strict=False)
         fixed_files = fixed.get("files", {})
         return {"success": True, "data": {"files": fixed_files}}
     except Exception as e:
         logger.error("terraform fix 실패: %s", e, exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": {"code": "FIX_FAILED", "message": str(e)}},
+            content={"success": False, "error": {"code": "FIX_FAILED", "message": "Terraform 코드 자동 수정에 실패했습니다."}},
         )
 
 
