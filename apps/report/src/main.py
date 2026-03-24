@@ -630,6 +630,37 @@ async def terraform_validate(req: dict):
     }
 
 
+# ── Terraform 코드 저장 (수정 후 S3 덮어쓰기) ─────────────
+@app.put("/report-api/documents/generate/terraform/save")
+async def terraform_save(req: dict):
+    workspace_id = req.get("workspaceId")
+    job_id = req.get("jobId")
+    files_map = req.get("files", {})
+
+    if not workspace_id or not job_id:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "INVALID_PARAMS", "message": "workspaceId와 jobId는 필수입니다."}},
+        )
+
+    if not files_map:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "NO_FILES", "message": "저장할 파일이 없습니다."}},
+        )
+
+    files_list = [{"filename": k, "content": v} for k, v in files_map.items()]
+    try:
+        prefix = await asyncio.to_thread(save_terraform_files, workspace_id, job_id, files_list)
+        return {"success": True, "data": {"prefix": prefix}}
+    except Exception as e:
+        logger.error("terraform save 실패: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": {"code": "SAVE_FAILED", "message": "Terraform 코드 저장에 실패했습니다."}},
+        )
+
+
 # ── Terraform 자동 수정 ────────────────────────────────────
 @app.post("/report-api/documents/generate/terraform/fix")
 async def terraform_fix(req: dict):
