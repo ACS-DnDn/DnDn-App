@@ -68,6 +68,8 @@ export function PlanPage() {
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
   const [lastValidation, setLastValidation] = useState<ValidationResult | null>(null);
+  const [tfJobId, setTfJobId] = useState<string | null>(null);
+  const tfSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [validationPopup, setValidationPopup] = useState<'security' | 'policy' | null>(null);
   const logPanelRef = useRef<HTMLDivElement>(null);
 
@@ -349,6 +351,7 @@ export function PlanPage() {
         body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
       });
       const { jobId } = raw.data;
+      setTfJobId(jobId);
       const result = await pollJob(jobId);
       // 백엔드 응답 구조가 다양할 수 있으므로 재귀적으로 tf 파일 배열을 탐색
       console.log('[TF DEBUG] pollJob result:', JSON.stringify(result));
@@ -469,6 +472,24 @@ export function PlanPage() {
     runValidation(generatedTfFiles, tfCodes);
   }
 
+  /* ── terraform 코드 S3 자동 저장 ── */
+  function scheduleTfSave(updatedCodes: string[]) {
+    if (tfSaveRef.current) clearTimeout(tfSaveRef.current);
+    tfSaveRef.current = setTimeout(async () => {
+      if (!tfJobId || !ws?.id || generatedTfFiles.length === 0) return;
+      const filesMap: Record<string, string> = {};
+      generatedTfFiles.forEach((f, i) => { filesMap[f.name] = updatedCodes[i] ?? f.code; });
+      try {
+        await reportApiFetch('/documents/generate/terraform/save', {
+          method: 'PUT',
+          body: JSON.stringify({ workspaceId: ws.id, jobId: tfJobId, files: filesMap }),
+        });
+      } catch (e) {
+        console.error('[TF SAVE] 자동 저장 실패:', e);
+      }
+    }, 3000);
+  }
+
   /* ── auto-resize textarea ── */
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = 'auto';
@@ -494,6 +515,7 @@ export function PlanPage() {
       if (docTimerRef.current) clearTimeout(docTimerRef.current);
       if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
       if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+      if (tfSaveRef.current) clearTimeout(tfSaveRef.current);
       validationTimersRef.current.forEach((t) => { clearTimeout(t); });
       const iframeDoc = iframeRef.current?.contentDocument;
       if (iframeDoc) {
@@ -750,7 +772,9 @@ export function PlanPage() {
                     value={tfCodes[i]}
                     onChange={e => {
                       const val = e.target.value;
-                      setTfCodes(prev => prev.map((c, ci) => ci === i ? val : c));
+                      const updated = tfCodes.map((c, ci) => ci === i ? val : c);
+                      setTfCodes(updated);
+                      scheduleTfSave(updated);
                       autoResize(e.target);
                     }}
                     onKeyDown={handleTabKey}
