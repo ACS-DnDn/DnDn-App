@@ -351,7 +351,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
 
 
 # ── 작업계획서 생성 (target + content + refDocIds → HTML) ──
-@app.post("/todo/documents/generate/plan", status_code=202)
+@app.post("/report-api/documents/generate/plan", status_code=202)
 async def work_plan(req: WorkPlanRequest):
 
     if not req.target:
@@ -398,7 +398,7 @@ async def work_plan(req: WorkPlanRequest):
 
 
 # ── 테라폼 코드 생성 ───────────────────────────────────────
-@app.post("/todo/documents/generate/terraform", status_code=202)
+@app.post("/report-api/documents/generate/terraform", status_code=202)
 async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db)):
 
     # 1. documentId 검증
@@ -464,7 +464,7 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
 
 
 # ─────────────────폴링─────────────────
-@app.get("/todo/documents/generate/{job_id}")
+@app.get("/report-api/documents/generate/{job_id}")
 async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
 
     job = get_job(db, job_id)
