@@ -140,7 +140,14 @@ def list_channels(token: str) -> list[dict[str, str]]:
         except requests.exceptions.RequestException as e:
             raise SlackError(502, "SLACK_API_ERROR", "Slack 서버에 연결할 수 없습니다.") from e
 
-        data = resp.json()
+        if not resp.ok:
+            raise SlackError(resp.status_code, "SLACK_CHANNELS_ERROR", f"채널 목록 조회 실패: HTTP {resp.status_code}")
+
+        try:
+            data = resp.json()
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            raise SlackError(502, "SLACK_CHANNELS_ERROR", "Slack 응답을 파싱할 수 없습니다.")
+
         if not data.get("ok"):
             raise SlackError(400, "SLACK_CHANNELS_ERROR", data.get("error", "채널 목록 조회 실패"))
 

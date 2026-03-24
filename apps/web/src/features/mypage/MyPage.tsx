@@ -16,7 +16,8 @@ interface SlackChannel {
 interface SlackStatus {
   connected: boolean;
   workspace: string | null;
-  channel: string | null;
+  channel: string | null;       // 채널 ID
+  channelName: string | null;   // 채널 표시명
   notifyEnabled: boolean;
 }
 
@@ -59,7 +60,7 @@ export function MyPage() {
   useEffect(() => {
     apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status')
       .then((res) => setSlack(res.data))
-      .catch(() => setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true }));
+      .catch(() => setSlack({ connected: false, workspace: null, channel: null, channelName: null, notifyEnabled: true }));
   }, []);
 
   // Slack OAuth 팝업 + localStorage 이벤트 처리
@@ -117,7 +118,7 @@ export function MyPage() {
     setSaving(true);
     try {
       await apiFetch('/slack/disconnect', { method: 'DELETE' });
-      setSlack({ connected: false, workspace: null, channel: null, notifyEnabled: true });
+      setSlack({ connected: false, workspace: null, channel: null, channelName: null, notifyEnabled: true });
     } catch { /* ignore */ } finally {
       setSaving(false);
     }
@@ -137,14 +138,14 @@ export function MyPage() {
     }
   }, [slack, saving]);
 
-  const handleChannelChange = useCallback(async (channelId: string) => {
+  const handleChannelChange = useCallback(async (channelId: string, channelName: string) => {
     if (!slack || saving) return;
     setSaving(true);
     setPickerOpen(false);
     try {
       const res = await apiFetch<{ success: boolean; data: SlackStatus }>(
         '/slack/settings',
-        { method: 'PATCH', body: JSON.stringify({ channel: channelId }) },
+        { method: 'PATCH', body: JSON.stringify({ channel: channelId, channelName }) },
       );
       setSlack(res.data);
     } catch { /* ignore */ } finally {
@@ -264,7 +265,7 @@ export function MyPage() {
             <div className="integration-channel-row">
               <span className="info-label" style={{ color: 'var(--text-muted)' }}>알림 채널</span>
               <span className="channel-tag">
-                <span className="channel-tag-hash">#</span>{slack.channel ?? 'general'}
+                <span className="channel-tag-hash">#</span>{slack.channelName ?? slack.channel ?? 'general'}
               </span>
               <button className="btn-channel-change" onClick={async () => {
                 if (!pickerOpen && channels.length === 0) {
@@ -290,8 +291,8 @@ export function MyPage() {
                     <button
                       type="button"
                       key={ch.id}
-                      className={`channel-option${slack.channel === ch.name ? ' selected' : ''}`}
-                      onClick={() => handleChannelChange(ch.name)}
+                      className={`channel-option${slack.channel === ch.id ? ' selected' : ''}`}
+                      onClick={() => handleChannelChange(ch.id, ch.name)}
                       disabled={saving}
                     >
                       <div className="channel-radio"><div className="channel-radio-dot" /></div>

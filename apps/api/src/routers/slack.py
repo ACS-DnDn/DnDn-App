@@ -38,6 +38,7 @@ def _user_status(user: User) -> SlackStatusResponse:
         connected=connected,
         workspace=user.slack_workspace if connected else None,
         channel=user.slack_channel if connected else None,
+        channelName=user.slack_channel_name if connected else None,
         notifyEnabled=user.slack_notify if user.slack_notify is not None else True,
     )
 
@@ -88,6 +89,7 @@ def slack_callback(
     current_user.slack_user_id = result.slack_user_id
     if not current_user.slack_channel:
         current_user.slack_channel = "general"
+        current_user.slack_channel_name = "general"
     if current_user.slack_notify is None:
         current_user.slack_notify = True
     db.commit()
@@ -129,6 +131,8 @@ def slack_update_settings(
 
     if req.channel is not None:
         current_user.slack_channel = req.channel
+    if req.channelName is not None:
+        current_user.slack_channel_name = req.channelName
     if req.notifyEnabled is not None:
         current_user.slack_notify = req.notifyEnabled
     db.commit()
@@ -148,6 +152,7 @@ def slack_disconnect(
     current_user.slack_workspace = None
     current_user.slack_user_id = None
     current_user.slack_channel = None
+    current_user.slack_channel_name = None
     current_user.slack_notify = None
     db.commit()
 
