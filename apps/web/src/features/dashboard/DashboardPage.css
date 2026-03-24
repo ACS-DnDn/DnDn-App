@@ -78,7 +78,7 @@ button.table-link {
 
 /* ── 빈 상태 ── */
 .empty-row { padding: 0 !important; height: auto !important; }
-.empty-state { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 16px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
-.empty-ico { width: 32px; height: 32px; color: var(--border-med); }
+.empty-state { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.empty-ico { width: 18px; height: 18px; color: var(--border-med); }
 
 @keyframes fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
