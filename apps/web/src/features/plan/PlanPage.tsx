@@ -427,25 +427,10 @@ export function PlanPage() {
         result.checkov.passed ? `보안 검증 통과 ✓ (${result.checkov.summary})` : `보안 검증 이슈: ${result.checkov.summary}`,
         result.checkov.passed ? 'ok' : 'warn'
       );
-      if (!isRetry) {
-        result.checkov.issues?.slice(0, 10).forEach(issue => {
-          const loc = issue.file && issue.line ? ` (${issue.file}:${issue.line})` : '';
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • ${issue.id}: ${issue.resource}${loc}`, type: 'muted', tab: -1 }]);
-        });
-      }
-
       updateLog(opaId,
         result.opa.passed ? `정책 검증 통과 ✓ (${result.opa.summary})` : `정책 위반 감지: ${result.opa.summary}`,
         result.opa.passed ? 'ok' : (result.opa.blocks.length > 0 ? 'err' : 'warn')
       );
-      if (!isRetry) {
-        result.opa.blocks?.forEach(b => {
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [차단] ${b.label}`, type: 'muted', tab: -1 }]);
-        });
-        result.opa.warns?.forEach(w => {
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [경고] ${w.label}`, type: 'muted', tab: -1 }]);
-        });
-      }
 
       // 이슈 있고 첫 번째 시도면 자동 수정
       const hasIssues = !result.checkov.passed || !result.opa.passed;
@@ -467,7 +452,8 @@ export function PlanPage() {
           setTfCodes(fixedFiles.map(f => f.code));
           updateLog(fixLogId, '코드 수정 완료 → 재검증 중...', 'ok');
           await runValidation(fixedFiles, fixedFiles.map(f => f.code), true);
-        } catch {
+        } catch (fixErr) {
+          console.error('[TF FIX]', fixErr);
           updateLog(fixLogId, '자동 수정 실패 — 수동으로 수정 후 재검증하세요', 'warn');
         }
       }
