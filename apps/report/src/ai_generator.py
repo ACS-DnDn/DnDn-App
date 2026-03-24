@@ -693,36 +693,38 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
 2. 작업 단계는 번호 매겨서 간결하게 (CLI 명령어 포함 금지)
 """.strip()
 
-    user = f"""
-다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+    # None → 빈 문자열 정규화
+    safe_target = target or ""
+    safe_content = content or ""
 
-작업 대상: {target}
-작업 내용: {content}
+    def _build_user():
+        return f"""
+다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+{f"작업 대상: {safe_target}" if safe_target else ""}
+{f"작업 내용: {safe_content}" if safe_content else ""}
 {context_section}
 {aws_docs_section}
 """.strip()
 
-    # 최종 안전장치: 전체 프롬프트가 너무 크면 aws_docs부터 축소
+    user = _build_user()
+
+    # 최종 안전장치: 프롬프트 초과 시 aws_docs → context 순으로 축소
     total = len(system) + len(user)
     if total > _MAX_PROMPT_CHARS:
         over = total - _MAX_PROMPT_CHARS
-        print(f"[WARN] 프롬프트 {total}자 → {_MAX_PROMPT_CHARS}자로 축소 (aws_docs {over}자 제거)")
-        aws_docs_trimmed = aws_docs[: max(0, len(aws_docs) - over)]
-        aws_docs_section = (
-            f"\n## AWS 공식 문서 (요약)\n{aws_docs_trimmed}\n... (truncated)\n"
-            if aws_docs_trimmed
-            else ""
-        )
-        user = f"""
-다음 작업 정보를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+        print(f"[WARN] 프롬프트 {total}자 → {_MAX_PROMPT_CHARS}자로 축소")
+        # 1차: aws_docs 축소
+        if aws_docs_section and over > 0:
+            trim = min(len(aws_docs_section), over)
+            aws_docs_section = aws_docs_section[: len(aws_docs_section) - trim]
+            over -= trim
+        # 2차: context 축소
+        if context_section and over > 0:
+            trim = min(len(context_section), over)
+            context_section = context_section[: len(context_section) - trim]
+        user = _build_user()
 
-작업 대상: {target}
-작업 내용: {content}
-{context_section}
-{aws_docs_section}
-""".strip()
-
-    title = target or "작업계획서"
+    title = safe_target or "작업계획서"
     return _wrap_html(title, call_claude(system, user))
 
 

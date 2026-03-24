@@ -176,9 +176,13 @@ async def _merge_context(ref_doc_ids: list[str], workspace_id: str) -> dict[str,
     from .ai_generator import _MAX_REF_DOCS
 
     merged: dict[str, Any] = {}
-    for doc_id in ref_doc_ids[:_MAX_REF_DOCS]:
+    merged_count = 0
+    for doc_id in ref_doc_ids:
+        if merged_count >= _MAX_REF_DOCS:
+            break
         try:
             merged.update(await asyncio.to_thread(get_report, doc_id, workspace_id))
+            merged_count += 1
         except Exception:
             pass
     return merged
