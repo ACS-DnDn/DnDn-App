@@ -556,6 +556,44 @@ async def render_report(req: RenderRequest):
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
 
 
+# ── Checkov CLI 직접 실행 (MCP 불필요) ────────────────────────
+def _run_checkov_cli(files_list: list[dict]) -> dict:
+    """Checkov CLI를 직접 실행하여 보안 스캔 수행"""
+    import tempfile, subprocess as sp
+    if not files_list:
+        return {}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for f in files_list:
+            safe_name = os.path.basename(f.get("filename", "main.tf"))
+            if not safe_name.endswith(".tf"):
+                safe_name += ".tf"
+            with open(os.path.join(tmpdir, safe_name), "w") as fp:
+                fp.write(f.get("content", ""))
+        try:
+            result = sp.run(
+                ["checkov", "-d", tmpdir, "--framework", "terraform", "-o", "json", "--quiet", "--compact"],
+                capture_output=True, text=True, timeout=120,
+            )
+            output = result.stdout.strip()
+            if not output:
+                logger.warning("Checkov 출력 없음 (exit=%d): %s", result.returncode, result.stderr[:500])
+                return {}
+            parsed = json.loads(output)
+            if isinstance(parsed, list):
+                parsed = parsed[0] if parsed else {}
+            summary = parsed.get("summary", {})
+            return {
+                "summary": {"passed": summary.get("passed", 0), "failed": summary.get("failed", 0)},
+                "failed_checks": parsed.get("results", {}).get("failed_checks", []),
+            }
+        except sp.TimeoutExpired:
+            logger.warning("Checkov 타임아웃 (120s)")
+            return {"error": "timeout"}
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Checkov 결과 파싱 실패: %s", e)
+            return {}
+
+
 # ── Terraform 검증 (Checkov + OPA) ─────────────────────────
 @app.post("/report-api/documents/generate/terraform/validate")
 async def terraform_validate(req: dict):
@@ -564,12 +602,12 @@ async def terraform_validate(req: dict):
 
     files_list = [{"filename": k, "content": v} for k, v in files_map.items()]
 
-    # Checkov 스캔
+    # Checkov 스캔 (CLI 직접 실행)
     checkov_passed = True
     checkov_issues = []
     summary = {}
     try:
-        checkov_raw = await asyncio.to_thread(_run_checkov_scan, files_list)
+        checkov_raw = await asyncio.to_thread(_run_checkov_cli, files_list)
         failed_checks = checkov_raw.get("failed_checks", [])
         summary = checkov_raw.get("summary", {})
         checkov_passed = summary.get("failed", 0) == 0
@@ -677,11 +715,13 @@ async def terraform_fix(req: dict):
     if opa_blocks:
         issues_text += "\n## OPA 정책 위반 (차단)\n"
         for b in opa_blocks:
-            issues_text += f"- [차단] {b.get('label', '')}\n"
+            detail = f" — {b['detail']}" if b.get('detail') else ""
+            issues_text += f"- [차단] {b.get('label', '')}{detail}\n"
     if opa_warns:
         issues_text += "\n## OPA 정책 경고\n"
         for w in opa_warns:
-            issues_text += f"- [경고] {w.get('label', '')}\n"
+            detail = f" — {w['detail']}" if w.get('detail') else ""
+            issues_text += f"- [경고] {w.get('label', '')}{detail}\n"
 
     files_text = ""
     for fname, code in files_map.items():
@@ -702,6 +742,8 @@ async def terraform_fix(req: dict):
         "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 모두 수정한 전체 코드를 JSON으로 반환하세요."}],
     }
 
+    logger.info("terraform fix 시작 — 파일 %d개, 이슈: checkov=%d, opa_block=%d, opa_warn=%d",
+                len(files_map), len(checkov_issues), len(opa_blocks), len(opa_warns))
     try:
         response = await asyncio.to_thread(
             client.invoke_model,
@@ -712,10 +754,13 @@ async def terraform_fix(req: dict):
         )
         result = json.loads(response["body"].read())
         text = result["content"][0]["text"]
+        logger.info("terraform fix Bedrock 응답 길이: %d자", len(text))
         clean = re.sub(r'^```\w*\n?', '', text.strip())
         clean = re.sub(r'\n?```$', '', clean).strip()
         fixed = json.loads(clean, strict=False)
         fixed_files = fixed.get("files", {})
+        if not fixed_files:
+            logger.warning("terraform fix: Bedrock가 빈 files 반환. 원문: %s", clean[:300])
         return {"success": True, "data": {"files": fixed_files}}
     except Exception as e:
         logger.error("terraform fix 실패: %s", e, exc_info=True)
