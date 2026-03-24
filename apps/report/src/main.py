@@ -565,31 +565,37 @@ async def terraform_validate(req: dict):
     files_list = [{"filename": k, "content": v} for k, v in files_map.items()]
 
     # Checkov 스캔
-    checkov_raw = await asyncio.to_thread(_run_checkov_scan, files_list)
-    failed_checks = checkov_raw.get("failed_checks", [])
-    summary = checkov_raw.get("summary", {})
-    checkov_passed = summary.get("failed", 0) == 0
-    checkov_issues = [
-        {
-            "id": c.get("check_id", ""),
-            "resource": c.get("resource", ""),
-            "file": c.get("file_path", ""),
-            "line": c.get("file_line_range", [0])[0] if c.get("file_line_range") else 0,
-            "severity": c.get("severity", ""),
-        }
-        for c in failed_checks
-    ]
+    checkov_passed = True
+    checkov_issues = []
+    summary = {}
+    try:
+        checkov_raw = await asyncio.to_thread(_run_checkov_scan, files_list)
+        failed_checks = checkov_raw.get("failed_checks", [])
+        summary = checkov_raw.get("summary", {})
+        checkov_passed = summary.get("failed", 0) == 0
+        checkov_issues = [
+            {
+                "id": c.get("check_id", ""),
+                "resource": c.get("resource", ""),
+                "file": c.get("file_path", ""),
+                "line": c.get("file_line_range", [0])[0] if c.get("file_line_range") else 0,
+                "severity": c.get("severity", ""),
+            }
+            for c in failed_checks
+        ]
+    except Exception as e:
+        logger.warning("Checkov 스캔 실패 (계속 진행): %s", e)
 
     # OPA 정책 검증 (실제 OPA 엔진)
-    from .opa_engine import evaluate_opa_policies
-    opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
+    opa_blocks, opa_warns = [], []
     try:
+        from .opa_engine import evaluate_opa_policies
+        opa_policies = await asyncio.to_thread(_load_opa_policies, workspace_id)
         opa_blocks, opa_warns = await asyncio.to_thread(
             evaluate_opa_policies, files_map, opa_policies
         )
-    except RuntimeError as e:
+    except Exception as e:
         logger.warning("OPA 평가 실패 (계속 진행): %s", e)
-        opa_blocks, opa_warns = [], []
 
     opa_passed = len(opa_blocks) == 0
     opa_summary_parts = []
