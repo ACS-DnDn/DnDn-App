@@ -40,7 +40,7 @@ from .s3_client import (
     save_terraform_files,
 )
 from .makejob import create_job, get_job
-from .models import ReportJob, Document, JobType
+from .models import ReportJob, Document, JobType, Workspace, User
 from .database import SessionLocal, get_db
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         db.close()
 
 
-def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
+def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str, token: str | None = None):
 
     db = SessionLocal()
 
@@ -136,8 +136,6 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str):
         workplan = get_report(req.document_id, req.workspace_id or "default")
 
         # 2. Terraform 생성
-        token = req.github_token or GITHUB_TOKEN
-
         result = generate_terraform_code(workplan, repo, token, workspace_id=req.workspace_id)
 
         # result = { "main.tf": "...", "vars.tf": "..." }
@@ -417,8 +415,25 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
             },
         )
 
-    # 2. repo 설정
-    repo = req.repo_name or GITHUB_REPO
+    # 2. 워크스페이스에서 GitHub 정보 조회
+    workspace = db.query(Workspace).filter(Workspace.id == req.workspace_id).first()
+    if not workspace:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_WORKSPACE",
+                    "message": "워크스페이스를 찾을 수 없습니다.",
+                },
+            },
+        )
+
+    repo = req.repo_name or (
+        f"{workspace.github_org}/{workspace.repo}"
+        if workspace.github_org and workspace.repo
+        else GITHUB_REPO
+    )
     if not repo:
         return JSONResponse(
             status_code=503,
@@ -426,10 +441,19 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
                 "success": False,
                 "error": {
                     "code": "AI_UNAVAILABLE",
-                    "message": "GITHUB_REPO가 설정되지 않았습니다.",
+                    "message": "워크스페이스에 GitHub 저장소가 설정되지 않았습니다.",
                 },
             },
         )
+
+    # GitHub 토큰: 요청 > 워크스페이스 소유자 > 환경변수
+    token = req.github_token
+    if not token and workspace.owner_id:
+        owner = db.query(User).filter(User.id == workspace.owner_id).first()
+        if owner:
+            token = owner.github_access_token
+    if not token:
+        token = GITHUB_TOKEN
 
     # 3. job 생성
     job_id = str(uuid.uuid4())
@@ -446,7 +470,7 @@ async def terraform_generate(req: TerraformRequest, db: Session = Depends(get_db
     db.commit()
 
     # 4. background 실행
-    task = asyncio.create_task(asyncio.to_thread(_run_terraform_job, job_id, req, repo))
+    task = asyncio.create_task(asyncio.to_thread(_run_terraform_job, job_id, req, repo, token))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
