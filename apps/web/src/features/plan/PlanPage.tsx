@@ -350,8 +350,10 @@ export function PlanPage() {
       });
       const { jobId } = raw.data;
       const result = await pollJob(jobId);
-      const rawFiles = (result.files as Record<string, string>) ?? {};
-      const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
+      // 백엔드: {files: [{filename, content}, ...], summary, checkov}
+      const rawResult = result.files ?? {};
+      const rawFiles: Array<{ filename: string; content: string }> = rawResult.files ?? [];
+      const files = rawFiles.map(f => ({ name: f.filename, code: f.content }));
       if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));
@@ -370,7 +372,7 @@ export function PlanPage() {
   }
 
   async function _doValidate(fileMap: Record<string, string>) {
-    return apiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
+    return reportApiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
       method: 'POST',
       body: JSON.stringify({ files: fileMap, workspaceId: ws?.id }),
     });
@@ -421,7 +423,7 @@ export function PlanPage() {
         const fixLogId = Math.random().toString(36).slice(2);
         setLogEntries(prev => [...prev, { id: fixLogId, time: now(), msg: '이슈 자동 수정 중...', type: 'run', tab: -1 }]);
         try {
-          const fixRaw = await apiFetch<{ success: boolean; data: { files: Record<string, string> } }>('/documents/generate/terraform/fix', {
+          const fixRaw = await reportApiFetch<{ success: boolean; data: { files: Record<string, string> } }>('/documents/generate/terraform/fix', {
             method: 'POST',
             body: JSON.stringify({
               files: fileMap,
