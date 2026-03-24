@@ -34,7 +34,7 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
         label: '보고서 생성', href: '/report-settings',
         icon: <svg className="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 13V9"/><path d="M10 13V7"/><path d="M13 13v-3"/></svg>,
         children: [
-          { label: '현황 보고서', href: '/report-settings?section=summary' },
+          { label: '인프라 활동 보고서', href: '/report-settings?section=summary' },
           { label: '이벤트 보고서', href: '/report-settings?section=events' },
         ],
       },

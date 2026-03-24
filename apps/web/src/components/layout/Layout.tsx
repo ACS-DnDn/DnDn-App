@@ -27,7 +27,7 @@ function buildBreadcrumb(pathname: string, search: string): React.ReactNode {
     return <>{home}{sep}<CrumbLink to="/workspace">워크스페이스</CrumbLink>{sep}<span className="crumb-cur">워크스페이스 생성</span></>;
   }
   if (pathname === '/report-settings') {
-    const sub = sp.get('section') === 'events' ? '이벤트 보고서' : '현황 보고서';
+    const sub = sp.get('section') === 'events' ? '이벤트 보고서' : '인프라 활동 보고서';
     return <>{home}{sep}<CrumbLink to="/report-settings">보고서 생성</CrumbLink>{sep}<span className="crumb-cur">{sub}</span></>;
   }
 
