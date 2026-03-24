@@ -674,10 +674,11 @@ def generate_work_plan(target: str, content: str, context: dict | None = None) -
         if aws_docs
         else ""
     )
-    # 참조 문서: 크면 Haiku로 요약
+    # 참조 문서: aws_docs 제외 (이미 별도 섹션) + 크면 Haiku로 요약
+    ctx_for_prompt = {k: v for k, v in ctx.items() if k != "aws_docs"}
     context_section = ""
-    if ctx:
-        ctx_text = json.dumps(ctx, ensure_ascii=False, indent=2)
+    if ctx_for_prompt:
+        ctx_text = json.dumps(ctx_for_prompt, ensure_ascii=False, indent=2)
         ctx_text = _summarize_large_text(ctx_text, "작업계획서 — 참조 문서")
         context_section = f"\n## 참고 컨텍스트 (이전 보고서)\n{ctx_text}\n"
 
