@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Document, Approval, DocumentRead
+from apps.api.src.models import User, Document, Approval, DocumentRead, Workspace
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.dashboard import DashboardResponse
@@ -29,13 +29,25 @@ def get_dashboard(
         .filter(Document.author_id == current_user.id, Document.status == "progress")
         .count()
     )
+    # 내 워크스페이스(같은 회사·부서) 문서 중 안 읽은 것만 카운트
+    my_ws_ids = (
+        db.query(Workspace.id)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
+    )
     read_doc_ids = (
         db.query(DocumentRead.document_id)
         .filter(DocumentRead.user_id == current_user.id)
     )
     new_doc_count = (
         db.query(Document)
-        .filter(Document.id.notin_(read_doc_ids))
+        .filter(
+            Document.workspace_id.in_(my_ws_ids),
+            Document.id.notin_(read_doc_ids),
+        )
         .count()
     )
 
