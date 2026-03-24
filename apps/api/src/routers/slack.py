@@ -84,9 +84,13 @@ def slack_callback(
     except SlackError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
+    previous_workspace = current_user.slack_workspace
     current_user.slack_access_token = result.access_token
     current_user.slack_workspace = result.workspace
     current_user.slack_user_id = result.slack_user_id
+    if previous_workspace and previous_workspace != result.workspace:
+        current_user.slack_channel = None
+        current_user.slack_channel_name = None
     if not current_user.slack_channel:
         try:
             chs = list_channels(result.access_token)

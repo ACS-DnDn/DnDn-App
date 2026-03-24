@@ -82,6 +82,27 @@ def _notify(user: User, text: str) -> None:
             pass
 
 
+def _has_document_access(db: "Session", doc: Document, current_user: User) -> bool:
+    """문서 접근 권한 확인: 작성자 / 결재선 / 같은 워크스페이스(회사·부서)."""
+    if doc.author_id is not None and doc.author_id == current_user.id:
+        return True
+    is_approver = (
+        db.query(Approval)
+        .filter(Approval.document_id == doc.id, Approval.user_id == current_user.id)
+        .first()
+        is not None
+    )
+    if is_approver:
+        return True
+    if doc.workspace_id:
+        ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+        if ws:
+            owner = db.query(User).filter(User.id == ws.owner_id).first()
+            if owner and owner.company_id == current_user.company_id and owner.department_id == current_user.department_id:
+                return True
+    return False
+
+
 @router.get("", response_model=SuccessResponse[DocumentArchiveResponse])
 def get_documents(
     tab: Optional[str] = Query(
@@ -101,7 +122,7 @@ def get_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 기본 쿼리 — 내 워크스페이스(같은 회사·부서) 문서만 조회
+    # 1. 내 워크스페이스(같은 회사·부서) 문서 쿼리
     my_ws_ids = (
         db.query(Workspace.id)
         .join(User, Workspace.owner_id == User.id)
@@ -110,20 +131,22 @@ def get_documents(
             User.department_id == current_user.department_id,
         )
     )
-    query = db.query(Document).filter(Document.workspace_id.in_(my_ws_ids))
 
     # 💡 [호환성 로직] 참조 문서 검색에서 archived=true로 찌른 경우
     if archived:
-        query = query.filter(Document.status == "done")
-
-    # 2. 탭(tab) 필터링
-    if tab == "action":
-        # 내가 결재할 차례(current)이거나 내가 반려했던(rejected) 문서만 가져옵니다.
+        query = db.query(Document).filter(
+            Document.workspace_id.in_(my_ws_ids), Document.status == "done"
+        )
+    elif tab == "action":
+        # 결재 대상 문서는 워크스페이스 무관 — Approval 기준으로 직접 조회
         query = (
-            query.join(Approval, Approval.document_id == Document.id)
+            db.query(Document)
+            .join(Approval, Approval.document_id == Document.id)
             .filter(Approval.user_id == current_user.id)
             .filter(Approval.status.in_(["current", "rejected"]))
         )
+    else:
+        query = db.query(Document).filter(Document.workspace_id.in_(my_ws_ids))
 
     # 3. 검색어(keyword) 필터링
     if keyword:
@@ -326,22 +349,7 @@ def get_document_detail(
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    # 접근 권한 확인: 작성자 / 결재선 / 같은 워크스페이스(회사·부서)
-    is_author = doc.author_id is not None and doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    is_ws_member = False
-    if doc.workspace_id:
-        ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
-        if ws:
-            owner = db.query(User).filter(User.id == ws.owner_id).first()
-            if owner and owner.company_id == current_user.company_id and owner.department_id == current_user.department_id:
-                is_ws_member = True
-    if not (is_author or is_approver or is_ws_member):
+    if not _has_document_access(db, doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # S3에서 HTML 본문 가져오기
@@ -664,14 +672,7 @@ def get_ref_document_detail(
     if not parent_doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    is_author = parent_doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    if not (is_author or is_approver):
+    if not _has_document_access(db, parent_doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # 2. 참조 문서(타겟) 상세 정보 조회 (404 REF_DOC_NOT_FOUND)
@@ -788,14 +789,7 @@ def download_attachment(
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    is_author = doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    if not (is_author or is_approver):
+    if not _has_document_access(db, doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     attachment = (

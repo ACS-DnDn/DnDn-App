@@ -265,7 +265,7 @@ export function MyPage() {
             <div className="integration-channel-row">
               <span className="info-label" style={{ color: 'var(--text-muted)' }}>알림 채널</span>
               <span className="channel-tag">
-                {(slack.channelName || slack.channel) && <span className="channel-tag-hash">#</span>}{slack.channelName ?? slack.channel ?? '채널 미선택'}
+                {(slack.channelName || slack.channel) && <span className="channel-tag-hash">#</span>}{slack.channelName || slack.channel || '채널 미선택'}
               </span>
               <button className="btn-channel-change" onClick={async () => {
                 if (!pickerOpen && channels.length === 0) {
