@@ -22,7 +22,7 @@ router = APIRouter(prefix="/internal", tags=["Internal"])
 _INTERNAL_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 
-def _verify_internal_key(x_internal_key: str = Header(..., alias="X-Internal-Key")):
+def _verify_internal_key(x_internal_key: str | None = Header(None, alias="X-Internal-Key")):
     """내부 서비스 간 호출 인증 — INTERNAL_API_KEY 헤더 검증."""
     if not _INTERNAL_KEY or x_internal_key != _INTERNAL_KEY:
         raise HTTPException(status_code=403, detail="FORBIDDEN")

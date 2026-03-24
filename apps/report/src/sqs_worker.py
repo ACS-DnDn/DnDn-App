@@ -143,6 +143,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         "weekly": "주간보고서",
     }.get(event_type, "이벤트보고서")
 
+    created = False
     db = SessionLocal()
     try:
         existing = db.query(Document).filter(Document.id == doc_id).first()
@@ -159,29 +160,33 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             )
             db.add(doc)
             db.commit()
+            created = True
     except Exception as e:
         logger.error("Document DB 저장 실패 (%s): %s", doc_id, e, exc_info=True)
         db.rollback()
     finally:
         db.close()
 
-    # dndn-api에 새 문서 알림 요청 (Slack)
-    try:
-        notify_resp = requests.post(
-            f"{DNDN_API_URL}/internal/notify-new-document",
-            json={
-                "documentId": doc_id,
-                "workspaceId": workspace_id,
-                "title": canonical.get("meta", {}).get("title", doc_id),
-                "docType": doc_type,
-            },
-            headers={"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")},
-            timeout=5,
-        )
-        if not notify_resp.ok:
-            logger.warning("Slack 알림 요청 실패 (HTTP %s): %s", notify_resp.status_code, notify_resp.text)
-    except Exception as e:
-        logger.warning("Slack 알림 요청 실패: %s", e)
+<<<<<<< HEAD
+    # dndn-api에 새 문서 알림 요청 (Slack) — 새 Document 생성 시에만
+    if created:
+        try:
+            notify_resp = requests.post(
+                f"{DNDN_API_URL}/internal/notify-new-document",
+                json={
+                    "documentId": doc_id,
+                    "workspaceId": workspace_id,
+                    "title": canonical.get("meta", {}).get("title", doc_id),
+                    "docType": doc_type,
+                },
+                headers={"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")},
+                timeout=5,
+            )
+            payload = notify_resp.json()
+            if not notify_resp.ok or not payload.get("ok"):
+                logger.warning("Slack 알림 요청 실패 (HTTP %s): %s", notify_resp.status_code, payload)
+        except (requests.RequestException, ValueError) as e:
+            logger.warning("Slack 알림 요청 실패: %s", e)
 
     logger.info("HTML 저장 완료: %s → %s", doc_id, html_key)
 
