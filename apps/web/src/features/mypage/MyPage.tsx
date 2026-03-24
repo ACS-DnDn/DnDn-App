@@ -91,16 +91,19 @@ export function MyPage() {
 
       let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
         if (popup?.closed) {
-          setTimeout(() => {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          setTimeout(async () => {
+            window.removeEventListener('storage', onStorage);
             const stored = localStorage.getItem('slack-oauth-result');
             if (stored) {
-              onStorage({ key: 'slack-oauth-result', newValue: stored } as StorageEvent);
-            } else {
-              window.removeEventListener('storage', onStorage);
-              setSaving(false);
+              localStorage.removeItem('slack-oauth-result');
             }
+            try {
+              const status = await apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status');
+              setSlack(status.data);
+            } catch { /* ignore */ }
+            setSaving(false);
           }, 1500);
-          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
       }, 1000);
     } catch {
