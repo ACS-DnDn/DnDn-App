@@ -64,11 +64,11 @@ def get_dashboard(
         pending_docs.append(
             {
                 "id": str(doc.id),
-                "docNum": str(doc.id)[:8],
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "title": doc.title,
                 "status": doc_status_for_me,
                 "type": doc.type if doc.type else "작업 계획서",
-                "author": doc.author.name if doc.author else "알수없음",
+                "author": doc.author.name if doc.author else "DnDn Agent",
                 "date": doc.created_at.strftime("%Y.%m.%d") if doc.created_at else "",
             }
         )
@@ -82,7 +82,7 @@ def get_dashboard(
         completed_docs.append(
             {
                 "id": str(doc.id),
-                "docNum": str(doc.id)[:8],
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "title": doc.title,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": current_user.name,

@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sa_func
 from typing import Any
 import os
 import re
@@ -48,6 +49,31 @@ from .database import SessionLocal, get_db
 
 logger = logging.getLogger(__name__)
 
+# ── 문서번호 타입 매핑 ──────────────────────────────────────
+DOC_TYPE_CODE = {
+    "계획서": "PLN",
+    "이벤트보고서": "EVT",
+    "헬스이벤트보고서": "RPT",
+    "주간보고서": "RPT",
+}
+
+
+def _next_doc_num(db: Session, doc_type: str) -> str:
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)"""
+    code = DOC_TYPE_CODE.get(doc_type, "DOC")
+    year = datetime.now(timezone.utc).year
+    prefix = f"{year}-{code}-"
+    last = (
+        db.query(sa_func.max(Document.doc_num))
+        .filter(Document.doc_num.like(f"{prefix}%"))
+        .scalar()
+    )
+    if last:
+        seq = int(last.split("-")[-1]) + 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:04d}"
+
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 _raw_origins = os.getenv(
@@ -78,7 +104,21 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         job.status = "generating"
         db.commit()
 
-        html = generate_work_plan(req.target, req.content, ctx)
+        doc_type = "계획서"
+        doc_num = _next_doc_num(db, doc_type)
+
+        # 담당자 정보
+        author_label = req.author_name or ""
+        if req.author_position:
+            author_label = f"{author_label} {req.author_position}".strip()
+
+        doc_meta = {
+            "doc_num": doc_num,
+            "author_label": author_label,
+            "company_logo_url": req.company_logo_url or "",
+        }
+
+        html = generate_work_plan(req.target, req.content, ctx, doc_meta=doc_meta)
 
         doc_id = f"plan-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
         workspace_id = req.workspace_id or "default"
@@ -91,8 +131,9 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
 
         doc = Document(
             id=doc_id,
+            doc_num=doc_num,
             title=req.target or doc_id,
-            type="계획서",
+            type=doc_type,
             html_key=html_key,
             json_key=json_key,
             ref_doc_ids=req.ref_doc_ids or None,
@@ -212,8 +253,11 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
         logger.error("event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
+    evt_doc_num = _next_doc_num(db, "이벤트보고서")
+    evt_meta = {"doc_num": evt_doc_num, "author_label": "DnDn Agent"}
+
     try:
-        html = await asyncio.to_thread(generate_event_report, canonical)
+        html = await asyncio.to_thread(generate_event_report, canonical, doc_meta=evt_meta)
     except Exception as e:
         logger.error("event_report: AI 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
@@ -226,9 +270,9 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error("event_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
-
     doc = Document(
         id=doc_id,
+        doc_num=evt_doc_num,
         title=req.target or doc_id,
         type="이벤트보고서",
         html_key=html_key,
@@ -239,7 +283,6 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     )
     db.add(doc)
     db.commit()
-
 
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
@@ -267,8 +310,11 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
         logger.error("health_event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
+    health_doc_num = _next_doc_num(db, "헬스이벤트보고서")
+    health_meta = {"doc_num": health_doc_num, "author_label": "DnDn Agent"}
+
     try:
-        html = await asyncio.to_thread(generate_health_event_report, canonical)
+        html = await asyncio.to_thread(generate_health_event_report, canonical, doc_meta=health_meta)
     except Exception as e:
         logger.error("health_event_report: AI 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
@@ -281,11 +327,11 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     except Exception as e:
         logger.error("health_event_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
-
     doc = Document(
         id=doc_id,
+        doc_num=health_doc_num,
         title=req.target or doc_id,
-        type="이벤트보고서",
+        type="헬스이벤트보고서",
         html_key=html_key,
         json_key=json_key,
         ref_doc_ids=req.ref_doc_ids or None,
@@ -294,7 +340,6 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     )
     db.add(doc)
     db.commit()
-
 
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
@@ -330,8 +375,11 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
         logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
+    weekly_doc_num = _next_doc_num(db, "주간보고서")
+    weekly_meta = {"doc_num": weekly_doc_num, "author_label": "DnDn Agent"}
+
     try:
-        html = await asyncio.to_thread(generate_weekly_report, canonical)
+        html = await asyncio.to_thread(generate_weekly_report, canonical, doc_meta=weekly_meta)
     except Exception as e:
         logger.error("weekly_report: AI 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
@@ -344,9 +392,9 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
     except Exception as e:
         logger.error("weekly_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
-
     doc = Document(
         id=doc_id,
+        doc_num=weekly_doc_num,
         title=req.target or doc_id,
         type="주간보고서",
         html_key=html_key,
@@ -666,6 +714,30 @@ async def terraform_validate(req: dict):
             },
         },
     }
+
+
+# ── 문서 HTML 저장 (편집 후 S3 덮어쓰기) ─────────────────────
+@app.put("/report-api/documents/html/save")
+async def document_html_save(req: dict):
+    doc_id = req.get("docId")
+    workspace_id = req.get("workspaceId")
+    html = req.get("html")
+
+    if not doc_id or not workspace_id or not html:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "INVALID_PARAMS", "message": "docId, workspaceId, html은 필수입니다."}},
+        )
+
+    try:
+        html_key = await asyncio.to_thread(save_report_html, doc_id, html, workspace_id)
+        return {"success": True, "data": {"html_key": html_key}}
+    except Exception as e:
+        logger.error("document html save 실패: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": {"code": "SAVE_FAILED", "message": "문서 HTML 저장에 실패했습니다."}},
+        )
 
 
 # ── Terraform 코드 저장 (수정 후 S3 덮어쓰기) ─────────────

@@ -233,9 +233,9 @@ def get_documents(
         items.append(
             {
                 "id": str(doc.id),
-                "docNum": f"2026-DnDn-{str(doc.id)[:4].upper()}",  # 예: 2026-DnDn-A1B2
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "name": doc.title,
-                "author": doc.author.name if doc.author else "알수없음",
+                "author": doc.author.name if doc.author else "DnDn Agent",
                 "date": (
                     doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else ""
                 ),
@@ -334,7 +334,7 @@ def submit_document(
     # 9. 명세서에 맞는 응답 반환
     return SuccessResponse(
         data=DocumentSubmitResponse(
-            id=str(doc.id), docNum=str(doc.id)[:8], status=doc.status
+            id=str(doc.id), docNum=doc.doc_num or str(doc.id)[:8], status=doc.status
         )
     )
 
@@ -414,12 +414,12 @@ def get_document_detail(
     return SuccessResponse(
         data=DocumentDetailResponse(
             id=str(doc.id),
-            docNum=f"2026-DnDn-{str(doc.id)[:4].upper()}",
+            docNum=doc.doc_num or str(doc.id)[:8],
             title=doc.title,
             type=doc.type,
             status=doc.status,
             action=action,
-            author={"name": doc.author.name if doc.author else "알수없음", "role": doc.author.position if doc.author else ""},
+            author={"name": doc.author.name if doc.author else "DnDn Agent", "role": doc.author.position if doc.author else ""},
             createdAt=doc.created_at.isoformat() if doc.created_at else None,
             content=content,
             terraform=terraform_data,
