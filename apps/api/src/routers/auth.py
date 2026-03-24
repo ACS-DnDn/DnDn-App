@@ -173,18 +173,11 @@ async def get_current_user(
             db.refresh(user)
 
     if user is None:
-        # 3차: 완전히 새 유저 (AdminCreateUser 없이 직접 Cognito 가입한 경우 — 기본 fallback)
-        import uuid as _uuid
-        user = User(
-            id=str(_uuid.uuid4()),
-            cognito_sub=cognito_user_id,
-            email=email or f"{cognito_user_id}@placeholder.invalid",
-            name=username,
-            role="member",
+        # DB에 등록되지 않은 유저 — HR에서 사전 생성 필수
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="등록되지 않은 사용자입니다. HR 관리자에게 문의하세요.",
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
 
     return user
 
