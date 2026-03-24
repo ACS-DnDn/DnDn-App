@@ -39,12 +39,18 @@ def get_workspaces(
 ):
     """
     현재 사용자가 접근 가능한 워크스페이스 목록을 조회한다.
-    같은 부서의 부서장이 생성한 워크스페이스가 반환된다.
+    같은 부서의 부서장이 생성한 워크스페이스만 반환된다.
     """
+    if not current_user.department_id:
+        return SuccessResponse(data=WorkspaceListResponse(items=[]))
+
     workspaces = (
         db.query(Workspace)
         .join(User, Workspace.owner_id == User.id)
-        .filter(User.company_id == current_user.company_id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
         .order_by(Workspace.created_at.desc())
         .all()
     )

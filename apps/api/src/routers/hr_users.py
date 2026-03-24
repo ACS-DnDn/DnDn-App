@@ -86,14 +86,15 @@ def create_user(
 
     # 1. Cognito 사용자 생성
     try:
-        username = admin_create_user(req.email, req.name)
+        username, cognito_sub = admin_create_user(req.email, req.name)
         admin_set_group(username, req.role)
     except CognitoError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
-    # 2. DB 저장 (cognito_sub는 첫 로그인 시 get_current_user가 채움)
+    # 2. DB 저장 (cognito_sub를 즉시 매핑 — 첫 로그인 시 ghost user 생성 방지)
     user = User(
         id=str(uuid.uuid4()),
+        cognito_sub=cognito_sub or None,
         email=req.email,
         name=req.name,
         role=req.role,

@@ -210,10 +210,10 @@ def confirm_reset_password(email: str, code: str, new_password: str) -> bool:
 
 # ── HR 관리자 전용 (Admin API) ────────────────────────────
 
-def admin_create_user(email: str, name: str) -> str:
-    """AdminCreateUser — 사용자 생성. Cognito가 임시 비밀번호 자동 생성 후 이메일 발송. Returns username."""
+def admin_create_user(email: str, name: str) -> tuple[str, str]:
+    """AdminCreateUser — 사용자 생성. Cognito가 임시 비밀번호 자동 생성 후 이메일 발송. Returns (username, cognito_sub)."""
     try:
-        _client().admin_create_user(
+        resp = _client().admin_create_user(
             UserPoolId=USER_POOL_ID,
             Username=email,
             UserAttributes=[
@@ -225,7 +225,8 @@ def admin_create_user(email: str, name: str) -> str:
     except ClientError as e:
         _handle_error(e)
         raise  # unreachable
-    return email
+    attrs = {a["Name"]: a["Value"] for a in resp["User"].get("Attributes", [])}
+    return email, attrs.get("sub", "")
 
 
 def admin_delete_user(username: str) -> None:
