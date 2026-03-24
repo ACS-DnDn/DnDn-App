@@ -350,46 +350,40 @@ export function PlanPage() {
       });
       const { jobId } = raw.data;
       const result = await pollJob(jobId);
-      // 백엔드 응답: result.files = {files: [{filename, content}], summary, checkov}
-      // 또는 result.files = [{filename, content}] (직접 배열)
-      // 또는 result.files = {"main.tf": "코드", ...} (딕셔너리)
-      const rawResult = result.files;
+      // 백엔드 응답 구조가 다양할 수 있으므로 재귀적으로 tf 파일 배열을 탐색
       console.log('[TF DEBUG] pollJob result:', JSON.stringify(result));
-      console.log('[TF DEBUG] rawResult (result.files):', JSON.stringify(rawResult));
       let files: Array<{ name: string; code: string }> = [];
-      if (rawResult && typeof rawResult === 'object') {
-        // Case 1: rawResult = {files: [...], summary, checkov} (중첩 구조)
-        const inner = (rawResult as Record<string, unknown>).files;
-        if (Array.isArray(inner)) {
-          files = inner.map((f: Record<string, unknown>) => ({
-            name: String(f.filename ?? f.name ?? 'unknown.tf'),
+
+      // {filename, content} 배열을 재귀 탐색
+      function findTfFiles(obj: unknown, depth = 0): Array<{ name: string; code: string }> {
+        if (depth > 5 || !obj) return [];
+        // [{filename, content}, ...] 배열 발견
+        if (Array.isArray(obj) && obj.length > 0 && obj[0]?.filename) {
+          return obj.map((f: Record<string, unknown>) => ({
+            name: String(f.filename ?? 'unknown.tf'),
             code: typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2),
           }));
         }
-        // Case 2: rawResult = [{filename, content}, ...] (직접 배열)
-        else if (Array.isArray(rawResult)) {
-          files = (rawResult as Record<string, unknown>[]).map((f) => ({
-            name: String(f.filename ?? f.name ?? 'unknown.tf'),
-            code: typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2),
-          }));
-        }
-        // Case 3: rawResult = {"main.tf": "코드", ...} 또는 inner = {"main.tf": "코드", ...}
-        else if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-          files = Object.entries(inner as Record<string, unknown>).map(
-            ([name, code]) => ({ name, code: typeof code === 'string' ? code : JSON.stringify(code, null, 2) }),
-          );
-        }
-        // Case 4: rawResult 자체가 딕셔너리 {"main.tf": "코드"} (files 키 없음)
-        else if (!inner && !Array.isArray(rawResult)) {
-          const entries = Object.entries(rawResult as Record<string, unknown>)
-            .filter(([k]) => k.endsWith('.tf'));
-          if (entries.length > 0) {
-            files = entries.map(([name, code]) => ({
+        // {"main.tf": "코드", ...} 딕셔너리
+        if (typeof obj === 'object' && !Array.isArray(obj)) {
+          const entries = Object.entries(obj as Record<string, unknown>);
+          const tfEntries = entries.filter(([k]) => k.endsWith('.tf'));
+          if (tfEntries.length > 0) {
+            return tfEntries.map(([name, code]) => ({
               name, code: typeof code === 'string' ? code : JSON.stringify(code, null, 2),
             }));
           }
+          // 중첩 객체 안에서 탐색 (files 키 우선)
+          for (const key of ['files', ...entries.map(([k]) => k).filter(k => k !== 'files')]) {
+            const val = (obj as Record<string, unknown>)[key];
+            const found = findTfFiles(val, depth + 1);
+            if (found.length > 0) return found;
+          }
         }
+        return [];
       }
+
+      files = findTfFiles(result);
       if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));
