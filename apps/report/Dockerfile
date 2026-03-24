@@ -1,5 +1,13 @@
 FROM python:3.12-slim
 
+# OPA 바이너리 설치
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && curl -L -o /usr/local/bin/opa \
+       https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static \
+    && chmod +x /usr/local/bin/opa \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
 # uv 설치
 RUN pip install uv
 
