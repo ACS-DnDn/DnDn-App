@@ -571,7 +571,7 @@ def _run_checkov_cli(files_list: list[dict]) -> dict:
                 fp.write(f.get("content", ""))
         try:
             result = sp.run(
-                ["checkov", "-d", tmpdir, "--framework", "terraform", "-o", "json", "--quiet", "--compact"],
+                ["/app/.venv/bin/checkov", "-d", tmpdir, "--framework", "terraform", "-o", "json", "--quiet", "--compact"],
                 capture_output=True, text=True, timeout=120,
             )
             output = result.stdout.strip()
