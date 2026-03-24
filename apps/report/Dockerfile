@@ -18,7 +18,7 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 
 # Checkov + MCP 서버 사전 설치 (런타임 다운로드 방지)
-RUN /app/.venv/bin/pip install checkov \
+RUN uv pip install checkov --python /app/.venv/bin/python \
     && uv tool install awslabs.terraform-mcp-server
 
 # non-root 실행을 위해 venv 권한 설정
