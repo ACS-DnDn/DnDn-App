@@ -541,7 +541,6 @@ def generate_weekly_report(canonical: dict, *, doc_meta: dict | None = None) -> 
             - extensions.cloudwatch_alarms / cloudwatch_rollup
     """
     meta = canonical.get("meta", {})
-    title = meta.get("title") or "주간 보고서"
     period = meta.get("period", {}) or meta.get("time_range", {})
     # canonical_summary(extensions_summary) 및 full canonical(extensions) 모두 지원
     ext = canonical.get("extensions_summary") or canonical.get("extensions", {})
@@ -612,8 +611,8 @@ def generate_weekly_report(canonical: dict, *, doc_meta: dict | None = None) -> 
     wk_style = _style_rules(doc_meta)
 
     system = f"""
-당신은 AWS 인프라 주간 보고서 생성 전문가입니다.
-canonical JSON 데이터를 분석하여 한국어 HTML 주간 보고서 콘텐츠를 생성하세요.
+당신은 AWS 인프라 활동 보고서 생성 전문가입니다.
+canonical JSON 데이터를 분석하여 한국어 HTML 인프라 활동 보고서 콘텐츠를 생성하세요.
 
 {wk_style}
 
@@ -670,11 +669,32 @@ canonical JSON 데이터를 분석하여 한국어 HTML 주간 보고서 콘텐�
         except Exception:
             return iso_str
 
+    def _to_kst_date(iso_str: str) -> str:
+        if not iso_str:
+            return ""
+        try:
+            dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+            kst = dt.astimezone(timezone(KST))
+            return kst.strftime("%Y.%m.%d")
+        except Exception:
+            return iso_str
+
     period_start_kst = _to_kst(period.get("start", ""))
     period_end_kst = _to_kst(period.get("end", ""))
 
+    # 제목: AWS 인프라 활동 보고서(기간)
+    p_start = _to_kst_date(period.get("start", ""))
+    p_end = _to_kst_date(period.get("end", ""))
+    if p_start and p_end:
+        title = f"AWS 인프라 활동 보고서({p_start} ~ {p_end})"
+    elif p_start:
+        title = f"AWS 인프라 활동 보고서({p_start})"
+    else:
+        title = "AWS 인프라 활동 보고서"
+
     user = f"""
-다음 주간 보고서 데이터를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+다음 인프라 활동 보고서 데이터를 분석하여 <div class="doc">...</div> 콘텐츠만 출력하세요.
+헤더의 제목(<div class="doc-header-title">)은 반드시 "{title}"로 출력하세요.
 
 보고 기간: {period_start_kst} ~ {period_end_kst}
 {ext_section}
