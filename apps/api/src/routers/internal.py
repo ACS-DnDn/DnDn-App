@@ -55,7 +55,14 @@ def notify_new_document(req: NotifyNewDocRequest, db: Session = Depends(get_db))
     if not owner.slack_access_token or not owner.slack_channel:
         return {"ok": True, "skipped": True, "reason": "SLACK_NOT_CONNECTED"}
 
-    text = f"\U0001f4c4 새 {req.docType}이 생성되었습니다: {req.title}"
+    # docType → 표시명
+    _DOC_LABEL = {
+        "이벤트보고서": "이벤트 보고서",
+        "헬스이벤트보고서": "이벤트 보고서",
+        "주간보고서": "인프라 현황 보고서",
+    }
+    label = _DOC_LABEL.get(req.docType, "보고서")
+    text = f"\U0001f4c4 새 {label}가 생성되었습니다: {req.title} (DnDn Agent)"
 
     try:
         join_channel(owner.slack_access_token, owner.slack_channel)
