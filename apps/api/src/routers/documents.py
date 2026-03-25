@@ -387,6 +387,9 @@ def get_documents(
                     action_val = "approve"
                 elif my_approval.status == "rejected":
                     action_val = "rejected"
+            # 내가 쓴 반려/배포실패 문서 → 수정 필요
+            if doc.author_id == current_user.id and doc.status in ("rejected", "deploy_failed"):
+                action_val = "edit"
 
         items.append(
             {
