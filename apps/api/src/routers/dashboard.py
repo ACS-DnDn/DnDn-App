@@ -54,7 +54,9 @@ def get_dashboard(
     # 3. 결재 대기 문서 (Pending Docs)
     pending_approvals = (
         db.query(Approval)
+        .join(Document, Approval.document_id == Document.id)
         .filter(Approval.user_id == current_user.id, Approval.status == "current")
+        .order_by(Document.created_at.desc())
         .all()
     )
     pending_docs = []
@@ -69,14 +71,14 @@ def get_dashboard(
                 "status": doc_status_for_me,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": doc.author.name if doc.author else "DnDn Agent",
-                "date": doc.created_at.strftime("%Y.%m.%d") if doc.created_at else "",
+                "date": doc.created_at.strftime("%Y.%m.%d %H:%M") if doc.created_at else "",
             }
         )
 
     # 4. 결재 완료/내 문서 (Completed Docs)
     completed_docs = []
     my_docs = (
-        db.query(Document).filter(Document.author_id == current_user.id).limit(5).all()
+        db.query(Document).filter(Document.author_id == current_user.id).order_by(Document.created_at.desc()).limit(5).all()
     )
     for doc in my_docs:
         completed_docs.append(
@@ -86,7 +88,7 @@ def get_dashboard(
                 "title": doc.title,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": current_user.name,
-                "date": doc.created_at.strftime("%Y.%m.%d") if doc.created_at else "",
+                "date": doc.created_at.strftime("%Y.%m.%d %H:%M") if doc.created_at else "",
             }
         )
 
