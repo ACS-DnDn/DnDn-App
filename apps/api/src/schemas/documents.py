@@ -56,7 +56,7 @@ class DocumentArchiveResponse(BaseModel):
 
 class DocumentApproveRequest(BaseModel):
     comment: Optional[str] = None
-    autoMerge: Optional[bool] = True  # PR 검증 통과 시 자동 Merge (기본 True)
+    autoMerge: bool = False  # PR 검증 통과 시 자동 Merge (기본 False — 명시적 opt-in)
 
 
 class DocumentStatusResponse(BaseModel):

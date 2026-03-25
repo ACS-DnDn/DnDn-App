@@ -162,7 +162,7 @@ export function ViewerPage() {
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
-  const [autoMerge, setAutoMerge] = useState(true);
+  const [autoMerge, setAutoMerge] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 

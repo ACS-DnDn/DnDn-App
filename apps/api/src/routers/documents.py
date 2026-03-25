@@ -691,7 +691,7 @@ def approve_document(
         new_status = "done"
 
         # 🚀 최종 결재 시 Terraform PR 생성
-        doc.auto_merge = req.autoMerge if req.autoMerge is not None else True
+        doc.auto_merge = req.autoMerge
         _create_terraform_pr_if_needed(doc, db)
 
         # PR이 생성됐으면 배포 중으로 전환
@@ -819,11 +819,16 @@ def mark_all_documents_as_read(
     query = db.query(Document.id)
 
     if req.tab == "action":
-        # action 탭: 내가 결재할 차례거나 내가 반려한 문서들만 타겟팅
+        # action 탭: 내가 결재할 차례거나 내가 반려한 문서 + deploy_failed 작성자 문서
         query = (
-            query.join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            query.outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
+            .distinct()
         )
     elif req.tab == "all":
         # all 탭: 전체 문서 대상 (별도 필터 없음)

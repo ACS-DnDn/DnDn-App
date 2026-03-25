@@ -463,12 +463,20 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
 
     deploy_log_section = _build_deploy_log_section(deploy_log)
 
-    # 프롬프트 크기 안전장치: existing_tf부터 순차 축소
+    # 프롬프트 크기 안전장치: existing_tf → deploy_log 순으로 축소
     user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
     total = len(system) + len(user)
     if total > _MAX_PROMPT_CHARS:
         over = total - _MAX_PROMPT_CHARS
-        existing_tf = existing_tf[: max(0, len(existing_tf) - over)]
+        # 1차: existing_tf 축소
+        if existing_tf and over > 0:
+            trim = min(len(existing_tf), over)
+            existing_tf = existing_tf[: len(existing_tf) - trim]
+            over -= trim
+        # 2차: deploy_log_section 축소
+        if deploy_log_section and over > 0:
+            trim = min(len(deploy_log_section), over)
+            deploy_log_section = deploy_log_section[: len(deploy_log_section) - trim]
         user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
         logger.warning("프롬프트 축소: %d → %d자", total, len(system) + len(user))
 

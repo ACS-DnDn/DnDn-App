@@ -372,6 +372,10 @@ def register_webhook(
     """
     url = callback_url or GITHUB_WEBHOOK_URL
     webhook_secret = secret or GITHUB_WEBHOOK_SECRET
+    if not url:
+        raise GitHubError(500, "MISSING_WEBHOOK_URL", "GITHUB_WEBHOOK_URL이 설정되지 않았습니다.")
+    if not webhook_secret:
+        raise GitHubError(500, "MISSING_WEBHOOK_SECRET", "GITHUB_WEBHOOK_SECRET이 설정되지 않았습니다.")
     headers = _gh_headers(token)
     api = f"{_GITHUB_API}/repos/{owner}/{repo}"
 
@@ -458,22 +462,24 @@ def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> b
     if not head_sha:
         return False
 
-    # check_runs 확인
+    # check_runs 확인 (API 실패 시 fail-closed)
     cr_resp = requests.get(
         f"{api}/commits/{head_sha}/check-runs", headers=headers, timeout=10,
     )
-    if cr_resp.ok:
-        for cr in cr_resp.json().get("check_runs", []):
-            if cr.get("status") != "completed" or cr.get("conclusion") not in ("success", "skipped", "neutral"):
-                return False
+    if not cr_resp.ok:
+        return False
+    for cr in cr_resp.json().get("check_runs", []):
+        if cr.get("status") != "completed" or cr.get("conclusion") not in ("success", "skipped", "neutral"):
+            return False
 
     # commit statuses 확인 (Terraform Cloud 등)
     status_resp = requests.get(
         f"{api}/commits/{head_sha}/status", headers=headers, timeout=10,
     )
-    if status_resp.ok:
-        state = status_resp.json().get("state", "")
-        if state not in ("success", ""):
-            return False
+    if not status_resp.ok:
+        return False
+    state = status_resp.json().get("state", "")
+    if state not in ("success", ""):
+        return False
 
     return True

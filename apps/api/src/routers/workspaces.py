@@ -345,6 +345,7 @@ def create_workspace(
             ws.github_webhook_id = hook_id
             db.commit()
         except Exception as e:
+            db.rollback()
             _logger.warning("GitHub webhook 등록 실패 (workspace=%s): %s", ws.id, e)
 
     return SuccessResponse(

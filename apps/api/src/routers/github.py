@@ -321,8 +321,8 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
     event = request.headers.get("X-GitHub-Event", "")
 
     if not GITHUB_WEBHOOK_SECRET:
-        _logger.warning("GITHUB_WEBHOOK_SECRET 미설정 — webhook 무시")
-        return JSONResponse({"received": True})
+        _logger.error("GITHUB_WEBHOOK_SECRET 미설정 — webhook 처리 불가")
+        return JSONResponse(status_code=503, content={"error": "WEBHOOK_SECRET_NOT_CONFIGURED"})
 
     if not _verify_signature(body, signature, GITHUB_WEBHOOK_SECRET):
         return JSONResponse(status_code=403, content={"error": "INVALID_SIGNATURE"})
@@ -411,21 +411,23 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
 
             # dndn/ prefix가 있는 브랜치의 status → PR 검증 결과
             if branch_name.startswith("dndn/"):
-                # dndn/ 브랜치에서 열린 문서 중 해당 브랜치의 문서 찾기
-                docs = (
+                # 브랜치명에서 doc_num 추출 (dndn/2026-PLN-0001 → 2026-PLN-0001)
+                doc_num = branch_name.split("/", 1)[1]
+                doc = (
                     db.query(Document)
                     .join(Workspace, Document.workspace_id == Workspace.id)
                     .filter(
+                        Document.doc_num == doc_num,
                         Document.pr_status.in_(["open", "checks_failed"]),
                         Workspace.github_org == repo_owner,
                         Workspace.repo == repo_name,
                     )
-                    .all()
+                    .first()
                 )
-                st_desc = payload.get("description", "")
-                st_url = payload.get("target_url", "")
-                st_ctx = context
-                for doc in docs:
+                if doc:
+                    st_desc = payload.get("description", "")
+                    st_url = payload.get("target_url", "")
+                    st_ctx = context
                     if state in ("failure", "error"):
                         if doc.pr_status != "checks_failed":
                             doc.pr_status = "checks_failed"
@@ -496,8 +498,13 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
     if not get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number):
         return
 
+    # 체크 통과 → deploy_failed 복구 (이전 실패에서 재통과한 경우)
+    if doc.status == "deploy_failed":
+        doc.status = "deploying"
+        doc.pr_status = "open"
+
     # auto_merge 여부에 따라 분기
-    if doc.auto_merge is not False:
+    if doc.auto_merge:
         # 자동 Merge
         merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
         if merged:
@@ -511,6 +518,7 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
             _logger.warning("PR 자동 Merge 실패: %s #%s", repo_full, doc.pr_number)
     else:
         # 수동 Merge 안내
+        db.commit()
         _logger.info("PR 검증 통과 (수동 Merge 대기): %s #%s", repo_full, doc.pr_number)
         _notify_pr_status(db, doc, "checks_passed_manual")
 
@@ -523,8 +531,11 @@ def github_webhook_backfill(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """webhook 미등록 워크스페이스에 대해 일괄 등록."""
-    workspaces = db.query(Workspace).filter(Workspace.github_webhook_id.is_(None)).all()
+    """webhook 미등록 워크스페이스에 대해 일괄 등록 (본인 소유만)."""
+    workspaces = db.query(Workspace).filter(
+        Workspace.github_webhook_id.is_(None),
+        Workspace.owner_id == current_user.id,
+    ).all()
 
     total = len(workspaces)
     registered = 0
