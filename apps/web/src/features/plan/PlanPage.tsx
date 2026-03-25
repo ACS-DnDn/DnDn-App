@@ -4,7 +4,7 @@ import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
 import { apiFetch, reportApiFetch } from '@/services/api';
-import { getDocuments } from '@/services/document.service';
+import { getAllDocuments } from '@/services/document.service';
 import type { Document } from '@/mocks';
 import type { OrgDept } from '@/mocks';
 import './PlanPage.css';
@@ -93,8 +93,8 @@ export function PlanPage() {
     apiFetch<{ data: { items: OrgDept[] } }>('/org/members')
       .then(res => setOrgData(res.data.items))
       .catch(() => {});
-    getDocuments({ pageSize: 100 })
-      .then(res => setDocList(res.items))
+    getAllDocuments()
+      .then(items => setDocList(items.filter(d => d.type !== '작업계획서')))
       .catch(() => {});
     apiFetch<{ success: boolean; data: { items: { id: string; alias: string; acctId: string }[] } }>('/workspaces')
       .then(res => setWs(res.data.items[0] ?? null))

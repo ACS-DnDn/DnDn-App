@@ -56,6 +56,21 @@ export async function getDocuments(params?: {
   return { total: res.data.total, items: res.data.items.map(mapDoc) };
 }
 
+export async function getAllDocuments(
+  params?: Omit<Parameters<typeof getDocuments>[0], 'page' | 'pageSize'>,
+): Promise<Document[]> {
+  const PAGE_SIZE = 100;
+  let page = 1;
+  const all: Document[] = [];
+  while (true) {
+    const res = await getDocuments({ ...params, page, pageSize: PAGE_SIZE });
+    all.push(...res.items);
+    if (all.length >= res.total || res.items.length < PAGE_SIZE) break;
+    page++;
+  }
+  return all;
+}
+
 // ── 첨부파일 ──────────────────────────────────────────────
 
 export async function getAttachmentUploadUrl(
