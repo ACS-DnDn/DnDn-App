@@ -315,6 +315,10 @@ code { font-family: SFMono-Regular, Consolas, Menlo, monospace; font-size: 11.5p
 
 def _style_rules(doc_meta: dict | None = None) -> str:
     """doc_meta가 있으면 헤더에 로고/문서번호/담당자를 동적으로 삽입"""
+    from datetime import datetime, timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+    now_kst = datetime.now(KST).strftime("%Y.%m.%d %H:%M")
+
     meta = doc_meta or {}
     logo_url = meta.get("company_logo_url", "")
     doc_num = meta.get("doc_num", "XXX")
@@ -337,7 +341,7 @@ HTML 구조 규칙 (반드시 준수):
     <div class="doc-header">
       <div class="doc-header-top">
         {logo_html}
-        <div class="doc-header-meta">문서번호: {doc_num}<br>작성일: YYYY.MM.DD</div>
+        <div class="doc-header-meta">문서번호: {doc_num}<br>작성일: {now_kst}</div>
       </div>
       <div class="doc-header-title">제목</div>
     </div>
@@ -353,7 +357,7 @@ HTML 구조 규칙 (반드시 준수):
 - 심각도: <span class="r-hi">상</span> / <span class="r-mid">중</span> / <span class="r-low">하</span>
 - KPI 카드: <table class="tbl-summary"><tbody><tr><td><div class="s-label">지표명</div><div class="s-value">값</div></td></tr></tbody></table>
 - code 태그: <code>리소스ID</code>
-- 푸터: <div class="doc-footer"><span>{doc_num} &nbsp;/&nbsp; 날짜</span></div>{author_rule}
+- 푸터: <div class="doc-footer"><span>{doc_num} &nbsp;/&nbsp; {now_kst}</span></div>{author_rule}
 """
 
 
