@@ -354,6 +354,8 @@ export function PlanPage() {
   }, [doAutoSave]);
 
   async function handleDelete() {
+    // 문서 생성 중에는 삭제 불가
+    if (docState === 'loading') return;
     if (!draftDocumentId) {
       // 아직 백엔드에 저장 전 — 페이지만 초기화
       if (!confirm('작성 중인 내용을 삭제하시겠습니까?')) return;
@@ -748,7 +750,7 @@ export function PlanPage() {
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
             취소
           </button>
-          <button className="plan-btn-delete" onClick={handleDelete}>
+          <button className="plan-btn-delete" onClick={handleDelete} disabled={docState === 'loading'}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>
             삭제
           </button>
