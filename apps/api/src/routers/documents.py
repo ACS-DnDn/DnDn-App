@@ -338,7 +338,8 @@ def submit_document(
         first_approver_id = next((a.userId for a in req.approvers if a.seq == 1), None)
         if first_approver_id:
             first_approver = db.query(User).filter(User.id == first_approver_id).first()
-            _notify(first_approver, f"📋 결재 요청: [{doc.type}] {doc.title}")
+            author_name = doc.author.name if doc.author and doc.author.name else "알 수 없음"
+            _notify(first_approver, f"📋 결재 요청: {doc.title} ({author_name})")
 
     # 9. 명세서에 맞는 응답 반환
     return SuccessResponse(
@@ -505,9 +506,10 @@ def approve_document(
     # 7. Slack 알림
     if next_approval:
         next_user = db.query(User).filter(User.id == next_approval.user_id).first()
-        _notify(next_user, f"📋 결재 요청: [{doc.type}] {doc.title}")
+        author_name = doc.author.name if doc.author and doc.author.name else "알 수 없음"
+        _notify(next_user, f"📋 결재 요청: {doc.title} ({author_name})")
     else:
-        _notify(doc.author, f"✅ 결재 완료: [{doc.type}] {doc.title}")
+        _notify(doc.author, f"✅ 결재 완료: {doc.title}")
 
     # 8. 공통 응답 규격으로 리턴
     return SuccessResponse(data=DocumentStatusResponse(newStatus=new_status))
@@ -555,7 +557,7 @@ def reject_document(
     db.commit()
 
     # 7. 작성자에게 Slack 알림
-    _notify(doc.author, f"❌ 반려: [{doc.type}] {doc.title} — {req.comment}")
+    _notify(doc.author, f"❌ 반려: {doc.title} — {req.comment}")
 
     # 8. 공통 응답 규격으로 리턴 (상태는 무조건 rejected)
     return SuccessResponse(data=DocumentStatusResponse(newStatus="rejected"))

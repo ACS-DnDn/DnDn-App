@@ -16,6 +16,7 @@ from apps.api.src.security.slack_oauth import (
     get_auth_url,
     exchange_code,
     list_channels,
+    join_channel,
     SlackError,
 )
 
@@ -97,6 +98,7 @@ def slack_callback(
             if chs:
                 current_user.slack_channel = chs[0]["id"]
                 current_user.slack_channel_name = chs[0]["name"]
+                join_channel(result.access_token, chs[0]["id"])
         except SlackError:
             pass
     if current_user.slack_notify is None:
@@ -140,6 +142,7 @@ def slack_update_settings(
 
     if req.channel is not None:
         current_user.slack_channel = req.channel
+        join_channel(current_user.slack_access_token, req.channel)
     if req.channelName is not None:
         current_user.slack_channel_name = req.channelName
     if req.notifyEnabled is not None:
