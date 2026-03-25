@@ -386,7 +386,7 @@ export function DocumentsPage() {
                 </th>
                 <th>문서번호</th>
                 <th>제목</th>
-                <th>
+                <th className="th-type">
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); resetPage(); }}>
                       <option value="">유형</option>
@@ -399,7 +399,7 @@ export function DocumentsPage() {
                 </th>
                 <th>작성자</th>
                 <th>등록일</th>
-                <th>
+                <th className="th-status">
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}>
                       <option value="">상태</option>
