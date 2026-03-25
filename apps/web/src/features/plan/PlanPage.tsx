@@ -954,7 +954,6 @@ export function PlanPage() {
           <div className="popup-search">
             <select className="doc-search-field" value={docSearchField} onChange={e => setDocSearchField(e.target.value as 'name' | 'author')}>
               <option value="name">제목</option>
-              <option value="author">작성자</option>
             </select>
             <input type="text" placeholder="검색어 입력" value={docSearchQ} onChange={e => setDocSearchQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') filterDocsAction(); }} />
             <button className="popup-search-btn" onClick={filterDocsAction}>검색</button>
@@ -962,7 +961,6 @@ export function PlanPage() {
           <div className="doc-list-header">
             <span className="doc-col-no">문서번호</span>
             <span className="doc-col-name">제목</span>
-            <span className="doc-col-author">작성자</span>
             <span className="doc-col-date">등록일</span>
           </div>
           <div className="popup-list">
@@ -972,7 +970,6 @@ export function PlanPage() {
               <div key={d.id} className={`doc-popup-item${selectedDocNo === d.id ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.id ? null : d.id)}>
                 <div className="doc-item-no">{d.docNum || d.id.slice(0, 8)}</div>
                 <div className="doc-item-name">{d.name}</div>
-                <div className="doc-item-author">{d.author}</div>
                 <div className="doc-item-date">{d.date}</div>
               </div>
             ))}
