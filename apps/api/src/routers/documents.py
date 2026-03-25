@@ -665,6 +665,7 @@ def approve_document(
         new_status = "done"
 
         # 🚀 최종 결재 시 Terraform PR 생성
+        doc.auto_merge = req.autoMerge if req.autoMerge is not None else True
         _create_terraform_pr_if_needed(doc, db)
 
     # 6. DB 최종 반영

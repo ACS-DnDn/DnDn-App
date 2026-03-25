@@ -124,7 +124,8 @@ class Document(Base):
     # GitHub PR 연동
     pr_number = Column(Integer, nullable=True)      # GitHub PR 번호
     pr_url = Column(String(500), nullable=True)      # GitHub PR URL
-    pr_status = Column(String(20), nullable=True)    # open / merged / closed / checks_failed
+    pr_status = Column(String(20), nullable=True)    # open / merged / checks_failed / applied / apply_failed
+    auto_merge = Column(Boolean, nullable=True, default=True)  # PR 검증 통과 시 자동 Merge 여부
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

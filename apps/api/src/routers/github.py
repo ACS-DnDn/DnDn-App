@@ -237,18 +237,23 @@ def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
 
 
 def _notify_pr_status(db: Session, doc: Document, new_status: str) -> None:
-    """PR 상태 변경 Slack 알림 — 문서 작성자 + 결재선 전원에게 DM."""
+    """PR 상태 변경 Slack 알림 — 문서 작성자 + 결재선 전원에게 DM.
+
+    알림 대상 상태: checks_passed, checks_failed, applied, apply_failed
+    """
     status_labels = {
-        "merged": "🟢 PR 머지 완료 (Apply 진행 중)",
-        "closed": "🔴 PR 닫힘",
+        "checks_passed": "🟢 PR 검증 통과 — 자동 Merge 완료",
+        "checks_passed_manual": "🟢 PR 검증 통과 — 직접 Merge가 필요합니다",
         "checks_failed": "⚠️ PR 검증 실패",
-        "applied": "✅ Terraform Apply 완료",
+        "applied": "✅ Terraform Apply 성공",
         "apply_failed": "❌ Terraform Apply 실패",
     }
     label = status_labels.get(new_status, f"📋 PR 상태: {new_status}")
     text = f"{label}\n📄 {doc.title}"
     if doc.pr_url:
         text += f"\n{doc.pr_url}"
+    if new_status == "checks_passed_manual" and doc.pr_url:
+        text += "\n👉 위 링크에서 직접 Merge 해주세요."
 
     # 알림 대상: 작성자 + 결재선 사용자 (중복 제거)
     user_ids: set[str] = set()
@@ -320,18 +325,10 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         if not doc:
             return JSONResponse({"received": True})
 
-        new_status = None
-        if action == "closed" and merged:
-            new_status = "merged"
-        elif action == "closed" and not merged:
-            new_status = "closed"
-        elif action == "reopened":
-            new_status = "open"
-
-        if new_status and new_status != doc.pr_status:
-            doc.pr_status = new_status
+        # 머지 완료만 추적 (DnDn이 PR 라이프사이클 관리)
+        if action == "closed" and merged and doc.pr_status != "merged":
+            doc.pr_status = "merged"
             db.commit()
-            _notify_pr_status(db, doc, new_status)
 
     # ── check_run 이벤트 ──
     elif event == "check_run":
@@ -426,8 +423,8 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
-    """모든 체크 통과 시 PR을 자동 머지한다."""
-    if not doc.pr_number or doc.pr_status in ("merged", "closed"):
+    """모든 체크 통과 시 auto_merge 설정에 따라 머지하거나 수동 안내."""
+    if not doc.pr_number or doc.pr_status in ("merged",):
         return
 
     ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
@@ -441,15 +438,21 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
     if not get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number):
         return
 
-    # 머지 실행
-    merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
-    if merged:
-        doc.pr_status = "merged"
-        db.commit()
-        _logger.info("PR 자동 머지 완료: %s #%s", repo_full, doc.pr_number)
-        _notify_pr_status(db, doc, "merged")
+    # auto_merge 여부에 따라 분기
+    if doc.auto_merge is not False:
+        # 자동 Merge
+        merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
+        if merged:
+            doc.pr_status = "merged"
+            db.commit()
+            _logger.info("PR 자동 Merge 완료: %s #%s", repo_full, doc.pr_number)
+            _notify_pr_status(db, doc, "checks_passed")
+        else:
+            _logger.warning("PR 자동 Merge 실패: %s #%s", repo_full, doc.pr_number)
     else:
-        _logger.warning("PR 자동 머지 실패: %s #%s", repo_full, doc.pr_number)
+        # 수동 Merge 안내
+        _logger.info("PR 검증 통과 (수동 Merge 대기): %s #%s", repo_full, doc.pr_number)
+        _notify_pr_status(db, doc, "checks_passed_manual")
 
 
 # ---------------------------------------------------------

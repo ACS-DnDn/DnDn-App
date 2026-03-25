@@ -160,6 +160,7 @@ export function ViewerPage() {
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
+  const [autoMerge, setAutoMerge] = useState(true);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -173,6 +174,12 @@ export function ViewerPage() {
   const hasTerraform = !!doc.terraform && Object.keys(doc.terraform).length > 0;
   const tfHtml = hasTerraform ? renderTerraform(doc.terraform!) : '';
 
+  // 최종 결재자 여부: 결재 타입 중 가장 높은 seq가 현재 사용자인지
+  const approvalSteps = (doc.approvalLine ?? []).filter(s => s.type === '결재');
+  const lastApprover = approvalSteps.length > 0 ? approvalSteps[approvalSteps.length - 1] : null;
+  const isFinalApprover = viewMode === 'approver' && lastApprover?.status === 'current';
+  const showAutoMerge = isFinalApprover && hasTerraform;
+
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
   async function handleApproveConfirm() {
@@ -180,9 +187,11 @@ export function ViewerPage() {
     setApproveModalOpen(false);
     setActionLoading(true);
     try {
+      const body: Record<string, unknown> = { comment: approveOpinion.trim() || null };
+      if (showAutoMerge) body.autoMerge = autoMerge;
       await apiFetch<{ success: boolean; data: { newStatus: string } }>(
         `/documents/${id}/approve`,
-        { method: 'POST', body: JSON.stringify({ comment: approveOpinion.trim() || null }) }
+        { method: 'POST', body: JSON.stringify(body) }
       );
       navigate('/documents', { replace: true });
     } catch {
@@ -390,6 +399,15 @@ export function ViewerPage() {
         <div className="viewer-modal approve-reject-modal">
           <div className="approve-reject-body">
             <textarea className="approve-reject-textarea" value={approveOpinion} onChange={e => setApproveOpinion(e.target.value)} placeholder="결재 의견을 입력하세요 (선택)" />
+            {showAutoMerge && (
+              <div className="approve-pr-info">
+                <p className="approve-pr-notice">결재 승인 시 GitHub PR이 자동 생성됩니다.</p>
+                <label className="approve-auto-merge">
+                  <input type="checkbox" checked={autoMerge} onChange={e => setAutoMerge(e.target.checked)} />
+                  <span>PR 검증 통과 시 자동 Merge</span>
+                </label>
+              </div>
+            )}
           </div>
           <div className="approve-reject-actions">
             <button className="btn-modal-cancel" onClick={() => setApproveModalOpen(false)}>취소</button>
