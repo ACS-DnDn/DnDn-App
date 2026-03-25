@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from urllib.parse import quote
 
 import boto3
@@ -39,6 +40,7 @@ from apps.api.src.schemas.documents import (
     RefDocumentDetailResponse,
     DocumentDetailResponse,
 )
+import requests.exceptions as requests_exc
 from apps.api.src.security.slack_oauth import send_message, SlackError
 from apps.api.src.security.github_oauth import create_terraform_pr, GitHubError
 
@@ -94,7 +96,6 @@ def _notify(user: User, text: str) -> None:
             pass
 
 
-import logging
 _logger = logging.getLogger(__name__)
 
 
@@ -105,16 +106,17 @@ def _s3_list_terraform_files(prefix: str) -> dict[str, str]:
     s3 = _get_s3_client()
     result = {}
     try:
-        resp = s3.list_objects_v2(Bucket=_S3_BUCKET, Prefix=prefix + "/")
-        for obj in resp.get("Contents", []):
-            key = obj["Key"]
-            filename = key.rsplit("/", 1)[-1]
-            if not filename:
-                continue
-            body = s3.get_object(Bucket=_S3_BUCKET, Key=key)["Body"].read().decode("utf-8")
-            result[filename] = body
-    except ClientError:
-        pass
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=prefix + "/"):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                filename = key.rsplit("/", 1)[-1]
+                if not filename:
+                    continue
+                body = s3.get_object(Bucket=_S3_BUCKET, Key=key)["Body"].read().decode("utf-8")
+                result[filename] = body
+    except ClientError as e:
+        _logger.warning("terraform S3 파일 조회 실패: %s", e)
     return result
 
 
@@ -173,8 +175,8 @@ def _create_terraform_pr_if_needed(doc: Document, db: "Session") -> None:
         _logger.info("terraform PR 생성 완료: %s", result["pr_url"])
     except GitHubError as e:
         _logger.error("terraform PR 생성 실패: %s", e.message)
-    except Exception as e:
-        _logger.error("terraform PR 생성 예외: %s", e)
+    except (requests_exc.RequestException, KeyError, ValueError) as e:
+        _logger.error("terraform PR 생성 예외 (%s): %s", type(e).__name__, e)
 
 
 def _has_document_access(db: "Session", doc: Document, current_user: User) -> bool:

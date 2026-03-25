@@ -317,14 +317,24 @@ def create_terraform_pr(
     _check_response(commit_create_resp)
     new_commit_sha = commit_create_resp.json()["sha"]
 
-    # 6) 새 브랜치 생성
+    # 6) 새 브랜치 생성 (이미 존재하면 업데이트)
     ref_create_resp = requests.post(
         f"{api}/git/refs",
         headers=headers,
         json={"ref": f"refs/heads/{head_branch}", "sha": new_commit_sha},
         timeout=10,
     )
-    _check_response(ref_create_resp)
+    if ref_create_resp.status_code == 422:
+        # 브랜치가 이미 존재 → ref 업데이트
+        ref_update_resp = requests.patch(
+            f"{api}/git/refs/heads/{head_branch}",
+            headers=headers,
+            json={"sha": new_commit_sha, "force": True},
+            timeout=10,
+        )
+        _check_response(ref_update_resp)
+    else:
+        _check_response(ref_create_resp)
 
     # 7) PR 생성
     pr_resp = requests.post(
