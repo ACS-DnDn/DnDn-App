@@ -73,6 +73,7 @@ export function DashboardPage() {
   const statusMap: Record<string, { cls: string; label: string }> = {
     waiting: { cls: 'badge-waiting', label: '결재 대기' },
     rejected: { cls: 'badge-rejected', label: '반려' },
+    deploy_failed: { cls: 'badge-rejected', label: '배포 실패' },
     done: { cls: 'badge-done', label: '완료' },
   };
 
