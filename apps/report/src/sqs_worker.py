@@ -138,7 +138,7 @@ def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, c
         for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                size_kb = max(1, obj["Size"] // 1024)
+                size_kb = max(1, (obj["Size"] + 1023) // 1024)
                 filename = key.split("/")[-1]
 
                 # raw/ 이후 첫 디렉토리로 카테고리 판별
@@ -315,7 +315,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
 
         # 근거자료 첨부 (indent=2로 저장되므로 동일 옵션으로 크기 계산)
         canonical_json_bytes = json.dumps(canonical, ensure_ascii=False, indent=2).encode("utf-8")
-        canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
+        canonical_size_kb = max(1, (len(canonical_json_bytes) + 1023) // 1024)
 
         if event_type == "weekly":
             # 활동보고서: Worker가 수집한 raw evidence 파일들 등록
@@ -329,7 +329,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
             try:
                 raw_size_bytes = _s3_client().head_object(Bucket=S3_BUCKET, Key=s3_key)["ContentLength"]
-                raw_size_kb = max(1, raw_size_bytes // 1024)
+                raw_size_kb = max(1, (raw_size_bytes + 1023) // 1024)
             except Exception:
                 raw_size_kb = canonical_size_kb
             db.add(Attachment(
