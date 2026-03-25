@@ -23,6 +23,7 @@ class DocumentSubmitRequest(BaseModel):
     refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
     isDraft: bool
+    authorComment: Optional[str] = None
 
 
 # --- 문서 저장/상신 응답 ---
