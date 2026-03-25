@@ -27,6 +27,20 @@ from apps.api.src.routers import (
 #       (create_all은 개발/테스트 전용으로만 사용)
 Base.metadata.create_all(bind=engine)
 
+# 기존 테이블에 누락된 컬럼 자동 추가 (create_all은 새 컬럼을 추가하지 않으므로)
+from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+_insp = _sa_inspect(engine)
+_migrations = [
+    ("documents", "submit_comment", "TEXT"),
+]
+with engine.begin() as _conn:
+    for _tbl, _col, _coltype in _migrations:
+        if _tbl in _insp.get_table_names():
+            existing = [c["name"] for c in _insp.get_columns(_tbl)]
+            if _col not in existing:
+                _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+del _insp, _migrations
+
 # 2. FastAPI 앱 초기화
 app = FastAPI(
     title="AI Document System API",
