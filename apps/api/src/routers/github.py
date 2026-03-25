@@ -402,21 +402,23 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         context = payload.get("context", "")
         sha = payload.get("sha", "")
 
-        # Terraform Cloud apply 결과인지 확인 (머지 후 default branch의 status)
-        # 머지 전 PR의 status는 check_run과 함께 처리
+        if "/" not in repo_full:
+            return JSONResponse({"received": True})
+        repo_owner, repo_name = repo_full.split("/", 1)
+
         for branch_info in branches:
             branch_name = branch_info.get("name", "")
 
             # dndn/ prefix가 있는 브랜치의 status → PR 검증 결과
             if branch_name.startswith("dndn/"):
-                # PR에 연결된 문서 찾기 — sha로 PR을 역추적
+                # dndn/ 브랜치에서 열린 문서 중 해당 브랜치의 문서 찾기
                 docs = (
                     db.query(Document)
                     .join(Workspace, Document.workspace_id == Workspace.id)
                     .filter(
                         Document.pr_status.in_(["open", "checks_failed"]),
-                        Workspace.github_org == repo_full.split("/")[0] if "/" in repo_full else "",
-                        Workspace.repo == repo_full.split("/")[1] if "/" in repo_full else "",
+                        Workspace.github_org == repo_owner,
+                        Workspace.repo == repo_name,
                     )
                     .all()
                 )
@@ -424,9 +426,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 st_url = payload.get("target_url", "")
                 st_ctx = context
                 for doc in docs:
-                    if doc.pr_status in ("merged", "closed"):
-                        continue
-                    if state == "failure" or state == "error":
+                    if state in ("failure", "error"):
                         if doc.pr_status != "checks_failed":
                             doc.pr_status = "checks_failed"
                             doc.status = "deploy_failed"
@@ -441,24 +441,24 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                         _try_auto_merge(db, doc, repo_full)
                 break
 
-            # default branch의 status (머지 후) → apply 결과 추적
-            # Terraform Cloud context 패턴: "Terraform Cloud/..."
-            if "terraform" in context.lower() or "Terraform Cloud" in context:
-                # 머지된 문서 중 해당 repo의 것을 찾아 apply 결과 업데이트
-                merged_docs = (
+            # default branch의 status (머지 후) → Terraform Cloud apply 결과 추적
+            if "terraform" in context.lower():
+                # 가장 최근 머지된 문서 1건만 대상 (동일 repo에 여러 문서 시 오매칭 방지)
+                doc = (
                     db.query(Document)
                     .join(Workspace, Document.workspace_id == Workspace.id)
                     .filter(
                         Document.pr_status == "merged",
-                        Workspace.github_org == repo_full.split("/")[0] if "/" in repo_full else "",
-                        Workspace.repo == repo_full.split("/")[1] if "/" in repo_full else "",
+                        Workspace.github_org == repo_owner,
+                        Workspace.repo == repo_name,
                     )
-                    .all()
+                    .order_by(Document.updated_at.desc())
+                    .first()
                 )
-                apply_desc = payload.get("description", "")
-                apply_url = payload.get("target_url", "")
-                apply_ctx = context
-                for doc in merged_docs:
+                if doc:
+                    apply_desc = payload.get("description", "")
+                    apply_url = payload.get("target_url", "")
+                    apply_ctx = context
                     new_pr_status = None
                     new_doc_status = None
                     if state == "success":
