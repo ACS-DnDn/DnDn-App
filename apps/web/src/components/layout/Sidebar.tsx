@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { apiFetch } from '@/services/api';
+import { AuthContext } from '@/contexts/AuthContext';
 
 interface SidebarProps {
   open: boolean;
@@ -76,6 +77,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const session = useSession();
   const { isDark, toggle } = useTheme();
+  const { logout } = useContext(AuthContext);
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -169,6 +171,17 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               <div className="toggle-track"><div className="toggle-thumb" /></div>
             </button>
           </div>
+          <button
+            className="sidebar-logout"
+            onClick={() => { onClose(); logout(); }}
+          >
+            <svg className="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M7 17H4a1 1 0 01-1-1V4a1 1 0 011-1h3" />
+              <path d="M14 14l3-4-3-4" />
+              <path d="M17 10H8" />
+            </svg>
+            로그아웃
+          </button>
         </div>
       </aside>
     </>
