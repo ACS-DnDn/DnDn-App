@@ -377,13 +377,15 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 cr_desc = cr_output.get("title") or cr_output.get("summary") or check_run.get("name", "")
                 cr_url = check_run.get("html_url")
                 cr_ctx = check_run.get("name", "")
-                if doc.pr_status != "checks_failed":
+                first_failure = doc.pr_status != "checks_failed"
+                if first_failure:
                     doc.pr_status = "checks_failed"
                     doc.status = "deploy_failed"
                 _append_deploy_log(db, doc, "checks_failed", "failure",
                                    description=cr_desc, url=cr_url, context=cr_ctx)
                 db.commit()
-                _notify_pr_status(db, doc, "checks_failed")
+                if first_failure:
+                    _notify_pr_status(db, doc, "checks_failed")
             elif conclusion == "success" and action == "completed":
                 cr_output = check_run.get("output", {})
                 cr_desc = cr_output.get("title") or check_run.get("name", "")
@@ -429,13 +431,15 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     st_url = payload.get("target_url", "")
                     st_ctx = context
                     if state in ("failure", "error"):
-                        if doc.pr_status != "checks_failed":
+                        first_failure = doc.pr_status != "checks_failed"
+                        if first_failure:
                             doc.pr_status = "checks_failed"
                             doc.status = "deploy_failed"
                         _append_deploy_log(db, doc, "checks_failed", "failure",
                                            description=st_desc, url=st_url, context=st_ctx)
                         db.commit()
-                        _notify_pr_status(db, doc, "checks_failed")
+                        if first_failure:
+                            _notify_pr_status(db, doc, "checks_failed")
                     elif state == "success":
                         _append_deploy_log(db, doc, "checks_passed", "success",
                                            description=st_desc, url=st_url, context=st_ctx)
