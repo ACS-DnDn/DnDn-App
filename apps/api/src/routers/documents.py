@@ -112,7 +112,8 @@ def _next_doc_num(db: "Session", doc_type: str) -> str:
     from sqlalchemy import cast, Integer, func as sa_func
 
     code = _DOC_TYPE_CODE.get(doc_type, "DOC")
-    year = datetime.now(timezone.utc).year
+    KST = timezone(timedelta(hours=9))
+    year = datetime.now(KST).year
     prefix = f"{year}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
@@ -434,25 +435,11 @@ def submit_document(
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
 
-    # 상신 시 doc_num이 없으면 채번 + HTML 문서번호 갱신
+    # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
+    need_html_update = False
     if not req.isDraft and not doc.doc_num:
         doc.doc_num = _next_doc_num(db, doc.type or "계획서")
-        # S3 HTML 내 문서번호 placeholder를 실제 번호로 치환
-        if doc.html_key:
-            try:
-                html = _s3_get_text(doc.html_key)
-                if html:
-                    import re
-                    # doc-header-no 태그 내용을 실제 문서번호로 치환
-                    updated = re.sub(
-                        r'(<div\s+class="doc-header-no">)\s*(</div>)',
-                        rf'\g<1>{doc.doc_num}\2',
-                        html,
-                    )
-                    if updated != html:
-                        _s3_put_text(doc.html_key, updated)
-            except Exception as e:
-                _logger.warning("HTML 문서번호 갱신 실패: %s", e)
+        need_html_update = bool(doc.html_key)
 
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
     db.query(Approval).filter(Approval.document_id == doc.id).delete()
@@ -478,6 +465,22 @@ def submit_document(
     # 7. DB 최종 반영
     db.commit()
     db.refresh(doc)
+
+    # 7-1. S3 HTML 문서번호 갱신 (commit 성공 후 수행 — DB/S3 불일치 방지)
+    if need_html_update and doc.doc_num and doc.html_key:
+        try:
+            import re as _re
+            html = _s3_get_text(doc.html_key)
+            if html:
+                updated = _re.sub(
+                    r'(<div\s+class="doc-header-no">)\s*(</div>)',
+                    rf'\g<1>{doc.doc_num}\2',
+                    html,
+                )
+                if updated != html:
+                    _s3_put_text(doc.html_key, updated)
+        except Exception as e:
+            _logger.warning("HTML 문서번호 갱신 실패: %s", e)
 
     # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
     if not req.isDraft:

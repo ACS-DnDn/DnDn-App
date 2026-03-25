@@ -37,8 +37,11 @@ from datetime import datetime, timezone
 from sqlalchemy import func as sa_func
 
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
-from .database import SessionLocal
+from .database import SessionLocal, Base, engine
 from .models import Document, Attachment
+
+# 테이블 자동 생성 (독립 실행 시에도 Attachment 테이블 보장)
+Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -250,7 +253,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     canonical = _read_canonical_from_s3(s3_key)
 
     # canonical JSON을 reports/ 경로에도 저장 (API에서 조회용)
-    save_report(doc_id, canonical, workspace_id)
+    json_key = save_report(doc_id, canonical, workspace_id)
 
     # DB에 Document 레코드 생성 전 문서번호 채번 (HTML 생성에 필요)
     doc_type = {
@@ -295,7 +298,6 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     created = False
     db = SessionLocal()
     try:
-        json_key = f"{workspace_id}/reports/{doc_id}.json"
         doc = Document(
             id=doc_id,
             doc_num=doc_num,
@@ -322,12 +324,17 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
                 "health": "AWS_Health_Event_원본.json",
             }
             raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
+            try:
+                raw_size_bytes = _s3_client().head_object(Bucket=S3_BUCKET, Key=s3_key)["ContentLength"]
+                raw_size_kb = max(1, raw_size_bytes // 1024)
+            except Exception:
+                raw_size_kb = canonical_size_kb
             db.add(Attachment(
                 id=f"{doc_id}-raw",
                 document_id=doc_id,
                 original_name=raw_name,
                 file_path=s3_key,
-                size_kb=canonical_size_kb,
+                size_kb=raw_size_kb,
             ))
             db.add(Attachment(
                 id=f"{doc_id}-canonical",

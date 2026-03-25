@@ -118,7 +118,7 @@ export function PlanPage() {
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === doc.id)) return prev;
-      return [...prev, { no: doc.id, name: `${doc.docNum ?? doc.id} — ${doc.name}` }];
+      return [...prev, { no: doc.id, name: `${doc.docNum || doc.id} — ${doc.name}` }];
     });
   }, [searchParams, docList]);
 
@@ -237,7 +237,7 @@ export function PlanPage() {
     if (!d) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === d.id)) return prev;
-      return [...prev, { no: d.id, name: `${d.docNum ?? d.id} — ${d.name}` }];
+      return [...prev, { no: d.id, name: `${d.docNum || d.id} — ${d.name}` }];
     });
     setDocPopupOpen(false);
   }

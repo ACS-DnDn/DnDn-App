@@ -141,7 +141,7 @@
 .btn-reject:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-soft); }
 
 /* 반려 문서 수정 버튼 */
-.btn-edit-rejected { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--orange); background: var(--orange-soft); color: var(--orange); font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.btn-edit-rejected { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--orange); background: var(--orange-soft); color: var(--orange); font-size: 13px; font-weight: 700; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .btn-edit-rejected:hover { background: var(--orange); color: #fff; }
 
 /* 계획서 작성 버튼 (보고서 모드) */

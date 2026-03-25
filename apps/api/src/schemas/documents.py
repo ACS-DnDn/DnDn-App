@@ -96,6 +96,7 @@ class DocumentAuthor(BaseModel):
 
 class DocumentRefDoc(BaseModel):
     id: str
+    docNum: str
     title: str
     type: str
 
