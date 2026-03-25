@@ -1049,7 +1049,9 @@ def delete_document(
     for att in attachments:
         s3_keys_to_delete.append(att.file_path)
 
-    # DB: cascade로 approvals, document_reads, attachments 자동 삭제
+    # DB: FK cascade가 DB 레벨에서 미적용될 수 있으므로 수동 삭제
+    db.query(Attachment).filter(Attachment.document_id == documentId).delete()
+    db.query(DocumentRead).filter(DocumentRead.document_id == documentId).delete()
     db.delete(doc)
     db.commit()
 
