@@ -5,15 +5,7 @@ import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
-const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
-
-function getDisplayStatus(doc: Document): string {
-  if (doc.status === 'done' && doc.prStatus) {
-    if (['open', 'merged'].includes(doc.prStatus)) return '배포 중';
-    if (['checks_failed', 'apply_failed'].includes(doc.prStatus)) return '배포 실패';
-  }
-  return STATUS_LABELS[doc.status] || doc.status;
-}
+const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패', deploying: '배포 중', deploy_failed: '배포 실패' };
 const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
@@ -412,6 +404,8 @@ export function DocumentsPage() {
                     <select className="th-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}>
                       <option value="">상태</option>
                       <option value="done">완료</option>
+                      <option value="deploying">배포 중</option>
+                      <option value="deploy_failed">배포 실패</option>
                       <option value="rejected">반려</option>
                       <option value="failed">실패</option>
                     </select>
@@ -442,7 +436,7 @@ export function DocumentsPage() {
                     <td className="td-type">{TYPE_LABELS[doc.type] || doc.type}</td>
                     <td className="td-author">{doc.author}</td>
                     <td className="td-date">{formatDate(doc.date)}</td>
-                    <td>{getDisplayStatus(doc)}</td>
+                    <td>{STATUS_LABELS[doc.status] || doc.status}</td>
                   </tr>
                 );
               })}

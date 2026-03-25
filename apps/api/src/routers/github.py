@@ -349,6 +349,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
             if conclusion in ("failure", "timed_out", "action_required"):
                 if doc.pr_status != "checks_failed":
                     doc.pr_status = "checks_failed"
+                    doc.status = "deploy_failed"
                     db.commit()
                     _notify_pr_status(db, doc, "checks_failed")
             elif conclusion == "success" and action == "completed":
@@ -386,6 +387,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     if state == "failure" or state == "error":
                         if doc.pr_status != "checks_failed":
                             doc.pr_status = "checks_failed"
+                            doc.status = "deploy_failed"
                             db.commit()
                             _notify_pr_status(db, doc, "checks_failed")
                     elif state == "success":
@@ -407,16 +409,20 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     .all()
                 )
                 for doc in merged_docs:
-                    new_status = None
+                    new_pr_status = None
+                    new_doc_status = None
                     if state == "success":
-                        new_status = "applied"
+                        new_pr_status = "applied"
+                        new_doc_status = "done"
                     elif state in ("failure", "error"):
-                        new_status = "apply_failed"
+                        new_pr_status = "apply_failed"
+                        new_doc_status = "deploy_failed"
 
-                    if new_status and new_status != doc.pr_status:
-                        doc.pr_status = new_status
+                    if new_pr_status and new_pr_status != doc.pr_status:
+                        doc.pr_status = new_pr_status
+                        doc.status = new_doc_status
                         db.commit()
-                        _notify_pr_status(db, doc, new_status)
+                        _notify_pr_status(db, doc, new_pr_status)
                 break
 
     return JSONResponse({"received": True})

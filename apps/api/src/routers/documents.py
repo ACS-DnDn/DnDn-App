@@ -668,6 +668,11 @@ def approve_document(
         doc.auto_merge = req.autoMerge if req.autoMerge is not None else True
         _create_terraform_pr_if_needed(doc, db)
 
+        # PR이 생성됐으면 배포 중으로 전환
+        if doc.pr_number:
+            doc.status = "deploying"
+            new_status = "deploying"
+
     # 6. DB 최종 반영
     db.commit()
 

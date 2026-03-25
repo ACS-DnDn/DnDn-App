@@ -1,5 +1,5 @@
 export type DocType = '계획서' | '작업계획서' | '이벤트보고서' | '주간보고서' | '헬스이벤트보고서';
-export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed';
+export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed' | 'deploying' | 'deploy_failed';
 export type DocAction = 'approve' | 'rejected' | null;
 
 export interface ApprovalLineItem {

@@ -81,14 +81,9 @@ const STATUS_MAP: Record<string, [string, string]> = {
   done: ['s-done', '완료'],
   rejected: ['s-rejected', '반려'],
   failed: ['s-failed', '실패'],
+  deploying: ['s-progress', '배포 중'],
+  deploy_failed: ['s-rejected', '배포 실패'],
 };
-
-function getDeployStatus(doc: { status: string; prStatus?: string }): [string, string] | null {
-  if (doc.status !== 'done' || !doc.prStatus) return null;
-  if (['open', 'merged'].includes(doc.prStatus)) return ['s-progress', '배포 중'];
-  if (['checks_failed', 'apply_failed'].includes(doc.prStatus)) return ['s-rejected', '배포 실패'];
-  return null; // applied → 기본 '완료' 사용
-}
 
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
@@ -187,8 +182,7 @@ export function ViewerPage() {
   const isFinalApprover = viewMode === 'approver' && lastApprover?.status === 'current';
   const showAutoMerge = isFinalApprover && hasTerraform;
 
-  const deploySt = getDeployStatus(doc);
-  const [sCls, sLbl] = deploySt ?? STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
+  const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
   async function handleApproveConfirm() {
     if (!id) return;
