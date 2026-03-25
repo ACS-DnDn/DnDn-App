@@ -578,19 +578,16 @@ export function PlanPage() {
   ══════════════════════════════ */
   function renderPagination() {
     if (totalDocPages <= 1) return null;
-    const range: (number | '…')[] = [];
-    for (let i = 1; i <= totalDocPages; i++) {
-      if (i === 1 || i === totalDocPages || Math.abs(i - docPage) <= 1) range.push(i);
-      else if (range[range.length - 1] !== '…') range.push('…');
-    }
+    const BLOCK = 5;
+    const blockStart = Math.floor((docPage - 1) / BLOCK) * BLOCK + 1;
+    const blockEnd = Math.min(blockStart + BLOCK - 1, totalDocPages);
     return (
       <div className="doc-pagination">
-        <button className="doc-page-btn" disabled={docPage === 1} onClick={() => setDocPage(docPage - 1)}>&lsaquo;</button>
-        {range.map((r, i) =>
-          r === '…' ? <span key={`e${i}`} className="doc-page-ellipsis">&hellip;</span>
-            : <button key={r} className={`doc-page-btn${r === docPage ? ' active' : ''}`} onClick={() => setDocPage(r)}>{r}</button>
-        )}
-        <button className="doc-page-btn" disabled={docPage === totalDocPages} onClick={() => setDocPage(docPage + 1)}>&rsaquo;</button>
+        <button className="doc-page-btn" disabled={blockStart === 1} onClick={() => setDocPage(blockStart - 1)}>&lsaquo;</button>
+        {Array.from({ length: blockEnd - blockStart + 1 }, (_, i) => blockStart + i).map(p => (
+          <button key={p} className={`doc-page-btn${p === docPage ? ' active' : ''}`} onClick={() => setDocPage(p)}>{p}</button>
+        ))}
+        <button className="doc-page-btn" disabled={blockEnd === totalDocPages} onClick={() => setDocPage(blockEnd + 1)}>&rsaquo;</button>
       </div>
     );
   }

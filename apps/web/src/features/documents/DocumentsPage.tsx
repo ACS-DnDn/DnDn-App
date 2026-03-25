@@ -218,29 +218,27 @@ export function DocumentsPage() {
     return cls;
   }
 
-  // 페이지네이션
+  // 페이지네이션 (10개 블록 고정)
   const renderPagination = () => {
-    const pages = totalPages;
+    const BLOCK = 10;
+    const blockStart = Math.floor((currentPage - 1) / BLOCK) * BLOCK + 1;
+    const blockEnd = Math.min(blockStart + BLOCK - 1, totalPages);
     const btns: React.ReactNode[] = [];
 
     btns.push(
-      <button key="pp" className="page-btn page-nav" onClick={() => setCurrentPage(p => Math.max(1, p - 5))} disabled={currentPage <= 5} title="5페이지 이전">&laquo;</button>,
-      <button key="p" className="page-btn page-nav" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} title="이전">&lsaquo;</button>,
+      <button key="pp" className="page-btn page-nav" disabled={blockStart === 1} onClick={() => setCurrentPage(blockStart - 1)} title="이전 블록">&laquo;</button>,
+      <button key="p" className="page-btn page-nav" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} title="이전">&lsaquo;</button>,
     );
 
-    for (let i = 1; i <= pages; i++) {
-      if (i === 1 || i === pages || Math.abs(i - currentPage) <= 1) {
-        btns.push(
-          <button key={i} className={`page-btn${i === currentPage ? ' active' : ''}`} onClick={() => setCurrentPage(i)}>{i}</button>
-        );
-      } else if (Math.abs(i - currentPage) === 2) {
-        btns.push(<span key={`e${i}`} style={{ padding: '0 2px', color: 'var(--text-muted)', fontSize: 12 }}>…</span>);
-      }
+    for (let i = blockStart; i <= blockEnd; i++) {
+      btns.push(
+        <button key={i} className={`page-btn${i === currentPage ? ' active' : ''}`} onClick={() => setCurrentPage(i)}>{i}</button>
+      );
     }
 
     btns.push(
-      <button key="n" className="page-btn page-nav" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === pages} title="다음">&rsaquo;</button>,
-      <button key="nn" className="page-btn page-nav" onClick={() => setCurrentPage(p => Math.min(pages, p + 5))} disabled={currentPage + 5 > pages} title="5페이지 이후">&raquo;</button>,
+      <button key="n" className="page-btn page-nav" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} title="다음">&rsaquo;</button>,
+      <button key="nn" className="page-btn page-nav" disabled={blockEnd === totalPages} onClick={() => setCurrentPage(blockEnd + 1)} title="다음 블록">&raquo;</button>,
     );
 
     return btns;
