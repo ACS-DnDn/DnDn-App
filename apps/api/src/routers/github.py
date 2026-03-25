@@ -236,6 +236,29 @@ def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
+def _append_deploy_log(
+    db: Session,
+    doc: Document,
+    event: str,
+    status: str,
+    description: str | None = None,
+    url: str | None = None,
+    context: str | None = None,
+) -> None:
+    """deploy_log JSON 배열에 이벤트를 추가한다."""
+    entry = {
+        "event": event,
+        "status": status,
+        "description": description,
+        "url": url,
+        "context": context,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    log = list(doc.deploy_log or [])
+    log.append(entry)
+    doc.deploy_log = log
+
+
 def _notify_pr_status(db: Session, doc: Document, new_status: str) -> None:
     """PR 상태 변경 Slack 알림 — 문서 작성자 + 결재선 전원에게 DM.
 
@@ -328,6 +351,9 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         # 머지 완료만 추적 (DnDn이 PR 라이프사이클 관리)
         if action == "closed" and merged and doc.pr_status != "merged":
             doc.pr_status = "merged"
+            _append_deploy_log(db, doc, "merged", "success",
+                               description="PR이 Merge되었습니다.",
+                               url=pr.get("html_url"))
             db.commit()
 
     # ── check_run 이벤트 ──
@@ -347,12 +373,25 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 continue
 
             if conclusion in ("failure", "timed_out", "action_required"):
+                cr_output = check_run.get("output", {})
+                cr_desc = cr_output.get("title") or cr_output.get("summary") or check_run.get("name", "")
+                cr_url = check_run.get("html_url")
+                cr_ctx = check_run.get("name", "")
                 if doc.pr_status != "checks_failed":
                     doc.pr_status = "checks_failed"
                     doc.status = "deploy_failed"
-                    db.commit()
-                    _notify_pr_status(db, doc, "checks_failed")
+                _append_deploy_log(db, doc, "checks_failed", "failure",
+                                   description=cr_desc, url=cr_url, context=cr_ctx)
+                db.commit()
+                _notify_pr_status(db, doc, "checks_failed")
             elif conclusion == "success" and action == "completed":
+                cr_output = check_run.get("output", {})
+                cr_desc = cr_output.get("title") or check_run.get("name", "")
+                cr_url = check_run.get("html_url")
+                cr_ctx = check_run.get("name", "")
+                _append_deploy_log(db, doc, "checks_passed", "success",
+                                   description=cr_desc, url=cr_url, context=cr_ctx)
+                db.commit()
                 # 개별 check 성공 → 전체 통과 여부 확인 후 자동 머지
                 _try_auto_merge(db, doc, repo_full)
 
@@ -381,6 +420,9 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     )
                     .all()
                 )
+                st_desc = payload.get("description", "")
+                st_url = payload.get("target_url", "")
+                st_ctx = context
                 for doc in docs:
                     if doc.pr_status in ("merged", "closed"):
                         continue
@@ -388,9 +430,14 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                         if doc.pr_status != "checks_failed":
                             doc.pr_status = "checks_failed"
                             doc.status = "deploy_failed"
-                            db.commit()
-                            _notify_pr_status(db, doc, "checks_failed")
+                        _append_deploy_log(db, doc, "checks_failed", "failure",
+                                           description=st_desc, url=st_url, context=st_ctx)
+                        db.commit()
+                        _notify_pr_status(db, doc, "checks_failed")
                     elif state == "success":
+                        _append_deploy_log(db, doc, "checks_passed", "success",
+                                           description=st_desc, url=st_url, context=st_ctx)
+                        db.commit()
                         _try_auto_merge(db, doc, repo_full)
                 break
 
@@ -408,6 +455,9 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     )
                     .all()
                 )
+                apply_desc = payload.get("description", "")
+                apply_url = payload.get("target_url", "")
+                apply_ctx = context
                 for doc in merged_docs:
                     new_pr_status = None
                     new_doc_status = None
@@ -421,6 +471,8 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     if new_pr_status and new_pr_status != doc.pr_status:
                         doc.pr_status = new_pr_status
                         doc.status = new_doc_status
+                        _append_deploy_log(db, doc, new_pr_status, "success" if new_pr_status == "applied" else "failure",
+                                           description=apply_desc, url=apply_url, context=apply_ctx)
                         db.commit()
                         _notify_pr_status(db, doc, new_pr_status)
                 break
@@ -450,6 +502,8 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
         merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
         if merged:
             doc.pr_status = "merged"
+            _append_deploy_log(db, doc, "merged", "success",
+                               description="PR 검증 통과 — 자동 Merge 완료")
             db.commit()
             _logger.info("PR 자동 Merge 완료: %s #%s", repo_full, doc.pr_number)
             _notify_pr_status(db, doc, "checks_passed")

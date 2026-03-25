@@ -37,6 +37,7 @@ _migrations = [
     ("documents", "pr_status", "VARCHAR(20)"),
     ("workspaces", "github_webhook_id", "INTEGER"),
     ("documents", "auto_merge", "BOOLEAN"),
+    ("documents", "deploy_log", "JSON"),
 ]
 with engine.begin() as _conn:
     for _tbl, _col, _coltype in _migrations:

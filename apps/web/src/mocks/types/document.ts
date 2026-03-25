@@ -25,6 +25,15 @@ export interface AttachmentItem {
   sizeKb?: number;
 }
 
+export interface DeployLogEntry {
+  event: string;       // pr_created / checks_passed / checks_failed / merged / applied / apply_failed
+  status: string;      // success / failure / info
+  description?: string;
+  url?: string;
+  context?: string;
+  timestamp: string;
+}
+
 export interface Document {
   id: string;
   docNum?: string;
@@ -47,6 +56,8 @@ export interface Document {
   prNumber?: number;
   prUrl?: string;
   prStatus?: string;
+  autoMerge?: boolean;
+  deployLog?: DeployLogEntry[];
 }
 
 export interface RefDocMeta {

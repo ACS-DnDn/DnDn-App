@@ -133,6 +133,8 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       attachments?: { id: string; name: string; sizeKb?: number }[];
       approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
       prNumber?: number; prUrl?: string; prStatus?: string;
+      autoMerge?: boolean;
+      deployLog?: import('@/mocks/types/document').DeployLogEntry[];
     } }>(`/documents/${id}`);
     const res = raw.data;
     return {
@@ -155,6 +157,8 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       prNumber: res.prNumber,
       prUrl: res.prUrl,
       prStatus: res.prStatus,
+      autoMerge: res.autoMerge,
+      deployLog: res.deployLog,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;

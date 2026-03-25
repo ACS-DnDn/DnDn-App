@@ -216,6 +216,36 @@ pre.tf-pre { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,2
 .approve-auto-merge { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
 .approve-auto-merge input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--mint); cursor: pointer; }
 
+/* ── 배포 현황 패널 ── */
+.deploy-status-panel { padding: 0 16px 14px; }
+.deploy-status-hd { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+.deploy-status-hd svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+.deploy-info-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.deploy-info-label { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.deploy-info-link { font-size: 12px; font-weight: 600; color: var(--mint); text-decoration: none; }
+.deploy-info-link:hover { text-decoration: underline; }
+.deploy-merge-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: auto; }
+.deploy-merge-badge.auto { background: var(--mint-soft); color: var(--mint); }
+.deploy-merge-badge.manual { background: var(--orange-soft); color: var(--orange); }
+
+.deploy-timeline { display: flex; flex-direction: column; gap: 0; padding-left: 2px; }
+.deploy-event { display: flex; gap: 10px; position: relative; padding-bottom: 12px; }
+.deploy-event:not(:last-child)::before { content: ''; position: absolute; left: 4px; top: 12px; bottom: 0; width: 1px; background: var(--border-med); }
+.deploy-event-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.dt-success { background: var(--green); }
+.dt-failure { background: var(--orange); }
+.dt-info { background: var(--mint); }
+
+.deploy-event-body { flex: 1; min-width: 0; }
+.deploy-event-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.deploy-event-label { font-size: 11.5px; font-weight: 700; color: var(--text); }
+.deploy-event-ctx { font-size: 10px; color: var(--text-muted); background: var(--bg); padding: 1px 5px; border-radius: 3px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deploy-event-time { font-size: 10px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.deploy-event-desc { font-size: 11px; color: var(--text-sub); margin-top: 3px; line-height: 1.4; word-break: break-all; }
+.deploy-event-link { font-size: 10.5px; color: var(--mint); text-decoration: none; margin-top: 2px; display: inline-block; }
+.deploy-event-link:hover { text-decoration: underline; }
+
 /* 참조문서 모달 */
 .ref-doc-modal { background: var(--bg-card); width: min(900px, 92vw); height: min(80vh, 700px); }
 .ref-doc-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }

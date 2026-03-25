@@ -126,6 +126,7 @@ class Document(Base):
     pr_url = Column(String(500), nullable=True)      # GitHub PR URL
     pr_status = Column(String(20), nullable=True)    # open / merged / checks_failed / applied / apply_failed
     auto_merge = Column(Boolean, nullable=True, default=True)  # PR 검증 통과 시 자동 Merge 여부
+    deploy_log = Column(JSON, nullable=True)  # 배포 이벤트 타임라인 [{event, status, description, url, context, timestamp}]
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

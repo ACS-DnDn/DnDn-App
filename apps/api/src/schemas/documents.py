@@ -120,6 +120,15 @@ class DocumentApprovalLine(BaseModel):
     comment: Optional[str] = None
 
 
+class DeployLogEntry(BaseModel):
+    event: str          # pr_created / checks_passed / checks_failed / merged / applied / apply_failed
+    status: str         # success / failure / info
+    description: Optional[str] = None  # GitHub/TFC 결과 문구
+    url: Optional[str] = None          # GitHub/TFC 링크
+    context: Optional[str] = None      # check name 또는 TFC workspace
+    timestamp: str
+
+
 class DocumentDetailResponse(BaseModel):
     id: str
     docNum: str
@@ -138,3 +147,5 @@ class DocumentDetailResponse(BaseModel):
     prNumber: Optional[int] = None
     prUrl: Optional[str] = None
     prStatus: Optional[str] = None
+    autoMerge: Optional[bool] = None
+    deployLog: List[DeployLogEntry] = []

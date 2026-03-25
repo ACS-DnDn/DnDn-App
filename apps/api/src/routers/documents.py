@@ -214,6 +214,17 @@ def _create_terraform_pr_if_needed(doc: Document, db: "Session") -> None:
         doc.pr_number = result["pr_number"]
         doc.pr_url = result["pr_url"]
         doc.pr_status = "open"
+        # deploy_log에 PR 생성 기록
+        from datetime import datetime as _dt, timezone as _tz
+        entry = {
+            "event": "pr_created",
+            "status": "info",
+            "description": f"PR #{result['pr_number']} 생성",
+            "url": result["pr_url"],
+            "context": None,
+            "timestamp": _dt.now(_tz.utc).isoformat(),
+        }
+        doc.deploy_log = [entry]
     except GitHubError as e:
         _logger.error("terraform PR 생성 실패: %s", e.message)
     except (requests_exc.RequestException, KeyError, ValueError) as e:
@@ -604,6 +615,8 @@ def get_document_detail(
             prNumber=doc.pr_number,
             prUrl=doc.pr_url,
             prStatus=doc.pr_status,
+            autoMerge=doc.auto_merge,
+            deployLog=doc.deploy_log or [],
         )
     )
 

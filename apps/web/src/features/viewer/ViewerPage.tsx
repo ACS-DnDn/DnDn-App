@@ -346,6 +346,60 @@ export function ViewerPage() {
           </>
         )}
 
+        {/* 배포 현황 (PR이 있는 계획서만) */}
+        {!isReport && doc.prNumber && (
+          <div className="deploy-status-panel">
+            <div className="deploy-status-hd">
+              <svg viewBox="0 0 16 16" fill="none" stroke="#228BE6" strokeWidth="1.8"><path d="M2 8h12M8 2v12"/><circle cx="8" cy="8" r="6"/></svg>
+              배포 현황
+            </div>
+            <div className="deploy-info-row">
+              <span className="deploy-info-label">PR</span>
+              <a className="deploy-info-link" href={doc.prUrl} target="_blank" rel="noopener noreferrer">
+                #{doc.prNumber}
+              </a>
+              {doc.autoMerge !== undefined && (
+                <span className={`deploy-merge-badge ${doc.autoMerge ? 'auto' : 'manual'}`}>
+                  {doc.autoMerge ? '자동 Merge' : '수동 Merge'}
+                </span>
+              )}
+            </div>
+            {(doc.deployLog ?? []).length > 0 && (
+              <div className="deploy-timeline">
+                {(doc.deployLog ?? []).map((entry, i) => {
+                  const dotCls = entry.status === 'success' ? 'dt-success' : entry.status === 'failure' ? 'dt-failure' : 'dt-info';
+                  const eventLabels: Record<string, string> = {
+                    pr_created: 'PR 생성',
+                    checks_passed: '검증 통과',
+                    checks_failed: '검증 실패',
+                    merged: 'Merge',
+                    applied: 'Apply 성공',
+                    apply_failed: 'Apply 실패',
+                  };
+                  return (
+                    <div className="deploy-event" key={i}>
+                      <div className={`deploy-event-dot ${dotCls}`} />
+                      <div className="deploy-event-body">
+                        <div className="deploy-event-header">
+                          <span className="deploy-event-label">{eventLabels[entry.event] ?? entry.event}</span>
+                          {entry.context && <span className="deploy-event-ctx">{entry.context}</span>}
+                          <span className="deploy-event-time">{fmtDate(entry.timestamp)}</span>
+                        </div>
+                        {entry.description && <div className="deploy-event-desc">{entry.description}</div>}
+                        {entry.url && (
+                          <a className="deploy-event-link" href={entry.url} target="_blank" rel="noopener noreferrer">
+                            상세 보기 →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 보고서 모드: 계획서 작성 버튼 */}
         {isReport && (
           <div className="report-actions">
