@@ -4,7 +4,7 @@ import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
 import { apiFetch, reportApiFetch } from '@/services/api';
-import { getAllDocuments } from '@/services/document.service';
+import { getAllDocuments, getDocumentById } from '@/services/document.service';
 import type { Document } from '@/mocks';
 import type { OrgDept } from '@/mocks';
 import './PlanPage.css';
@@ -118,9 +118,45 @@ export function PlanPage() {
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === doc.id)) return prev;
-      return [...prev, { no: doc.id, name: `${doc.docNum || doc.id} — ${doc.name}` }];
+      return [...prev, { no: doc.id, name: doc.name }];
     });
   }, [searchParams, docList]);
+
+  /* ── init: load existing document for editing (반려 문서 수정) ── */
+  useEffect(() => {
+    const editDocId = searchParams.get('editDocId');
+    if (!editDocId) return;
+    let blobUrl: string | null = null;
+    getDocumentById(editDocId).then(doc => {
+      if (!doc) return;
+      setDraftDocumentId(editDocId);
+      // HTML 문서 로드
+      if (doc.content) {
+        const blob = new Blob([doc.content], { type: 'text/html' });
+        blobUrl = URL.createObjectURL(blob);
+        setIframeSrc(blobUrl);
+        setDocState('ready');
+      }
+      // Terraform 파일 로드
+      if (doc.terraform && Object.keys(doc.terraform).length > 0) {
+        const files = Object.entries(doc.terraform).map(([name, code]) => ({ name, code }));
+        setGeneratedTfFiles(files);
+        setTfCodes(files.map(f => f.code));
+        setTfState('ready');
+        setTfStatus('ok');
+        setTfStatusText('완료');
+      }
+      // 참조문서 로드
+      if (doc.refDocs) {
+        setRefDocs(doc.refDocs.map(rd => ({ no: rd.id, name: rd.title ?? rd.id })));
+      }
+      // 제목 로드
+      if (doc.name) setNlTarget(doc.name);
+    }).catch((err) => {
+      console.error('문서 로드 실패:', err);
+    });
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [searchParams]);
 
   /* ── scroll log panel ── */
   useEffect(() => {
@@ -237,7 +273,7 @@ export function PlanPage() {
     if (!d) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === d.id)) return prev;
-      return [...prev, { no: d.id, name: `${d.docNum || d.id} — ${d.name}` }];
+      return [...prev, { no: d.id, name: d.name }];
     });
     setDocPopupOpen(false);
   }

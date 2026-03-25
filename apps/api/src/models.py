@@ -119,6 +119,7 @@ class Document(Base):
         String(50), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
     )
     author_id = Column(String(50), ForeignKey("users.id"), nullable=True)
+    submit_comment = Column(Text, nullable=True)  # 기안자 상신 의견
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

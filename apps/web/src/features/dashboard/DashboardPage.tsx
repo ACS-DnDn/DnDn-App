@@ -6,10 +6,19 @@ import { getDocuments } from '@/services/document.service';
 import type { DashboardData, Document } from '@/mocks';
 import './DashboardPage.css';
 
+const TYPE_LABELS: Record<string, string> = {
+  '계획서': '작업계획서',
+  '주간보고서': '인프라 활동 보고서',
+  '이벤트보고서': '이벤트보고서',
+  '헬스이벤트보고서': '이벤트보고서',
+};
+
 function formatDate(d: string) {
   const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
   const kst = new Date(utc.getTime() + (isNaN(utc.getTime()) ? 0 : 0));
   if (isNaN(kst.getTime())) {
+    // 이미 "YYYY.MM.DD HH:MM" 포맷이면 그대로 반환
+    if (/^\d{4}\.\d{2}\.\d{2}/.test(d)) return d;
     const parts = d.split(' ');
     const dp = (parts[0] ?? '').split('-');
     return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
@@ -149,7 +158,7 @@ export function DashboardPage() {
                         {s && <span className={`badge ${s.cls}`}>{s.label}</span>}
                       </div>
                     </td>
-                    <td className="td-type">{d.type}</td>
+                    <td className="td-type">{TYPE_LABELS[d.type] || d.type}</td>
                     <td className="td-author">{d.author}</td>
                     <td className="td-date">{formatDate(d.date)}</td>
                   </tr>
@@ -197,7 +206,7 @@ export function DashboardPage() {
                 <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                   <td className="td-num">{d.docNum ?? String(d.id)}</td>
                   <td><div className="doc-title">{d.name}</div></td>
-                  <td className="td-type">{d.type}</td>
+                  <td className="td-type">{TYPE_LABELS[d.type] || d.type}</td>
                   <td className="td-author">{d.author}</td>
                   <td className="td-date">{formatDate(d.date)}</td>
                 </tr>

@@ -321,7 +321,7 @@ def _style_rules(doc_meta: dict | None = None) -> str:
 
     meta = doc_meta or {}
     logo_url = meta.get("company_logo_url", "")
-    doc_num = meta.get("doc_num", "XXX")
+    doc_num = meta.get("doc_num") or "(자동부여)"
     author_label = meta.get("author_label", "")
 
     if logo_url:

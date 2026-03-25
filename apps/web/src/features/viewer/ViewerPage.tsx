@@ -75,8 +75,6 @@ function mapApprovalLine(items: import('@/mocks/types/document').ApprovalLineIte
   return { mainSteps, collabSteps };
 }
 
-const TF_PLAN_EMPTY = '<div style="padding:2rem;text-align:center;color:#888;font-size:13px;">최종 결재 후 GitHub PR이 생성되면 CI/CD에서 terraform plan이 실행됩니다.</div>';
-
 /* ── 상태 맵 ── */
 const STATUS_MAP: Record<string, [string, string]> = {
   progress: ['s-progress', '진행 중'],
@@ -157,7 +155,6 @@ export function ViewerPage() {
 
   /* 모달 */
   const [tfModalOpen, setTfModalOpen] = useState(false);
-  const [tfTab, setTfTab] = useState<'code' | 'plan'>('code');
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
@@ -377,16 +374,11 @@ export function ViewerPage() {
           <div className="tf-modal-header">
             <div className="tf-modal-title">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><path d="M11.5 9v6M9 11.5h5" /></svg>
-              Terraform Code <span>· EKS 노드그룹 변경</span>
+              Terraform Code
             </div>
             <button className="tf-modal-close" onClick={() => setTfModalOpen(false)}>&times;</button>
           </div>
-          <div className="tf-modal-tabs">
-            <button type="button" className={`tf-tab${tfTab === 'code' ? ' active' : ''}`} onClick={() => setTfTab('code')}>코드</button>
-            <button type="button" className={`tf-tab${tfTab === 'plan' ? ' active' : ''}`} onClick={() => setTfTab('plan')}>Plan 결과</button>
-          </div>
-          <div className="tf-modal-body" style={{ display: tfTab === 'code' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: tfHtml }} />
-          <div className="tf-modal-body" style={{ display: tfTab === 'plan' ? 'block' : 'none' }} dangerouslySetInnerHTML={{ __html: TF_PLAN_EMPTY }} />
+          <div className="tf-modal-body" dangerouslySetInnerHTML={{ __html: tfHtml }} />
         </div>
       </div>
 

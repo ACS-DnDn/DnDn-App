@@ -430,6 +430,8 @@ def submit_document(
     doc.work_date = req.work_date
     doc.ref_doc_ids = req.refDocIds
     doc.is_draft = req.isDraft
+    if req.authorComment is not None:
+        doc.submit_comment = req.authorComment.strip()
 
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
@@ -471,10 +473,19 @@ def submit_document(
             import re as _re
             html = _s3_get_text(doc.html_key)
             if html:
+                # 헤더: 문서번호: XXX → 문서번호: 실제번호
                 updated = _re.sub(
-                    r'(<div\s+class="doc-header-no">)\s*(</div>)',
-                    rf'\g<1>{doc.doc_num}\2',
+                    r'(문서번호:\s*)(.*?)(<br|</div>)',
+                    rf'\g<1>{doc.doc_num}\3',
                     html,
+                    flags=_re.DOTALL,
+                )
+                # 푸터: 기존 문서번호 텍스트 치환
+                updated = _re.sub(
+                    r'(<div\s+class="doc-footer"><span>).*?(\s*&nbsp;/&nbsp;)',
+                    rf'\g<1>{doc.doc_num}\2',
+                    updated,
+                    flags=_re.DOTALL,
                 )
                 if updated != html:
                     _s3_put_text(doc.html_key, updated)
@@ -538,7 +549,7 @@ def get_document_detail(
             "role": doc.author.position if doc.author else "",
             "status": "author",
             "date": doc.created_at.isoformat() if doc.created_at else None,
-            "comment": None,
+            "comment": doc.submit_comment,
         }
     ]
     for apv in sorted(doc.approvals, key=lambda a: a.seq):
