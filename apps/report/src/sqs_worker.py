@@ -17,6 +17,7 @@ S3 canonical 경로 규칙:
 
 import json
 import os
+import re
 import time
 import logging
 import urllib.parse
@@ -32,6 +33,9 @@ from .ai_generator import (
     generate_weekly_report,
     generate_health_event_report,
 )
+from datetime import datetime, timezone
+from sqlalchemy import func as sa_func
+
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
 from .database import SessionLocal
 from .models import Document
@@ -43,6 +47,44 @@ SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL", "")
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 DNDN_API_URL = os.getenv("DNDN_API_URL", "http://dndn-api.dndn-api.svc.cluster.local:8000")
+
+
+DOC_TYPE_CODE = {
+    "계획서": "PLN",
+    "이벤트보고서": "EVT",
+    "헬스이벤트보고서": "RPT",
+    "주간보고서": "RPT",
+}
+
+_TITLE_RE = re.compile(r'<div\s+class="doc-header-title">\s*(.+?)\s*</div>', re.DOTALL)
+
+
+def _extract_title_from_html(html: str, fallback: str) -> str:
+    """생성된 HTML에서 doc-header-title 텍스트를 추출."""
+    m = _TITLE_RE.search(html)
+    if m:
+        title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        if title:
+            return title
+    return fallback
+
+
+def _next_doc_num(db, doc_type: str) -> str:
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-EVT-0001)."""
+    from sqlalchemy import cast, Integer
+
+    code = DOC_TYPE_CODE.get(doc_type, "DOC")
+    year = datetime.now(timezone.utc).year
+    prefix = f"{year}-{code}-"
+
+    suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
+    max_seq = (
+        db.query(sa_func.max(cast(suffix_expr, Integer)))
+        .filter(Document.doc_num.like(f"{prefix}%"))
+        .scalar()
+    )
+    seq = (max_seq or 0) + 1
+    return f"{prefix}{seq:04d}"
 
 
 def _sqs_client():
@@ -143,14 +185,18 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         "weekly": "주간보고서",
     }.get(event_type, "이벤트보고서")
 
+    # HTML에서 제목 추출
+    title = _extract_title_from_html(html, doc_id)
+
     created = False
     db = SessionLocal()
     try:
         existing = db.query(Document).filter(Document.id == doc_id).first()
         if not existing:
-            title = canonical.get("meta", {}).get("title", doc_id)
+            doc_num = _next_doc_num(db, doc_type)
             doc = Document(
                 id=doc_id,
+                doc_num=doc_num,
                 title=title,
                 type=doc_type,
                 html_key=html_key,
@@ -175,7 +221,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
                 json={
                     "documentId": doc_id,
                     "workspaceId": workspace_id,
-                    "title": canonical.get("meta", {}).get("title", doc_id),
+                    "title": title,
                     "docType": doc_type,
                 },
                 headers={"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")},
