@@ -16,6 +16,7 @@ export interface RefDocItem {
   id: string;
   title: string;
   type: string;
+  docNum?: string;
 }
 
 export interface AttachmentItem {
