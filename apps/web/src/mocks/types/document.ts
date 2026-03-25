@@ -44,6 +44,9 @@ export interface Document {
   refDocs?: RefDocItem[];
   attachments?: AttachmentItem[];
   approvalLine?: ApprovalLineItem[];
+  prNumber?: number;
+  prUrl?: string;
+  prStatus?: string;
 }
 
 export interface RefDocMeta {

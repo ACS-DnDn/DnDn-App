@@ -6,6 +6,14 @@ import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
 const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
+
+function getDisplayStatus(doc: Document): string {
+  if (doc.status === 'done' && doc.prStatus) {
+    if (['open', 'merged'].includes(doc.prStatus)) return '배포 중';
+    if (['checks_failed', 'apply_failed'].includes(doc.prStatus)) return '배포 실패';
+  }
+  return STATUS_LABELS[doc.status] || doc.status;
+}
 const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
@@ -434,7 +442,7 @@ export function DocumentsPage() {
                     <td className="td-type">{TYPE_LABELS[doc.type] || doc.type}</td>
                     <td className="td-author">{doc.author}</td>
                     <td className="td-date">{formatDate(doc.date)}</td>
-                    <td>{STATUS_LABELS[doc.status] || doc.status}</td>
+                    <td>{getDisplayStatus(doc)}</td>
                   </tr>
                 );
               })}
