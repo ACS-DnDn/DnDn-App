@@ -366,7 +366,14 @@ _STYLE_RULES = _style_rules()
 
 
 def _wrap_html(title: str, body: str) -> str:
-    """Claude가 생성한 body 콘텐츠를 완전한 HTML 문서로 래핑"""
+    """Claude가 생성한 body 콘텐츠를 완전한 HTML 문서로 래핑.
+    Claude가 <div class="doc"> 앞에 설명 텍스트를 붙이는 경우 제거."""
+    import re
+    clean = body.strip()
+    # <div class="doc"> 이전의 비-HTML 텍스트 제거
+    m = re.search(r'<div\s+class="doc"', clean)
+    if m and m.start() > 0:
+        clean = clean[m.start():]
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -377,7 +384,7 @@ def _wrap_html(title: str, body: str) -> str:
 </style>
 </head>
 <body>
-{body.strip()}
+{clean}
 </body>
 </html>"""
 

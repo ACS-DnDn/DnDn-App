@@ -424,7 +424,15 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
 6. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
 """.strip()
 
-    workplan_json = json.dumps(workplan, ensure_ascii=False, indent=2)
+    # workplan에서 Terraform 생성에 불필요한 대용량 필드 제거
+    _STRIP_KEYS = {"aws_docs", "ref_docs", "ref_doc_contents"}
+    workplan_slim = {k: v for k, v in workplan.items() if k not in _STRIP_KEYS}
+    workplan_json = json.dumps(workplan_slim, ensure_ascii=False, indent=2)
+    # workplan_json도 너무 크면 truncate
+    _MAX_WORKPLAN_CHARS = 30_000
+    if len(workplan_json) > _MAX_WORKPLAN_CHARS:
+        logger.warning("workplan_json 축소: %d → %d자", len(workplan_json), _MAX_WORKPLAN_CHARS)
+        workplan_json = workplan_json[:_MAX_WORKPLAN_CHARS] + "\n... (truncated)"
 
     # 프롬프트 크기 안전장치: existing_tf부터 순차 축소
     user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section)
