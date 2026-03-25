@@ -1016,3 +1016,58 @@ def delete_attachment(
     db.commit()
 
     return SuccessResponse(data={"deleted": True})
+
+
+# ── 문서 삭제 ─────────────────────────────────────────────
+
+@router.delete("/{documentId}", summary="문서 삭제")
+def delete_document(
+    documentId: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = db.query(Document).filter(Document.id == documentId).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+    if doc.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 결재 진행 중(progress)이면 삭제 불가 — draft / rejected / failed 만 허용
+    if doc.status == "progress":
+        raise HTTPException(status_code=400, detail="CANNOT_DELETE_IN_PROGRESS")
+
+    # S3 키를 먼저 수집 (DB 삭제 후 S3 정리 — DB commit 실패 시 파일이 사라지지 않도록)
+    s3_keys_to_delete: list[str] = []
+    tf_prefix: str | None = None
+
+    if doc.html_key:
+        s3_keys_to_delete.append(doc.html_key)
+    if doc.terraform_key:
+        tf_prefix = doc.terraform_key + "/"
+
+    attachments = db.query(Attachment).filter(Attachment.document_id == documentId).all()
+    for att in attachments:
+        s3_keys_to_delete.append(att.file_path)
+
+    # DB: cascade로 approvals, document_reads, attachments 자동 삭제
+    db.delete(doc)
+    db.commit()
+
+    # S3: best-effort 정리
+    s3 = _get_s3_client() if _S3_BUCKET else None
+    if s3:
+        for key in s3_keys_to_delete:
+            try:
+                s3.delete_object(Bucket=_S3_BUCKET, Key=key)
+            except ClientError:
+                pass
+        if tf_prefix:
+            try:
+                paginator = s3.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=tf_prefix):
+                    for obj in page.get("Contents", []):
+                        s3.delete_object(Bucket=_S3_BUCKET, Key=obj["Key"])
+            except ClientError:
+                pass
+
+    return SuccessResponse(data={"deleted": True})

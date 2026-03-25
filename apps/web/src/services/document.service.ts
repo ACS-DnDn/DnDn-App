@@ -119,6 +119,14 @@ export async function deleteAttachment(documentId: string, fileId: string): Prom
   });
 }
 
+// ── 문서 삭제 ─────────────────────────────────────────────
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/documents/${documentId}`, {
+    method: 'DELETE',
+  });
+}
+
 // ── 문서 상세 ─────────────────────────────────────────────
 
 export async function getDocumentById(id: string): Promise<Document | undefined> {
