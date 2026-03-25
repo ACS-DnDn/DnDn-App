@@ -151,6 +151,24 @@ def _doc_id_from_key(s3_key: str) -> str:
     return filename[:-5] if filename.endswith(".json") else filename
 
 
+def _get_company_logo(db, workspace_id: str) -> str:
+    """workspace → owner → company → logo_url 조회"""
+    try:
+        from sqlalchemy import text
+        row = db.execute(
+            text(
+                "SELECT c.logo_url FROM workspaces w "
+                "JOIN users u ON w.owner_id = u.id "
+                "JOIN companies c ON u.company_id = c.id "
+                "WHERE w.id = :ws_id LIMIT 1"
+            ),
+            {"ws_id": workspace_id},
+        ).fetchone()
+        return (row[0] or "") if row else ""
+    except Exception:
+        return ""
+
+
 def _process(workspace_id: str, event_type: str, s3_key: str):
     doc_id = _doc_id_from_key(s3_key)
 
@@ -166,24 +184,42 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     # canonical JSON을 reports/ 경로에도 저장 (API에서 조회용)
     save_report(doc_id, canonical, workspace_id)
 
-    # meta.type 기반으로 HTML 생성
-    meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
-    if meta_type == "WEEKLY":
-        html = generate_weekly_report(canonical)
-    elif meta_type == "HEALTH":
-        html = generate_health_event_report(canonical)
-    else:
-        html = generate_event_report(canonical)
-
-    # HTML 저장 → {workspace_id}/reports/{doc_id}.html
-    html_key = save_report_html(doc_id, html, workspace_id)
-
-    # DB에 Document 레코드 생성
+    # DB에 Document 레코드 생성 전 문서번호 채번 (HTML 생성에 필요)
     doc_type = {
         "findings": "이벤트보고서",
         "health": "헬스이벤트보고서",
         "weekly": "주간보고서",
     }.get(event_type, "이벤트보고서")
+
+    db = SessionLocal()
+    try:
+        existing = db.query(Document).filter(Document.id == doc_id).first()
+        if existing:
+            logger.info("스킵 (Document 이미 존재): %s", doc_id)
+            db.close()
+            return
+        doc_num = _next_doc_num(db, doc_type)
+        logo_url = _get_company_logo(db, workspace_id)
+    finally:
+        db.close()
+
+    doc_meta = {
+        "doc_num": doc_num,
+        "author_label": "DnDn Agent",
+        "company_logo_url": logo_url,
+    }
+
+    # meta.type 기반으로 HTML 생성
+    meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
+    if meta_type == "WEEKLY":
+        html = generate_weekly_report(canonical, doc_meta=doc_meta)
+    elif meta_type == "HEALTH":
+        html = generate_health_event_report(canonical, doc_meta=doc_meta)
+    else:
+        html = generate_event_report(canonical, doc_meta=doc_meta)
+
+    # HTML 저장 → {workspace_id}/reports/{doc_id}.html
+    html_key = save_report_html(doc_id, html, workspace_id)
 
     # HTML에서 제목 추출
     title = _extract_title_from_html(html, doc_id)
@@ -191,22 +227,19 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     created = False
     db = SessionLocal()
     try:
-        existing = db.query(Document).filter(Document.id == doc_id).first()
-        if not existing:
-            doc_num = _next_doc_num(db, doc_type)
-            doc = Document(
-                id=doc_id,
-                doc_num=doc_num,
-                title=title,
-                type=doc_type,
-                html_key=html_key,
-                json_key=f"{workspace_id}/reports/{doc_id}.json",
-                workspace_id=workspace_id,
-                status="done",
-            )
-            db.add(doc)
-            db.commit()
-            created = True
+        doc = Document(
+            id=doc_id,
+            doc_num=doc_num,
+            title=title,
+            type=doc_type,
+            html_key=html_key,
+            json_key=f"{workspace_id}/reports/{doc_id}.json",
+            workspace_id=workspace_id,
+            status="done",
+        )
+        db.add(doc)
+        db.commit()
+        created = True
     except Exception as e:
         logger.error("Document DB 저장 실패 (%s): %s", doc_id, e, exc_info=True)
         db.rollback()

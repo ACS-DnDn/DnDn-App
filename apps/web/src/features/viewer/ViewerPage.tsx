@@ -114,7 +114,7 @@ export function ViewerPage() {
   }, [doc?.content]);
 
   /* 참조 문서 목록 — API가 직접 반환하는 refDocs 사용 */
-  const refDocList = (doc?.refDocs ?? []).map(r => ({ id: r.id, name: r.title, type: r.type }));
+  const refDocList = (doc?.refDocs ?? []).map(r => ({ id: r.id, docNum: r.docNum || r.id, name: r.title, type: r.type }));
 
   /* 첨부파일 — API 응답 사용 */
   const attachments = doc?.attachments ?? [];
@@ -217,7 +217,7 @@ export function ViewerPage() {
                 <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)' }}>참조 문서 없음</div>
               ) : refDocList.map(rd => (
                 <div key={rd.id} className="sidebar-ref-item" onClick={() => navigate(`/viewer/${rd.id}`)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/viewer/${rd.id}`); } }}>
-                  <div className="sidebar-ref-no">{rd.id}</div>
+                  <div className="sidebar-ref-no">{rd.docNum}</div>
                   <div className="sidebar-ref-row">
                     <span className="sidebar-ref-name">{rd.name}</span>
                     <span className="sidebar-ref-date">{rd.type}</span>
