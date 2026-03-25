@@ -75,7 +75,7 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 def _notify(user: User, text: str) -> None:
     """결재 관련 Slack DM 알림 — 실패해도 메인 플로우에 영향 없음."""
-    if user and user.slack_access_token and user.slack_notify and user.slack_user_id:
+    if user and user.slack_access_token and user.slack_notify is not False and user.slack_user_id:
         try:
             send_message(user.slack_access_token, user.slack_user_id, text)
         except SlackError:
