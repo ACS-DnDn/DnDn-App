@@ -78,6 +78,19 @@ def _next_doc_num(db: Session, doc_type: str) -> str:
     seq = (max_seq or 0) + 1
     return f"{prefix}{seq:04d}"
 
+_TITLE_RE = re.compile(r'<div\s+class="doc-header-title">\s*(.+?)\s*</div>', re.DOTALL)
+
+
+def _extract_title_from_html(html: str, fallback: str) -> str:
+    """생성된 HTML에서 doc-header-title 텍스트를 추출."""
+    m = _TITLE_RE.search(html)
+    if m:
+        title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        if title:
+            return title
+    return fallback
+
+
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 _raw_origins = os.getenv(
@@ -133,10 +146,13 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         html_key = save_report_html(doc_id, html, workspace_id)
         content_url = get_presigned_url(html_key)
 
+        # HTML에서 제목 추출 (AI가 생성한 실제 문서 제목)
+        title = _extract_title_from_html(html, req.target or doc_id)
+
         doc = Document(
             id=doc_id,
             doc_num=doc_num,
-            title=req.target or doc_id,
+            title=title,
             type=doc_type,
             html_key=html_key,
             json_key=json_key,
@@ -149,7 +165,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         job.status = "done"
         job.document_id = doc_id
         job.content_url = content_url
-        job.title = req.target
+        job.title = title
         db.commit()
 
 
@@ -274,10 +290,11 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error("event_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+    evt_title = _extract_title_from_html(html, req.target or doc_id)
     doc = Document(
         id=doc_id,
         doc_num=evt_doc_num,
-        title=req.target or doc_id,
+        title=evt_title,
         type="이벤트보고서",
         html_key=html_key,
         json_key=json_key,
@@ -331,10 +348,11 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     except Exception as e:
         logger.error("health_event_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+    health_title = _extract_title_from_html(html, req.target or doc_id)
     doc = Document(
         id=doc_id,
         doc_num=health_doc_num,
-        title=req.target or doc_id,
+        title=health_title,
         type="헬스이벤트보고서",
         html_key=html_key,
         json_key=json_key,
@@ -396,10 +414,11 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
     except Exception as e:
         logger.error("weekly_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+    weekly_title = _extract_title_from_html(html, req.target or doc_id)
     doc = Document(
         id=doc_id,
         doc_num=weekly_doc_num,
-        title=req.target or doc_id,
+        title=weekly_title,
         type="주간보고서",
         html_key=html_key,
         json_key=json_key,
