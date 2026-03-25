@@ -72,6 +72,7 @@ export function PlanPage() {
   const tfSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [validationPopup, setValidationPopup] = useState<'security' | 'policy' | null>(null);
   const logPanelRef = useRef<HTMLDivElement>(null);
+  const [editDeployLog, setEditDeployLog] = useState<import('@/mocks/types/document').DeployLogEntry[] | null>(null);
 
   /* ── 결재 상신 모달 state ── */
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
@@ -152,6 +153,8 @@ export function PlanPage() {
       }
       // 제목 로드
       if (doc.name) setNlTarget(doc.name);
+      // 배포 실패 이력 저장 (AI 재생성 시 참조)
+      if (doc.deployLog && doc.deployLog.length > 0) setEditDeployLog(doc.deployLog);
     }).catch((err) => {
       console.error('문서 로드 실패:', err);
     });
@@ -396,7 +399,11 @@ export function PlanPage() {
     try {
       const raw = await reportApiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
         method: 'POST',
-        body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
+        body: JSON.stringify({
+          documentId: draftDocumentId,
+          workspaceId: ws?.id,
+          ...(editDeployLog && { deployLog: editDeployLog }),
+        }),
       });
       const { jobId } = raw.data;
       setTfJobId(jobId);

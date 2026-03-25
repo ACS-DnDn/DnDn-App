@@ -33,6 +33,7 @@ class TerraformRequest(BaseModel):
     workspace_id: str | None = None
     repo_name: str | None = None
     github_token: str | None = None
+    deploy_log: list[dict] | None = None  # 이전 배포 실패 이력 (재수정 시 AI 참조용)
 
 
 class SaveRequest(BaseModel):

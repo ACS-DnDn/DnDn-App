@@ -7,6 +7,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -287,12 +288,16 @@ def get_documents(
             Document.workspace_id.in_(my_ws_ids), Document.status == "done"
         )
     elif tab == "action":
-        # 결재 대상 문서는 워크스페이스 무관 — Approval 기준으로 직접 조회
+        # 결재 대상 문서 + deploy_failed 작성자 문서
         query = (
             db.query(Document)
-            .join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            .outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
         )
     else:
         query = db.query(Document).filter(
@@ -451,6 +456,14 @@ def submit_document(
 
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
+
+    # 재상신 시 이전 PR/배포 정보 초기화 (새 결재·배포 사이클)
+    if not req.isDraft:
+        doc.pr_number = None
+        doc.pr_url = None
+        doc.pr_status = None
+        doc.auto_merge = None
+        doc.deploy_log = None
 
     # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
     need_html_update = False

@@ -424,8 +424,8 @@ export function ViewerPage() {
           </div>
         )}
 
-        {/* 반려 문서 — 기안자 수정 버튼 */}
-        {doc.status === 'rejected' && doc.authorId && session?.id === doc.authorId && (
+        {/* 반려/배포실패 문서 — 기안자 수정 버튼 */}
+        {(doc.status === 'rejected' || doc.status === 'deploy_failed') && doc.authorId && session?.id === doc.authorId && (
           <div className="sidebar-actions">
             <button className="btn-edit-rejected" onClick={() => navigate(`/plan?editDocId=${doc.id}`)}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>
