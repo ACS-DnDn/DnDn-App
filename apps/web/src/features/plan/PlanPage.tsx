@@ -94,7 +94,7 @@ export function PlanPage() {
       .then(res => setOrgData(res.data.items))
       .catch(() => {});
     getDocuments({ pageSize: 100 })
-      .then(res => setDocList(res.items))
+      .then(res => setDocList(res.items.filter(d => d.type !== '작업계획서')))
       .catch(() => {});
     apiFetch<{ success: boolean; data: { items: { id: string; alias: string; acctId: string }[] } }>('/workspaces')
       .then(res => setWs(res.data.items[0] ?? null))
