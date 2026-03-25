@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Workspace
-from apps.api.src.security.slack_oauth import send_message, SlackError
+from apps.api.src.security.slack_oauth import send_message, join_channel, SlackError
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ def notify_new_document(req: NotifyNewDocRequest, db: Session = Depends(get_db))
     text = f"\U0001f4c4 새 {req.docType}이 생성되었습니다: {req.title}"
 
     try:
+        join_channel(owner.slack_access_token, owner.slack_channel)
         send_message(owner.slack_access_token, owner.slack_channel, text)
     except SlackError as e:
         logger.warning("Slack 알림 전송 실패 (owner=%s): %s", owner.id, e.message)

@@ -25,7 +25,7 @@ _SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 _SLACK_API = "https://slack.com/api"
 
 # OAuth 스코프: 채널 메시지 전송 + 사용자 DM
-_SCOPES = "chat:write,channels:read"
+_SCOPES = "chat:write,channels:read,channels:join"
 _USER_SCOPES = "identity.basic,identity.team"
 
 
@@ -189,3 +189,25 @@ def send_message(token: str, channel: str, text: str) -> None:
 
     if not data.get("ok"):
         raise SlackError(502, "SLACK_SEND_ERROR", data.get("error", "메시지 전송 실패"))
+
+
+# ── 5. 채널 참여 ────────────────────────────────────────
+def join_channel(token: str, channel: str) -> None:
+    """Bot을 지정 채널에 참여시킨다. 이미 참여 중이면 무시."""
+    try:
+        resp = requests.post(
+            f"{_SLACK_API}/conversations.join",
+            json={"channel": channel},
+            headers=_slack_headers(token),
+            timeout=10,
+        )
+    except requests.exceptions.RequestException:
+        return
+
+    try:
+        data = resp.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        return
+
+    if not data.get("ok") and data.get("error") != "already_in_channel":
+        pass
