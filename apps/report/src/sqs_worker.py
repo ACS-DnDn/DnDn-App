@@ -91,6 +91,74 @@ def _sqs_client():
     return boto3.client("sqs", region_name=REGION)
 
 
+# raw 디렉토리 → 첨부파일 표시명 매핑
+_EVIDENCE_DIR_LABELS = {
+    "cloudtrail": "CloudTrail_이벤트로그",
+    "advisor": "TrustedAdvisor_점검결과",
+    "access-analyzer": "AccessAnalyzer_분석결과",
+    "cost-explorer": "CostExplorer_비용데이터",
+    "cloudwatch": "CloudWatch_메트릭",
+    "config": "Config_리소스데이터",
+}
+
+
+def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, canonical_size_kb: int):
+    """활동보고서의 Worker raw evidence 파일들을 첨부파일로 등록."""
+    # 1) 정제된 canonical 데이터
+    db.add(Attachment(
+        id=f"{doc_id}-canonical",
+        document_id=doc_id,
+        original_name="활동보고_정제데이터.json",
+        file_path=json_key,
+        size_kb=canonical_size_kb,
+    ))
+
+    # 2) raw evidence 파일들 (Worker가 S3에 업로드한 수집 데이터)
+    raw_prefix_uri = (
+        canonical.get("meta", {}).get("evidence", {}).get("raw_prefix_s3_uri", "")
+    )
+    if not raw_prefix_uri:
+        return
+
+    # s3://bucket/prefix/raw/ → bucket, key_prefix
+    stripped = raw_prefix_uri.replace("s3://", "")
+    slash_idx = stripped.find("/")
+    if slash_idx < 0:
+        return
+    bucket = stripped[:slash_idx]
+    key_prefix = stripped[slash_idx + 1:]
+
+    try:
+        paginator = _s3_client().get_paginator("list_objects_v2")
+        idx = 0
+        for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                size_kb = max(1, obj["Size"] // 1024)
+                filename = key.split("/")[-1]
+
+                # raw/ 이후 첫 디렉토리로 카테고리 판별
+                relative = key[len(key_prefix):]
+                category = relative.split("/")[0] if "/" in relative else ""
+
+                if category == "meta":
+                    continue  # job_payload 등 메타데이터는 스킵
+
+                label = _EVIDENCE_DIR_LABELS.get(category, category)
+                display_name = f"{label}_{filename}" if label else filename
+
+                db.add(Attachment(
+                    id=f"{doc_id}-evidence-{idx}",
+                    document_id=doc_id,
+                    original_name=display_name,
+                    file_path=key,
+                    size_kb=size_kb,
+                ))
+                idx += 1
+    except Exception as e:
+        logger.warning("활동보고서 evidence 파일 목록 조회 실패: %s", e)
+
+
 def _html_exists(doc_id: str, workspace_id: str) -> bool:
     """이미 HTML이 S3에 존재하면 스킵"""
     key = f"{workspace_id}/reports/{doc_id}.html"
@@ -244,29 +312,30 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
         canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
 
-        # 1) 원본 이벤트 데이터 (Lambda가 S3에 저장한 원본)
-        raw_name_map = {
-            "findings": "SecurityHub_Finding_원본.json",
-            "health": "AWS_Health_Event_원본.json",
-            "weekly": "주간보고_수집데이터.json",
-        }
-        raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
-        db.add(Attachment(
-            id=f"{doc_id}-raw",
-            document_id=doc_id,
-            original_name=raw_name,
-            file_path=s3_key,
-            size_kb=canonical_size_kb,
-        ))
-
-        # 2) 정제된 보고서 데이터
-        db.add(Attachment(
-            id=f"{doc_id}-canonical",
-            document_id=doc_id,
-            original_name="보고서_정제데이터.json",
-            file_path=json_key,
-            size_kb=canonical_size_kb,
-        ))
+        if event_type == "weekly":
+            # 활동보고서: Worker가 수집한 raw evidence 파일들 등록
+            _register_weekly_evidence(db, doc_id, canonical, json_key, canonical_size_kb)
+        else:
+            # 이벤트/헬스 보고서: 원본 + 정제 데이터
+            raw_name_map = {
+                "findings": "SecurityHub_Finding_원본.json",
+                "health": "AWS_Health_Event_원본.json",
+            }
+            raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
+            db.add(Attachment(
+                id=f"{doc_id}-raw",
+                document_id=doc_id,
+                original_name=raw_name,
+                file_path=s3_key,
+                size_kb=canonical_size_kb,
+            ))
+            db.add(Attachment(
+                id=f"{doc_id}-canonical",
+                document_id=doc_id,
+                original_name="보고서_정제데이터.json",
+                file_path=json_key,
+                size_kb=canonical_size_kb,
+            ))
 
         db.commit()
         created = True

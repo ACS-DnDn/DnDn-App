@@ -148,6 +148,11 @@ export function ViewerPage() {
     if (refBlobUrl) { URL.revokeObjectURL(refBlobUrl); setRefBlobUrl(null); }
   }
 
+  // 언마운트 시 refBlobUrl 메모리 누수 방지
+  useEffect(() => {
+    return () => { if (refBlobUrl) URL.revokeObjectURL(refBlobUrl); };
+  }, [refBlobUrl]);
+
   /* 모달 */
   const [tfModalOpen, setTfModalOpen] = useState(false);
   const [tfTab, setTfTab] = useState<'code' | 'plan'>('code');

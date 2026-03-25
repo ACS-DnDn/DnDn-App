@@ -45,9 +45,12 @@ from .s3_client import (
 )
 from .makejob import create_job, get_job
 from .models import ReportJob, Document, JobType, Workspace, User, Attachment
-from .database import SessionLocal, get_db
+from .database import SessionLocal, get_db, Base, engine
 
 logger = logging.getLogger(__name__)
+
+# 테이블 자동 생성 (Attachment 등 신규 모델 반영)
+Base.metadata.create_all(bind=engine)
 
 # ── 문서번호 타입 매핑 ──────────────────────────────────────
 DOC_TYPE_CODE = {
