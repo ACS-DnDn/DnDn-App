@@ -159,6 +159,7 @@ export function ViewerPage() {
 
   /* 모달 */
   const [tfModalOpen, setTfModalOpen] = useState(false);
+  const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
@@ -234,6 +235,12 @@ export function ViewerPage() {
           {hasTerraform && (
             <button className="btn-tf-popup" onClick={() => setTfModalOpen(true)}>
               Terraform 코드 보기
+            </button>
+          )}
+          {!isReport && doc.prNumber && (
+            <button className="btn-deploy-popup" onClick={() => setDeployModalOpen(true)}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 8h12M8 2v12"/><circle cx="8" cy="8" r="6"/></svg>
+              배포 현황
             </button>
           )}
         </div>
@@ -449,6 +456,68 @@ export function ViewerPage() {
         </div>
       </div>
 
+
+      {/* ── 배포 현황 모달 ── */}
+      <div className={`viewer-modal-overlay${deployModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setDeployModalOpen(false); }}>
+        <div className="viewer-modal deploy-modal">
+          <div className="deploy-modal-header">
+            <div className="deploy-modal-title">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 8h12M8 2v12"/><circle cx="8" cy="8" r="6"/></svg>
+              배포 현황
+            </div>
+            <button className="deploy-modal-close" onClick={() => setDeployModalOpen(false)}>&times;</button>
+          </div>
+          <div className="deploy-modal-body">
+            <div className="deploy-info-row">
+              <span className="deploy-info-label">PR</span>
+              <a className="deploy-info-link" href={doc.prUrl} target="_blank" rel="noopener noreferrer">
+                #{doc.prNumber}
+              </a>
+              {doc.autoMerge !== undefined && (
+                <span className={`deploy-merge-badge ${doc.autoMerge ? 'auto' : 'manual'}`}>
+                  {doc.autoMerge ? '자동 Merge' : '수동 Merge'}
+                </span>
+              )}
+            </div>
+            {(doc.deployLog ?? []).length > 0 && (
+              <div className="deploy-timeline">
+                {(doc.deployLog ?? []).map((entry, i) => {
+                  const dotCls = entry.status === 'success' ? 'dt-success' : entry.status === 'failure' ? 'dt-failure' : 'dt-info';
+                  const eventLabels: Record<string, string> = {
+                    pr_created: 'PR 생성',
+                    checks_passed: '검증 통과',
+                    checks_failed: '검증 실패',
+                    merged: 'Merge',
+                    applied: 'Apply 성공',
+                    apply_failed: 'Apply 실패',
+                  };
+                  return (
+                    <div className="deploy-event" key={i}>
+                      <div className={`deploy-event-dot ${dotCls}`} />
+                      <div className="deploy-event-body">
+                        <div className="deploy-event-header">
+                          <span className="deploy-event-label">{eventLabels[entry.event] ?? entry.event}</span>
+                          {entry.context && <span className="deploy-event-ctx">{entry.context}</span>}
+                          <span className="deploy-event-time">{fmtDate(entry.timestamp)}</span>
+                        </div>
+                        {entry.description && <div className="deploy-event-desc">{entry.description}</div>}
+                        {entry.url && (
+                          <a className="deploy-event-link" href={entry.url} target="_blank" rel="noopener noreferrer">
+                            상세 보기 →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {(doc.deployLog ?? []).length === 0 && (
+              <div style={{ padding: '16px 0', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>배포 이벤트가 없습니다.</div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* ── 결재 의견 모달 ── */}
       <div className={`viewer-modal-overlay${approveModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) setApproveModalOpen(false); }}>

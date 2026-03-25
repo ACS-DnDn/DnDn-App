@@ -287,13 +287,14 @@ def get_documents(
             Document.workspace_id.in_(my_ws_ids), Document.status == "done"
         )
     elif tab == "action":
-        # 결재 대상 문서 + deploy_failed 작성자 문서
+        # 결재 대상 문서 + 내가 쓴 반려/배포실패 문서
         query = (
             db.query(Document)
             .outerjoin(Approval, Approval.document_id == Document.id)
             .filter(
                 or_(
-                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Approval.user_id == current_user.id, Approval.status == "current"),
+                    and_(Document.author_id == current_user.id, Document.status == "rejected"),
                     and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
                 )
             )
@@ -819,12 +820,13 @@ def mark_all_documents_as_read(
     query = db.query(Document.id)
 
     if req.tab == "action":
-        # action 탭: 내가 결재할 차례거나 내가 반려한 문서 + deploy_failed 작성자 문서
+        # action 탭: 내가 결재할 차례거나 내가 쓴 반려/배포실패 문서
         query = (
             query.outerjoin(Approval, Approval.document_id == Document.id)
             .filter(
                 or_(
-                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Approval.user_id == current_user.id, Approval.status == "current"),
+                    and_(Document.author_id == current_user.id, Document.status == "rejected"),
                     and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
                 )
             )

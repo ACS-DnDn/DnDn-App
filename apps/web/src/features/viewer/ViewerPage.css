@@ -20,6 +20,8 @@
 .toolbar-spacer { flex: 1; }
 .btn-tf-popup { padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(112,72,232,.22); background: var(--purple-soft); cursor: pointer; font-size: 12px; font-weight: 700; color: var(--purple); display: flex; align-items: center; gap: 6px; transition: all .15s; font-family: 'Pretendard', sans-serif; }
 .btn-tf-popup:hover { background: rgba(112,72,232,.14); }
+.btn-deploy-popup { padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(34,139,230,.22); background: rgba(34,139,230,.08); cursor: pointer; font-size: 12px; font-weight: 700; color: #228BE6; display: flex; align-items: center; gap: 6px; transition: all .15s; font-family: 'Pretendard', sans-serif; }
+.btn-deploy-popup:hover { background: rgba(34,139,230,.16); }
 
 .doc-scroll { flex: 1; overflow-y: auto; padding: 36px 44px; }
 .doc-scroll:has(.viewer-iframe) { padding: 12px 16px; }
@@ -216,11 +218,7 @@ pre.tf-pre { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,2
 .approve-auto-merge { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
 .approve-auto-merge input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--mint); cursor: pointer; }
 
-/* ── 배포 현황 패널 ── */
-.deploy-status-panel { padding: 0 16px 14px; }
-.deploy-status-hd { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
-.deploy-status-hd svg { width: 15px; height: 15px; flex-shrink: 0; }
-
+/* ── 배포 현황 ── */
 .deploy-info-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
 .deploy-info-label { font-size: 11px; font-weight: 700; color: var(--text-muted); }
 .deploy-info-link { font-size: 12px; font-weight: 600; color: var(--mint); text-decoration: none; }
@@ -245,6 +243,15 @@ pre.tf-pre { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,2
 .deploy-event-desc { font-size: 11px; color: var(--text-sub); margin-top: 3px; line-height: 1.4; word-break: break-all; }
 .deploy-event-link { font-size: 10.5px; color: var(--mint); text-decoration: none; margin-top: 2px; display: inline-block; }
 .deploy-event-link:hover { text-decoration: underline; }
+
+/* 배포 현황 모달 */
+.deploy-modal { background: var(--bg-card); width: min(520px, 92vw); max-height: min(70vh, 560px); display: flex; flex-direction: column; }
+.deploy-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.deploy-modal-title { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.deploy-modal-title svg { color: #228BE6; }
+.deploy-modal-close { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border-med); background: transparent; cursor: pointer; color: var(--text-muted); font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all .12s; }
+.deploy-modal-close:hover { background: var(--red-soft); color: var(--red); border-color: var(--red); }
+.deploy-modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
 
 /* 참조문서 모달 */
 .ref-doc-modal { background: var(--bg-card); width: min(900px, 92vw); height: min(80vh, 700px); }
