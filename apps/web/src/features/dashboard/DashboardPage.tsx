@@ -17,6 +17,8 @@ function formatDate(d: string) {
   const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
   const kst = new Date(utc.getTime() + (isNaN(utc.getTime()) ? 0 : 0));
   if (isNaN(kst.getTime())) {
+    // 이미 "YYYY.MM.DD HH:MM" 포맷이면 그대로 반환
+    if (/^\d{4}\.\d{2}\.\d{2}/.test(d)) return d;
     const parts = d.split(' ');
     const dp = (parts[0] ?? '').split('-');
     return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
