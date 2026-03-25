@@ -13,10 +13,8 @@ from .database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")  # Legacy
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")  # us-east-1
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")
+# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")  # 이전 모델
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0")
 HAIKU_MODEL_ID = os.getenv(
     "BEDROCK_HAIKU_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
 )
@@ -133,14 +131,19 @@ def _summarize_tf_code(tf_text: str) -> str:
             "max_tokens": 8192,
             "system": (
                 "당신은 Terraform 코드 분석 전문가입니다. "
-                "다음 기존 Terraform 코드를 분석하여 새 코드 생성 시 충돌을 방지할 수 있도록 요약하세요.\n\n"
-                "반드시 포함할 항목:\n"
-                "- 모든 resource/data/module 블록의 타입과 이름 (예: resource \"aws_instance\" \"web\")\n"
-                "- 모든 variable/output/local 이름과 타입\n"
-                "- provider 설정과 backend 설정\n"
+                "다음 기존 Terraform 코드를 분석하여 새 코드 생성 시 terraform plan 충돌을 방지할 수 있도록 요약하세요.\n\n"
+                "반드시 포함할 항목 (하나도 빠짐없이):\n"
+                "- 모든 resource 블록: 정확한 타입과 이름 (예: resource \"aws_instance\" \"web\") — 누락 시 이름 충돌 발생\n"
+                "- 모든 data 블록: 정확한 타입과 이름\n"
+                "- 모든 module 블록: 이름과 source 경로\n"
+                "- 모든 variable: 이름, 타입, default 값 (있는 경우)\n"
+                "- 모든 output: 이름과 value 표현식\n"
+                "- 모든 locals: 이름과 값\n"
+                "- provider 설정: 버전 제약, region, 별칭\n"
+                "- backend 설정: 타입과 주요 설정\n"
                 "- 네이밍 컨벤션 패턴 (접두사, 태그 구조 등)\n"
                 "- 리소스 간 참조 관계 (depends_on, 변수 참조)\n\n"
-                "코드 전체를 복사하지 말고, 위 항목을 구조화된 목록으로 정리하세요."
+                "resource/data/variable/output 목록은 빠짐없이 나열하세요. 이 목록이 불완전하면 이름 충돌로 plan이 실패합니다."
             ),
             "messages": [{"role": "user", "content": tf_text}],
         }
@@ -178,8 +181,8 @@ def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
 # MCP 컨텍스트 조회
 # ─────────────────────────────────────────────────
 
-def _extract_resource_hint(workplan: dict) -> str:
-    """작업계획서에서 AWS 리소스 타입 추출"""
+def _extract_resource_hints(workplan: dict) -> list[str]:
+    """작업계획서에서 관련 AWS 리소스 타입을 모두 추출 (복수)"""
     title = workplan.get("title", "").lower()
     steps_text = " ".join(
         s.get("description", "") for s in workplan.get("steps", [])
@@ -195,40 +198,63 @@ def _extract_resource_hint(workplan: dict) -> str:
         "waf": "aws_wafv2_web_acl",
         "alb": "aws_lb",
         "vpc": "aws_vpc",
+        "subnet": "aws_subnet",
+        "security group": "aws_security_group",
+        "보안 그룹": "aws_security_group",
+        "보안그룹": "aws_security_group",
         "iam": "aws_iam_role",
+        "mfa": "aws_iam_virtual_mfa_device",
         "cloudwatch": "aws_cloudwatch_metric_alarm",
+        "cloudtrail": "aws_cloudtrail",
+        "kms": "aws_kms_key",
         "certificate": "aws_acm_certificate",
         "인증서": "aws_acm_certificate",
         "인스턴스": "aws_instance",
         "클러스터": "aws_eks_cluster",
         "런타임": "aws_lambda_function",
+        "nat": "aws_nat_gateway",
+        "route": "aws_route_table",
+        "eip": "aws_eip",
+        "sns": "aws_sns_topic",
+        "sqs": "aws_sqs_queue",
+        "dynamodb": "aws_dynamodb_table",
+        "elasticache": "aws_elasticache_cluster",
     }
+    matched = []
+    seen = set()
     for keyword, resource in resource_map.items():
-        if keyword in combined:
-            return resource
-    return ""
+        if keyword in combined and resource not in seen:
+            matched.append(resource)
+            seen.add(resource)
+    return matched[:5]  # 최대 5개
+
+
+_MAX_MCP_DOC_CHARS = 8000  # Provider 문서 제한 (기존 3000 → 8000)
 
 
 def _fetch_mcp_context(workplan: dict) -> dict:
-    """MCP 서버에서 AWS Provider 문서 + Best Practices 조회"""
+    """MCP 서버에서 AWS Provider 문서 + Best Practices 조회 (복수 리소스)"""
     context = {"aws_docs": "", "best_practices": ""}
 
     mcp = TerraformMCPClient()
     try:
         mcp.start()
-        resource_hint = _extract_resource_hint(workplan)
+        resource_hints = _extract_resource_hints(workplan)
 
-        # AWS Provider 문서 조회
-        if resource_hint:
-            docs = mcp.call_tool("SearchAwsProviderDocs", {"asset": resource_hint})
-            context["aws_docs"] = docs[:3000] if docs else ""
-            print(f"[MCP] AWS 문서 조회 완료: {resource_hint} ({len(context['aws_docs'])}자)")
+        # 복수 리소스 문서 조회
+        all_docs = []
+        for hint in resource_hints:
+            docs = mcp.call_tool("SearchAwsProviderDocs", {"asset": hint})
+            if docs:
+                all_docs.append(f"### {hint}\n{docs[:_MAX_MCP_DOC_CHARS]}")
+                print(f"[MCP] AWS 문서 조회: {hint} ({min(len(docs), _MAX_MCP_DOC_CHARS)}자)")
+        context["aws_docs"] = "\n\n".join(all_docs)
 
-        # AWS AWSCC Provider 문서도 조회 (best practices 대체)
-        if resource_hint:
-            awscc_hint = resource_hint.replace("aws_", "awscc_", 1)
+        # AWSCC 문서 (첫 번째 리소스만)
+        if resource_hints:
+            awscc_hint = resource_hints[0].replace("aws_", "awscc_", 1)
             awscc = mcp.call_tool("SearchAwsccProviderDocs", {"asset": awscc_hint})
-            context["best_practices"] = awscc[:2000] if awscc else ""
+            context["best_practices"] = awscc[:4000] if awscc else ""
             print(f"[MCP] AWSCC Provider 문서 조회 완료 ({len(context['best_practices'])}자)")
 
     except Exception as e:
@@ -441,14 +467,25 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
 
     system = f"""
 당신은 AWS 인프라 테라폼 코드 전문가입니다.
-작업계획서, 기존 테라폼 코드, AWS 공식 문서를 분석하여 바로 apply 가능한 테라폼 코드를 생성하세요.
+작업계획서, 기존 테라폼 코드, AWS 공식 문서를 분석하여 바로 terraform plan/apply가 통과하는 테라폼 코드를 생성하세요.
 
 규칙:
 1. 기존 코드의 네이밍 컨벤션, 변수 스타일, 태그 구조를 반드시 따르세요
 2. AWS Provider 공식 문서의 최신 argument를 사용하세요
 3. AWS Best Practices를 반드시 준수하세요
 4. Checkov 보안 스캔을 통과할 수 있도록 보안 설정을 포함하세요{opa_rule}
-6. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
+
+terraform plan 통과를 위한 필수 규칙:
+- provider, terraform, backend 블록은 절대 생성하지 마세요. 기존 코드에 이미 있습니다.
+- 기존 코드에 이미 존재하는 resource/data/module과 동일한 타입+이름 조합을 절대 사용하지 마세요 (충돌 방지)
+- variable은 기존 variables.tf에 정의된 것만 참조하거나, 새 variable을 선언하세요. 미정의 variable 참조는 plan 실패 원인입니다.
+- data source로 기존 리소스를 참조할 때 AWS 콘솔 이름이 아닌 Terraform에서 사용하는 정확한 식별자를 사용하세요
+- 모든 required argument를 빠짐없이 포함하세요. optional이라도 AWS 리소스 생성에 필수적인 인자는 포함하세요.
+- deprecated된 argument는 사용하지 마세요. 공식 문서의 최신 대체 argument를 사용하세요.
+- 리소스 간 참조는 resource_type.resource_name.attribute 형식을 정확히 사용하세요
+- 생성하는 파일은 작업계획서의 변경사항만 담아야 합니다. 기존 코드를 복사하여 포함하지 마세요.
+
+반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요.
 """.strip()
 
     # workplan에서 Terraform 생성에 불필요한 대용량 필드 제거
