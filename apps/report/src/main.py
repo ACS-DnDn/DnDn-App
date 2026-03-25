@@ -163,13 +163,13 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         )
         db.add(doc)
 
-        # 근거자료 첨부 — canonical JSON
-        canonical_json_str = json.dumps(canonical, ensure_ascii=False)
-        canonical_size_kb = max(1, len(canonical_json_str.encode("utf-8")) // 1024)
+        # 근거자료 첨부 — AI 생성 입력 데이터
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
+        canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
         db.add(Attachment(
             id=f"{doc_id}-canonical",
             document_id=doc_id,
-            original_name="작업계획_원본데이터.json",
+            original_name="작업계획_요청데이터.json",
             file_path=json_key,
             size_kb=canonical_size_kb,
         ))

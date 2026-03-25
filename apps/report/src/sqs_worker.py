@@ -240,13 +240,30 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         )
         db.add(doc)
 
-        # 근거자료 첨부 — canonical JSON (원본 이벤트 데이터)
-        canonical_json_str = json.dumps(canonical, ensure_ascii=False)
-        canonical_size_kb = max(1, len(canonical_json_str.encode("utf-8")) // 1024)
+        # 근거자료 첨부
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
+        canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
+
+        # 1) 원본 이벤트 데이터 (Lambda가 S3에 저장한 원본)
+        raw_name_map = {
+            "findings": "SecurityHub_Finding_원본.json",
+            "health": "AWS_Health_Event_원본.json",
+            "weekly": "주간보고_수집데이터.json",
+        }
+        raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
+        db.add(Attachment(
+            id=f"{doc_id}-raw",
+            document_id=doc_id,
+            original_name=raw_name,
+            file_path=s3_key,
+            size_kb=canonical_size_kb,
+        ))
+
+        # 2) 정제된 보고서 데이터
         db.add(Attachment(
             id=f"{doc_id}-canonical",
             document_id=doc_id,
-            original_name="보고서_원본데이터.json",
+            original_name="보고서_정제데이터.json",
             file_path=json_key,
             size_kb=canonical_size_kb,
         ))
