@@ -496,18 +496,25 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
 
 def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
     """모든 체크 통과 시 auto_merge 설정에 따라 머지하거나 수동 안내."""
+    _logger.info("[auto_merge] 시작: doc=%s pr=#%s pr_status=%s auto_merge=%s",
+                 doc.id, doc.pr_number, doc.pr_status, doc.auto_merge)
     if not doc.pr_number or doc.pr_status in ("merged",):
+        _logger.info("[auto_merge] 스킵: pr_number=%s pr_status=%s", doc.pr_number, doc.pr_status)
         return
 
     ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
     if not ws:
+        _logger.warning("[auto_merge] 워크스페이스 없음: doc=%s", doc.id)
         return
     owner_user = db.query(User).filter(User.id == ws.owner_id).first()
     if not owner_user or not owner_user.github_access_token:
+        _logger.warning("[auto_merge] owner 또는 GitHub 토큰 없음: ws=%s owner=%s", ws.id, ws.owner_id)
         return
 
     # 전체 체크 통과 확인
-    if not get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number):
+    checks_ok = get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
+    _logger.info("[auto_merge] checks_passed=%s for #%s", checks_ok, doc.pr_number)
+    if not checks_ok:
         return
 
     # 체크 통과 → deploy_failed 복구 (이전 실패에서 재통과한 경우)

@@ -340,7 +340,7 @@ def create_terraform_pr(
     else:
         _check_response(ref_create_resp)
 
-    # 7) PR 생성
+    # 7) PR 생성 (이미 열린 PR이 있으면 재활용)
     pr_resp = requests.post(
         f"{api}/pulls",
         headers=headers,
@@ -352,7 +352,29 @@ def create_terraform_pr(
         },
         timeout=10,
     )
-    _check_response(pr_resp)
+    if pr_resp.status_code == 422:
+        # 이미 같은 head→base PR이 열려 있음 → 기존 PR 조회
+        existing_resp = requests.get(
+            f"{api}/pulls",
+            headers=headers,
+            params={"head": f"{owner}:{head_branch}", "base": base_branch, "state": "open"},
+            timeout=10,
+        )
+        _check_response(existing_resp)
+        existing_prs = existing_resp.json()
+        if existing_prs:
+            pr_data = existing_prs[0]
+            # PR 제목/본문 업데이트
+            requests.patch(
+                f"{api}/pulls/{pr_data['number']}",
+                headers=headers,
+                json={"title": title, "body": body},
+                timeout=10,
+            )
+            return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
+        _check_response(pr_resp)  # 다른 이유의 422면 에러
+    else:
+        _check_response(pr_resp)
     pr_data = pr_resp.json()
 
     return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
@@ -451,15 +473,20 @@ def merge_pr(
 # ── 9. PR의 모든 체크 상태 확인 ──────────────────────────
 def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> bool:
     """PR의 head commit에 대해 check_runs + commit statuses가 모두 통과했는지 확인."""
+    import logging
+    _log = logging.getLogger(__name__)
+
     headers = _gh_headers(token)
     api = f"{_GITHUB_API}/repos/{owner}/{repo}"
 
     # PR head SHA 가져오기
     pr_resp = requests.get(f"{api}/pulls/{pr_number}", headers=headers, timeout=10)
     if not pr_resp.ok:
+        _log.warning("[checks] PR 조회 실패: %s/%s #%s → %s", owner, repo, pr_number, pr_resp.status_code)
         return False
     head_sha = pr_resp.json().get("head", {}).get("sha", "")
     if not head_sha:
+        _log.warning("[checks] head SHA 없음: #%s", pr_number)
         return False
 
     # check_runs 확인 (API 실패 시 fail-closed)
@@ -467,9 +494,17 @@ def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> b
         f"{api}/commits/{head_sha}/check-runs", headers=headers, timeout=10,
     )
     if not cr_resp.ok:
+        _log.warning("[checks] check-runs API 실패: %s", cr_resp.status_code)
         return False
-    for cr in cr_resp.json().get("check_runs", []):
-        if cr.get("status") != "completed" or cr.get("conclusion") not in ("success", "skipped", "neutral"):
+    check_runs = cr_resp.json().get("check_runs", [])
+    _log.info("[checks] check_runs 총 %d개 (sha=%s)", len(check_runs), head_sha[:8])
+    for cr in check_runs:
+        name = cr.get("name", "?")
+        st = cr.get("status", "?")
+        concl = cr.get("conclusion")
+        _log.info("[checks]   %s: status=%s conclusion=%s", name, st, concl)
+        if st != "completed" or concl not in ("success", "skipped", "neutral"):
+            _log.info("[checks]   → 미통과: %s", name)
             return False
 
     # commit statuses 확인 (Terraform Cloud 등)
@@ -477,9 +512,17 @@ def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> b
         f"{api}/commits/{head_sha}/status", headers=headers, timeout=10,
     )
     if not status_resp.ok:
+        _log.warning("[checks] commit status API 실패: %s", status_resp.status_code)
         return False
-    state = status_resp.json().get("state", "")
+    status_data = status_resp.json()
+    state = status_data.get("state", "")
+    statuses = status_data.get("statuses", [])
+    _log.info("[checks] combined state=%s, statuses=%d개", state, len(statuses))
+    for s in statuses:
+        _log.info("[checks]   %s: state=%s", s.get("context", "?"), s.get("state", "?"))
     if state not in ("success", ""):
+        _log.info("[checks]   → combined state 미통과: %s", state)
         return False
 
+    _log.info("[checks] 전체 통과! #%s", pr_number)
     return True
