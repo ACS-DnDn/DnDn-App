@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getAttachmentDownloadUrl } from '@/services/document.service';
 import { apiFetch } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 import './ViewerPage.css';
 
 function escHtml(s: string) {
@@ -36,7 +37,7 @@ function fmtDate(iso?: string | null): string | undefined {
 
 const DOT_MAP: Record<string, string> = {
   author: 'dot-author', approved: 'dot-approved', current: 'dot-current',
-  wait: 'dot-wait', rejected: 'dot-wait',
+  wait: 'dot-wait', rejected: 'dot-rejected',
 };
 const STATUS_LABEL: Record<string, string> = {
   author: '기안', approved: '결재', current: '대기', wait: '대기', rejected: '반려',
@@ -87,6 +88,7 @@ const STATUS_MAP: Record<string, [string, string]> = {
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { session } = useAuth();
 
   const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -307,7 +309,7 @@ export function ViewerPage() {
                           {viewMode === 'completed' && (s.statusCls === 'current' || s.statusCls === 'wait') ? '결재' : s.status}
                         </div>
                       </div>
-                      {s.comment && <div className="step-comment">{s.comment}</div>}
+                      {s.comment && <div className={`step-comment${s.statusCls === 'rejected' ? ' reject-comment' : ''}`}>{s.comment}</div>}
                     </div>
                   </div>
                 ))}
@@ -354,6 +356,16 @@ export function ViewerPage() {
             <button className="btn-reject" disabled={actionLoading} onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8" /></svg>
               반려
+            </button>
+          </div>
+        )}
+
+        {/* 반려 문서 — 기안자 수정 버튼 */}
+        {doc.status === 'rejected' && doc.authorId && session?.id === doc.authorId && (
+          <div className="sidebar-actions">
+            <button className="btn-edit-rejected" onClick={() => navigate(`/plan?editDocId=${doc.id}`)}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>
+              수정
             </button>
           </div>
         )}

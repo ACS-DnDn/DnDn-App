@@ -125,7 +125,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         db.commit()
 
         doc_type = "계획서"
-        doc_num = _next_doc_num(db, doc_type)
+        # doc_num은 상신 시점에 채번 (미상신 문서가 번호를 소모하지 않도록)
 
         # 담당자 정보
         author_label = req.author_name or ""
@@ -133,7 +133,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             author_label = f"{author_label} {req.author_position}".strip()
 
         doc_meta = {
-            "doc_num": doc_num,
+            "doc_num": "",
             "author_label": author_label,
             "company_logo_url": req.company_logo_url or "",
         }
@@ -154,7 +154,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
 
         doc = Document(
             id=doc_id,
-            doc_num=doc_num,
+            doc_num=None,
             title=title,
             type=doc_type,
             html_key=html_key,
@@ -162,7 +162,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             ref_doc_ids=req.ref_doc_ids or None,
             workspace_id=workspace_id,
             author_id=req.author_id or None,
-            status="done",
+            status="draft",
         )
         db.add(doc)
 

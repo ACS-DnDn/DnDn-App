@@ -123,6 +123,7 @@ class DocumentDetailResponse(BaseModel):
     type: str
     status: str
     action: Optional[str] = None
+    authorId: Optional[str] = None
     author: DocumentAuthor
     createdAt: Optional[str] = None
     content: Optional[str] = None

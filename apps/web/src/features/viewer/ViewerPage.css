@@ -112,6 +112,7 @@
 .step-dot.dot-approved { background: var(--green); }
 .step-dot.dot-current { background: var(--mint); box-shadow: 0 0 0 3px rgba(34,139,230,.2); }
 .step-dot.dot-wait { background: var(--bg-card); border: 2px solid var(--border-med); }
+.step-dot.dot-rejected { background: var(--orange); }
 .step-content { flex: 1; min-width: 0; }
 .step-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap; }
 .step-seq { font-size: 9.5px; font-weight: 700; color: var(--text-muted); min-width: 26px; flex-shrink: 0; }
@@ -138,6 +139,10 @@
 .btn-approve:hover { background: #1c7ed6; }
 .btn-reject { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--border-med); background: transparent; color: var(--text-sub); font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .btn-reject:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-soft); }
+
+/* 반려 문서 수정 버튼 */
+.btn-edit-rejected { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--orange); background: var(--orange-soft); color: var(--orange); font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.btn-edit-rejected:hover { background: var(--orange); color: #fff; }
 
 /* 계획서 작성 버튼 (보고서 모드) */
 .report-actions { padding: 14px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }

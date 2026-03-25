@@ -34,6 +34,7 @@ export interface Document {
   type: DocType;
   status: DocStatus;
   action: DocAction;
+  authorId?: string;
   icon: string;
   workspace: string;
   content?: string;
