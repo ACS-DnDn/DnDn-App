@@ -24,6 +24,7 @@ function mapDoc(item: ApiDocItem): Document {
     type: item.type as Document['type'],
     status: item.status as Document['status'],
     action: item.action as Document['action'],
+    isRead: item.isRead,
     icon: '📄',
     workspace: item.workspace ?? '',
   };
@@ -106,6 +107,22 @@ export async function getAttachmentDownloadUrl(
 export async function deleteAttachment(documentId: string, fileId: string): Promise<void> {
   await apiFetch<{ success: boolean }>(`/documents/${documentId}/attachments/${fileId}`, {
     method: 'DELETE',
+  });
+}
+
+// ── 읽음 처리 ─────────────────────────────────────────────
+
+export async function markDocumentsRead(ids: string[]): Promise<void> {
+  await apiFetch<{ success: boolean }>('/documents/read', {
+    method: 'PATCH',
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export async function markAllDocumentsRead(tab?: string): Promise<void> {
+  await apiFetch<{ success: boolean }>('/documents/read-all', {
+    method: 'PATCH',
+    body: JSON.stringify({ tab: tab ?? 'all' }),
   });
 }
 

@@ -35,6 +35,7 @@ export interface Document {
   status: DocStatus;
   action: DocAction;
   authorId?: string;
+  isRead?: boolean;
   icon: string;
   workspace: string;
   content?: string;
