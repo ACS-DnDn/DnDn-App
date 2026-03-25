@@ -165,6 +165,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             status="draft",
         )
         db.add(doc)
+        db.flush()  # FK 제약 충족을 위해 Document 먼저 flush
 
         # 근거자료 첨부 — AI 생성 입력 데이터
         canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
