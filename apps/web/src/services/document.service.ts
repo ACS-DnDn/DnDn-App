@@ -27,6 +27,7 @@ function mapDoc(item: ApiDocItem): Document {
     isRead: item.isRead,
     icon: '📄',
     workspace: item.workspace ?? '',
+    isRead: item.isRead,
   };
 }
 
@@ -72,6 +73,15 @@ export async function getAllDocuments(
   return all;
 }
 
+export async function markDocumentsAsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await apiFetch<{ success: boolean }>('/documents/read', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+}
+
 // ── 첨부파일 ──────────────────────────────────────────────
 
 export async function getAttachmentUploadUrl(
@@ -107,22 +117,6 @@ export async function getAttachmentDownloadUrl(
 export async function deleteAttachment(documentId: string, fileId: string): Promise<void> {
   await apiFetch<{ success: boolean }>(`/documents/${documentId}/attachments/${fileId}`, {
     method: 'DELETE',
-  });
-}
-
-// ── 읽음 처리 ─────────────────────────────────────────────
-
-export async function markDocumentsRead(ids: string[]): Promise<void> {
-  await apiFetch<{ success: boolean }>('/documents/read', {
-    method: 'PATCH',
-    body: JSON.stringify({ ids }),
-  });
-}
-
-export async function markAllDocumentsRead(tab?: string): Promise<void> {
-  await apiFetch<{ success: boolean }>('/documents/read-all', {
-    method: 'PATCH',
-    body: JSON.stringify({ tab: tab ?? 'all' }),
   });
 }
 

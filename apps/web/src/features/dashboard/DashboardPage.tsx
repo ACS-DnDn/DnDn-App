@@ -76,8 +76,8 @@ export function DashboardPage() {
     done: { cls: 'badge-done', label: '완료' },
   };
 
-  // 새로운 문서 (안 읽은 것만, 최신순 5개)
-  const unreadDocs = allDocs.filter(d => !d.isRead);
+  // 새로운 문서 (읽지 않은 문서, 최신순 5개)
+  const unreadDocs = allDocs.filter((d: Document) => !d.isRead);
   const recentDocs = [...unreadDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
   return (

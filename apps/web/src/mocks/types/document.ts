@@ -38,6 +38,7 @@ export interface Document {
   isRead?: boolean;
   icon: string;
   workspace: string;
+  isRead?: boolean;
   content?: string;
   terraform?: Record<string, string>;
   refDocIds?: string[];

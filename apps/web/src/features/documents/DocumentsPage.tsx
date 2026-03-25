@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDocuments, markDocumentsRead, markAllDocumentsRead } from '@/services/document.service';
+import { getDocuments, markDocumentsAsRead } from '@/services/document.service';
 import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
@@ -122,30 +122,33 @@ export function DocumentsPage() {
 
   // 읽음 처리
   const markRead = () => {
-    const ids = [...selectedIds];
-    markDocumentsRead(ids).catch(console.error);
+    const ids = [...selectedIds].filter(id => !readIds.has(id));
     setReadIds(prev => {
       const next = new Set(prev);
       ids.forEach(id => next.add(id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   const markAllRead = () => {
-    markAllDocumentsRead('all').catch(console.error);
+    const ids = filtered.filter((d: Document) => !readIds.has(d.id)).map((d: Document) => d.id);
     setReadIds(prev => {
       const next = new Set(prev);
       filtered.forEach(d => next.add(d.id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   // 행 클릭 → 뷰어로 이동
   const handleRowClick = (doc: Document) => {
-    markDocumentsRead([doc.id]).catch(console.error);
-    setReadIds(prev => new Set(prev).add(doc.id));
+    if (!readIds.has(doc.id)) {
+      setReadIds((prev: Set<string>) => new Set(prev).add(doc.id));
+      markDocumentsAsRead([doc.id]).catch(console.error);
+    }
     navigate(`/viewer/${doc.id}?from=documents`);
   };
 
