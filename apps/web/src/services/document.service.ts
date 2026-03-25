@@ -27,7 +27,6 @@ function mapDoc(item: ApiDocItem): Document {
     isRead: item.isRead,
     icon: '📄',
     workspace: item.workspace ?? '',
-    isRead: item.isRead,
   };
 }
 
