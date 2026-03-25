@@ -71,6 +71,8 @@ html:has(.plan-page) { overflow: hidden; }
 .plan-btn-save:hover { opacity: .85; }
 .plan-btn-cancel { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-med); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-sub); display: flex; align-items: center; gap: 5px; transition: all .15s; font-family: 'Pretendard', sans-serif; }
 .plan-btn-cancel:hover { border-color: var(--border); background: var(--bg-alt); color: var(--text); }
+.plan-btn-delete { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border-med); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; color: #e05252; display: flex; align-items: center; gap: 5px; transition: all .15s; font-family: 'Pretendard', sans-serif; }
+.plan-btn-delete:hover { border-color: #e05252; background: rgba(224, 82, 82, 0.08); }
 .auto-save-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 .doc-editor { flex: 1; overflow-y: auto; position: relative; }

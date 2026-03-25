@@ -1016,3 +1016,56 @@ def delete_attachment(
     db.commit()
 
     return SuccessResponse(data={"deleted": True})
+
+
+# ── 문서 삭제 ─────────────────────────────────────────────
+
+@router.delete("/{documentId}", summary="문서 삭제")
+def delete_document(
+    documentId: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = db.query(Document).filter(Document.id == documentId).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+    if doc.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 결재 진행 중(progress)이면 삭제 불가 — draft / rejected / failed 만 허용
+    if doc.status == "progress":
+        raise HTTPException(status_code=400, detail="CANNOT_DELETE_IN_PROGRESS")
+
+    s3 = _get_s3_client() if _S3_BUCKET else None
+
+    # S3: HTML 삭제
+    if s3 and doc.html_key:
+        try:
+            s3.delete_object(Bucket=_S3_BUCKET, Key=doc.html_key)
+        except ClientError:
+            pass
+
+    # S3: Terraform 파일 삭제 (prefix 하위 전체)
+    if s3 and doc.terraform_key:
+        try:
+            paginator = s3.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=doc.terraform_key + "/"):
+                for obj in page.get("Contents", []):
+                    s3.delete_object(Bucket=_S3_BUCKET, Key=obj["Key"])
+        except ClientError:
+            pass
+
+    # S3: 첨부파일 삭제
+    if s3:
+        attachments = db.query(Attachment).filter(Attachment.document_id == documentId).all()
+        for att in attachments:
+            try:
+                s3.delete_object(Bucket=_S3_BUCKET, Key=att.file_path)
+            except ClientError:
+                pass
+
+    # DB: cascade로 approvals, document_reads, attachments 자동 삭제
+    db.delete(doc)
+    db.commit()
+
+    return SuccessResponse(data={"deleted": True})

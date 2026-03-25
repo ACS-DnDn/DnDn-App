@@ -4,7 +4,7 @@ import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
 import { apiFetch, reportApiFetch } from '@/services/api';
-import { getAllDocuments, getDocumentById } from '@/services/document.service';
+import { getAllDocuments, getDocumentById, deleteDocument } from '@/services/document.service';
 import type { Document } from '@/mocks';
 import type { OrgDept } from '@/mocks';
 import './PlanPage.css';
@@ -352,6 +352,24 @@ export function PlanPage() {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(() => { void doAutoSave(); }, 2000);
   }, [doAutoSave]);
+
+  async function handleDelete() {
+    if (!draftDocumentId) {
+      // 아직 백엔드에 저장 전 — 페이지만 초기화
+      if (!confirm('작성 중인 내용을 삭제하시겠습니까?')) return;
+      navigate(-1);
+      return;
+    }
+    if (!confirm('이 문서를 삭제하시겠습니까? 삭제된 문서는 복구할 수 없습니다.')) return;
+    try {
+      await deleteDocument(draftDocumentId);
+      alert('문서가 삭제되었습니다.');
+      navigate('/documents');
+    } catch (err) {
+      console.error('문서 삭제 실패:', err);
+      alert('문서 삭제에 실패했습니다.');
+    }
+  }
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
@@ -729,6 +747,10 @@ export function PlanPage() {
           <button className="plan-btn-cancel" onClick={() => navigate(-1)}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
             취소
+          </button>
+          <button className="plan-btn-delete" onClick={handleDelete}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>
+            삭제
           </button>
           {lastSaved && <span className="auto-save-label">마지막 저장 {lastSaved}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
