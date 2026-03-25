@@ -6,7 +6,7 @@ import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
 const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
-const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서' };
+const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
   const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
