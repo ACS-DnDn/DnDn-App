@@ -374,7 +374,12 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
 
             if conclusion in ("failure", "timed_out", "action_required"):
                 cr_output = check_run.get("output", {})
-                cr_desc = cr_output.get("title") or cr_output.get("summary") or check_run.get("name", "")
+                cr_title = cr_output.get("title") or check_run.get("name", "")
+                cr_summary = cr_output.get("summary") or ""
+                cr_text = cr_output.get("text") or ""
+                # 상세 로그 조합: title + summary + text (최대 1000자)
+                cr_parts = [p for p in [cr_title, cr_summary, cr_text] if p]
+                cr_desc = "\n".join(cr_parts)[:1000] or check_run.get("name", "")
                 cr_url = check_run.get("html_url")
                 cr_ctx = check_run.get("name", "")
                 first_failure = doc.pr_status != "checks_failed"
@@ -388,7 +393,10 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     _notify_pr_status(db, doc, "checks_failed")
             elif conclusion == "success" and action == "completed":
                 cr_output = check_run.get("output", {})
-                cr_desc = cr_output.get("title") or check_run.get("name", "")
+                cr_title = cr_output.get("title") or check_run.get("name", "")
+                cr_summary = cr_output.get("summary") or ""
+                cr_parts = [p for p in [cr_title, cr_summary] if p]
+                cr_desc = "\n".join(cr_parts)[:500] or check_run.get("name", "")
                 cr_url = check_run.get("html_url")
                 cr_ctx = check_run.get("name", "")
                 _append_deploy_log(db, doc, "checks_passed", "success",
