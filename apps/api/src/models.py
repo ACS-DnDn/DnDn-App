@@ -121,6 +121,11 @@ class Document(Base):
     author_id = Column(String(50), ForeignKey("users.id"), nullable=True)
     submit_comment = Column(Text, nullable=True)  # 기안자 상신 의견
 
+    # GitHub PR 연동
+    pr_number = Column(Integer, nullable=True)      # GitHub PR 번호
+    pr_url = Column(String(500), nullable=True)      # GitHub PR URL
+    pr_status = Column(String(20), nullable=True)    # open / merged / closed / checks_failed
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -207,6 +212,9 @@ class Workspace(Base):
 
     # OPA 인프라 정책 — PUT으로 전체 교체하므로 JSON 컬럼이 적합
     opa_settings = Column(JSON, nullable=True)
+
+    # GitHub Webhook
+    github_webhook_id = Column(Integer, nullable=True)  # 등록된 webhook ID
 
     # 워크스페이스 생성자 (부서장)
     owner_id = Column(String(50), ForeignKey("users.id"), nullable=False)

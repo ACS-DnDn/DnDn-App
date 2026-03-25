@@ -44,6 +44,7 @@ class DocumentArchiveItem(BaseModel):
     status: str
     action: Optional[str] = None
     isRead: bool  # TODO: 향후 읽음 테이블 연동 필요
+    prStatus: Optional[str] = None
 
 
 class DocumentArchiveResponse(BaseModel):
@@ -133,3 +134,6 @@ class DocumentDetailResponse(BaseModel):
     refDocs: List[DocumentRefDoc]
     attachments: List[DocumentAttachment]
     approvalLine: List[DocumentApprovalLine]
+    prNumber: Optional[int] = None
+    prUrl: Optional[str] = None
+    prStatus: Optional[str] = None

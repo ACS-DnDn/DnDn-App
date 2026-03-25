@@ -25,6 +25,13 @@ from apps.api.src.security.aws_sts import (
     get_cfn_link,
     StsValidationError,
 )
+from apps.api.src.security.github_oauth import (
+    register_webhook,
+    GITHUB_WEBHOOK_SECRET,
+)
+
+import logging
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 
@@ -326,6 +333,19 @@ def create_workspace(
     db.add(ws)
     db.commit()
     db.refresh(ws)
+
+    # GitHub webhook 자동 등록 (best-effort)
+    if current_user.github_access_token and GITHUB_WEBHOOK_SECRET:
+        try:
+            hook_id = register_webhook(
+                token=current_user.github_access_token,
+                owner=req.githubOrg,
+                repo=req.repo,
+            )
+            ws.github_webhook_id = hook_id
+            db.commit()
+        except Exception as e:
+            _logger.warning("GitHub webhook 등록 실패 (workspace=%s): %s", ws.id, e)
 
     return SuccessResponse(
         data=WorkspaceCreateResponse(

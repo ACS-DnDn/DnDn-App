@@ -210,6 +210,10 @@ def _create_terraform_pr_if_needed(doc: Document, db: "Session") -> None:
             path_prefix=ws.path or None,
         )
         _logger.info("terraform PR 생성 완료: %s", result["pr_url"])
+        # PR 정보 DB 저장 (caller가 commit)
+        doc.pr_number = result["pr_number"]
+        doc.pr_url = result["pr_url"]
+        doc.pr_status = "open"
     except GitHubError as e:
         _logger.error("terraform PR 생성 실패: %s", e.message)
     except (requests_exc.RequestException, KeyError, ValueError) as e:
@@ -378,6 +382,7 @@ def get_documents(
                 "status": doc.status,
                 "action": action_val,
                 "isRead": is_read_flag,
+                "prStatus": doc.pr_status,
             }
         )
 
@@ -596,6 +601,9 @@ def get_document_detail(
             refDocs=ref_docs,
             attachments=attachments_list,
             approvalLine=approval_line,
+            prNumber=doc.pr_number,
+            prUrl=doc.pr_url,
+            prStatus=doc.pr_status,
         )
     )
 
