@@ -312,6 +312,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             status="done",
         )
         db.add(doc)
+        db.flush()  # FK 제약 충족을 위해 Document 먼저 flush
 
         # 근거자료 첨부 (indent=2로 저장되므로 동일 옵션으로 크기 계산)
         canonical_json_bytes = json.dumps(canonical, ensure_ascii=False, indent=2).encode("utf-8")
