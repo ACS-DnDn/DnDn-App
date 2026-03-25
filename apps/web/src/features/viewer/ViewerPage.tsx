@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
-import { getDocumentById, getAttachmentDownloadUrl } from '@/services/document.service';
+import { getDocumentById, getAttachmentDownloadUrl, markDocumentsAsRead } from '@/services/document.service';
 import { apiFetch } from '@/services/api';
 import './ViewerPage.css';
 
@@ -99,8 +99,10 @@ export function ViewerPage() {
     setDocNotFound(false);
     setFetchError(false);
     getDocumentById(id).then(result => {
-      if (result) setDoc(result);
-      else setDocNotFound(true);
+      if (result) {
+        setDoc(result);
+        if (!result.isRead) markDocumentsAsRead([id]).catch(console.error);
+      } else setDocNotFound(true);
     }).catch(() => setFetchError(true));
   }, [id]);
 

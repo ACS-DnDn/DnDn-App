@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDocuments } from '@/services/document.service';
+import { getDocuments, markDocumentsAsRead } from '@/services/document.service';
 import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
@@ -57,7 +57,10 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getDocuments({ pageSize: 100 }).then(({ items }) => setAllDocs(items)).catch(console.error);
+    getDocuments({ pageSize: 100 }).then(({ items }) => {
+      setAllDocs(items);
+      setReadIds(new Set(items.filter(d => d.isRead).map(d => d.id)));
+    }).catch(console.error);
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
@@ -119,26 +122,33 @@ export function DocumentsPage() {
 
   // 읽음 처리
   const markRead = () => {
+    const ids = [...selectedIds].filter(id => !readIds.has(id));
     setReadIds(prev => {
       const next = new Set(prev);
       selectedIds.forEach(id => next.add(id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   const markAllRead = () => {
+    const ids = filtered.filter((d: Document) => !readIds.has(d.id)).map((d: Document) => d.id);
     setReadIds(prev => {
       const next = new Set(prev);
       filtered.forEach(d => next.add(d.id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   // 행 클릭 → 뷰어로 이동
   const handleRowClick = (doc: Document) => {
-    setReadIds(prev => new Set(prev).add(doc.id));
+    if (!readIds.has(doc.id)) {
+      setReadIds((prev: Set<string>) => new Set(prev).add(doc.id));
+      markDocumentsAsRead([doc.id]).catch(console.error);
+    }
     navigate(`/viewer/${doc.id}?from=documents`);
   };
 

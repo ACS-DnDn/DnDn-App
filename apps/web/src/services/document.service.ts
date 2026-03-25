@@ -26,6 +26,7 @@ function mapDoc(item: ApiDocItem): Document {
     action: item.action as Document['action'],
     icon: '📄',
     workspace: item.workspace ?? '',
+    isRead: item.isRead,
   };
 }
 
@@ -69,6 +70,15 @@ export async function getAllDocuments(
     page++;
   }
   return all;
+}
+
+export async function markDocumentsAsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await apiFetch<{ success: boolean }>('/documents/read', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
 }
 
 // ── 첨부파일 ──────────────────────────────────────────────

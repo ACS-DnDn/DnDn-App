@@ -67,8 +67,9 @@ export function DashboardPage() {
     done: { cls: 'badge-done', label: '완료' },
   };
 
-  // 새로운 문서 (최신순 5개)
-  const recentDocs = [...allDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  // 새로운 문서 (읽지 않은 문서, 최신순 5개)
+  const unreadDocs = allDocs.filter((d: Document) => !d.isRead);
+  const recentDocs = [...unreadDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
   return (
     <div className="dashboard-page">
@@ -164,7 +165,7 @@ export function DashboardPage() {
           <div className="table-card-header">
             <div className="table-card-title">
               새로운 문서
-              <span className="count-pill">{allDocs.length}</span>
+              <span className="count-pill">{unreadDocs.length}</span>
             </div>
             <button type="button" className="table-link-ico" onClick={() => navigate('/documents')} title="전체 보기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3l5 5-5 5"/></svg></button>
           </div>
