@@ -132,6 +132,7 @@ def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, c
     key_prefix = stripped[slash_idx + 1:]
 
     try:
+        attachments = []
         paginator = _s3_client().get_paginator("list_objects_v2")
         idx = 0
         for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
@@ -150,7 +151,7 @@ def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, c
                 label = _EVIDENCE_DIR_LABELS.get(category, category)
                 display_name = f"{label}_{filename}" if label else filename
 
-                db.add(Attachment(
+                attachments.append(Attachment(
                     id=f"{doc_id}-evidence-{idx}",
                     document_id=doc_id,
                     original_name=display_name,
@@ -158,8 +159,10 @@ def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, c
                     size_kb=size_kb,
                 ))
                 idx += 1
+        db.add_all(attachments)
     except Exception as e:
         logger.warning("활동보고서 evidence 파일 목록 조회 실패: %s", e)
+        raise
 
 
 def _html_exists(doc_id: str, workspace_id: str) -> bool:
@@ -310,8 +313,8 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
         )
         db.add(doc)
 
-        # 근거자료 첨부
-        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
+        # 근거자료 첨부 (indent=2로 저장되므로 동일 옵션으로 크기 계산)
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False, indent=2).encode("utf-8")
         canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
 
         if event_type == "weekly":

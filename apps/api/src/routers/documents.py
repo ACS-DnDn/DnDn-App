@@ -112,7 +112,6 @@ def _next_doc_num(db: "Session", doc_type: str) -> str:
     from sqlalchemy import cast, Integer, func as sa_func
 
     code = _DOC_TYPE_CODE.get(doc_type, "DOC")
-    KST = timezone(timedelta(hours=9))
     year = datetime.now(KST).year
     prefix = f"{year}-{code}-"
 
@@ -479,7 +478,7 @@ def submit_document(
                 )
                 if updated != html:
                     _s3_put_text(doc.html_key, updated)
-        except Exception as e:
+        except (ClientError, ValueError, TypeError) as e:
             _logger.warning("HTML 문서번호 갱신 실패: %s", e)
 
     # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
