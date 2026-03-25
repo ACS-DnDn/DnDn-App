@@ -5,7 +5,7 @@ import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
-const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패', deploying: '배포 중', deploy_failed: '배포 실패' };
+const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', deploying: '배포 중', deploy_failed: '배포 실패' };
 const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
@@ -407,7 +407,6 @@ export function DocumentsPage() {
                       <option value="deploying">배포 중</option>
                       <option value="deploy_failed">배포 실패</option>
                       <option value="rejected">반려</option>
-                      <option value="failed">실패</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
