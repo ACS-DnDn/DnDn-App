@@ -274,6 +274,9 @@ export function PlanPage() {
           target: nlTarget,
           content: nlInput,
           ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
+          authorName: session.name,
+          authorPosition: session.position || undefined,
+          companyLogoUrl: session.company?.logoUrl || undefined,
         }),
       });
       const { jobId } = raw.data;
@@ -290,20 +293,28 @@ export function PlanPage() {
     }
   }
 
-  function doAutoSave() {
+  const doAutoSave = useCallback(async () => {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
-    if (!html) return;
-    localStorage.setItem(`doc-${docId}`, html);
+    if (!html || !draftDocumentId) return;
+    try {
+      await reportApiFetch('/documents/html/save', {
+        method: 'PUT',
+        body: JSON.stringify({ docId: draftDocumentId, html }),
+      });
+    } catch {
+      // S3 실패 시 localStorage fallback
+      localStorage.setItem(`doc-${docId}`, html);
+    }
     const timestamp = new Date();
     setLastSaved(
       `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
     );
-  }
+  }, [draftDocumentId, docId]);
 
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(doAutoSave, 2000);
-  }, []);
+    autoSaveRef.current = setTimeout(() => { void doAutoSave(); }, 2000);
+  }, [doAutoSave]);
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }

@@ -98,6 +98,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(String(50), primary_key=True, default=generate_uuid)
+    doc_num = Column(String(20), nullable=True, unique=True)  # 2026-PLN-0001
     title = Column(String(200), nullable=False)
 
     # "계획서", "이벤트보고서", "헬스이벤트보고서", "주간보고서"
