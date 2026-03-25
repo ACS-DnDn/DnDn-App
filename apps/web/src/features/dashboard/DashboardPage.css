@@ -59,10 +59,10 @@
 .doc-title-row .doc-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 .doc-title-row .badge { flex-shrink: 0; font-size: 10px; padding: 2px 6px; }
 .td-ws { font-size: 11.5px; color: var(--text-sub); white-space: nowrap; }
-.td-author { font-size: 12px; color: var(--text-sub); white-space: nowrap; text-align: center; padding: 0 10px; }
-.td-type { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
-.td-date { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; text-align: center; }
-.td-num { text-align: center; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 14px !important; white-space: nowrap; }
+.td-num { width: 130px; text-align: center; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 14px !important; white-space: nowrap; }
+.td-type { width: 120px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.td-author { width: 100px; font-size: 12px; color: var(--text-sub); white-space: nowrap; text-align: center; padding: 0 10px; }
+.td-date { width: 140px; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; text-align: center; padding-right: 20px; }
 .doc-table thead .td-num { padding: 6px 14px !important; }
 
 .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
