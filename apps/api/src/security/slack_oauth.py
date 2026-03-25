@@ -11,7 +11,11 @@ import os
 import secrets
 from dataclasses import dataclass
 
+import logging
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 # ── 환경 변수 ──────────────────────────────────────────────
 SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "")
@@ -202,12 +206,14 @@ def join_channel(token: str, channel: str) -> None:
             timeout=10,
         )
     except requests.exceptions.RequestException:
+        logger.warning("conversations.join 요청 실패: channel=%s", channel)
         return
 
     try:
         data = resp.json()
     except (ValueError, requests.exceptions.JSONDecodeError):
+        logger.warning("conversations.join 응답 파싱 실패: channel=%s", channel)
         return
 
     if not data.get("ok") and data.get("error") != "already_in_channel":
-        pass
+        logger.warning("conversations.join 실패: channel=%s, error=%s", channel, data.get("error"))
