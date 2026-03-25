@@ -516,6 +516,10 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
             _notify_pr_status(db, doc, "checks_passed")
         else:
             _logger.warning("PR 자동 Merge 실패: %s #%s", repo_full, doc.pr_number)
+            _append_deploy_log(db, doc, "merge_failed", "failure",
+                               description="자동 Merge 실패 (conflict 또는 권한 문제)")
+            db.commit()
+            _notify_pr_status(db, doc, "checks_failed")
     else:
         # 수동 Merge 안내
         db.commit()
