@@ -1,6 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime | None) -> str:
+    """UTC datetime → KST 'YYYY.MM.DD HH:MM' 문자열"""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST).strftime("%Y.%m.%d %H:%M")
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Document, Approval, DocumentRead, Workspace
@@ -71,7 +82,7 @@ def get_dashboard(
                 "status": doc_status_for_me,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": doc.author.name if doc.author else "DnDn Agent",
-                "date": doc.created_at.strftime("%Y.%m.%d %H:%M") if doc.created_at else "",
+                "date": _to_kst_str(doc.created_at),
             }
         )
 
@@ -88,7 +99,7 @@ def get_dashboard(
                 "title": doc.title,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": current_user.name,
-                "date": doc.created_at.strftime("%Y.%m.%d %H:%M") if doc.created_at else "",
+                "date": _to_kst_str(doc.created_at),
             }
         )
 

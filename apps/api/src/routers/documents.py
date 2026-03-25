@@ -10,6 +10,17 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime | None) -> str:
+    """UTC datetime → KST 'YYYY-MM-DD HH:MM' 문자열"""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST).strftime("%Y-%m-%d %H:%M")
+
 from apps.api.src.database import get_db
 from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment, Workspace
 from apps.api.src.routers.auth import get_current_user
@@ -236,9 +247,7 @@ def get_documents(
                 "docNum": doc.doc_num or str(doc.id)[:8],
                 "name": doc.title,
                 "author": doc.author.name if doc.author else "DnDn Agent",
-                "date": (
-                    doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else ""
-                ),
+                "date": _to_kst_str(doc.created_at),
                 "type": doc.type,
                 "status": doc.status,
                 "action": action_val,
@@ -698,11 +707,7 @@ def get_ref_document_detail(
         ),
         RefDocMetaItem(
             label="등록일",
-            value=(
-                ref_doc.created_at.strftime("%Y-%m-%d %H:%M")
-                if ref_doc.created_at
-                else ""
-            ),
+            value=_to_kst_str(ref_doc.created_at),
         ),
         RefDocMetaItem(label="결재 상태", value=ref_doc.status),
     ]
