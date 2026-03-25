@@ -20,6 +20,10 @@ GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv(
     "GITHUB_REDIRECT_URI", "http://localhost:5173/auth/github/callback"
 )
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+GITHUB_WEBHOOK_URL = os.getenv(
+    "GITHUB_WEBHOOK_URL", "https://www.dndn.cloud/api/github/webhook"
+)
 
 _GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 _GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -352,3 +356,130 @@ def create_terraform_pr(
     pr_data = pr_resp.json()
 
     return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
+
+
+# ── 7. Webhook 등록 ──────────────────────────────────────
+def register_webhook(
+    token: str,
+    owner: str,
+    repo: str,
+    callback_url: str | None = None,
+    secret: str | None = None,
+) -> int:
+    """고객 repo에 GitHub webhook을 등록하고 hook_id를 반환한다.
+
+    이미 동일 URL의 webhook이 있으면 기존 ID를 반환한다.
+    """
+    url = callback_url or GITHUB_WEBHOOK_URL
+    webhook_secret = secret or GITHUB_WEBHOOK_SECRET
+    if not url:
+        raise GitHubError(500, "MISSING_WEBHOOK_URL", "GITHUB_WEBHOOK_URL이 설정되지 않았습니다.")
+    if not webhook_secret:
+        raise GitHubError(500, "MISSING_WEBHOOK_SECRET", "GITHUB_WEBHOOK_SECRET이 설정되지 않았습니다.")
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    resp = requests.post(
+        f"{api}/hooks",
+        headers=headers,
+        json={
+            "name": "web",
+            "active": True,
+            "events": ["check_run", "pull_request", "status"],
+            "config": {
+                "url": url,
+                "content_type": "json",
+                "secret": webhook_secret,
+                "insecure_ssl": "0",
+            },
+        },
+        timeout=10,
+    )
+
+    if resp.status_code == 422:
+        # webhook 이미 존재 — 기존 hook 찾아서 ID 반환
+        list_resp = requests.get(
+            f"{api}/hooks", headers=headers, timeout=10,
+        )
+        _check_response(list_resp)
+        for hook in list_resp.json():
+            if hook.get("config", {}).get("url") == url:
+                return hook["id"]
+        raise GitHubError(422, "HOOK_EXISTS", "Webhook이 이미 존재하지만 찾을 수 없습니다.")
+
+    _check_response(resp)
+    return resp.json()["id"]
+
+
+def unregister_webhook(
+    token: str,
+    owner: str,
+    repo: str,
+    hook_id: int,
+) -> None:
+    """고객 repo에서 webhook을 삭제한다. 이미 없으면 무시."""
+    headers = _gh_headers(token)
+    resp = requests.delete(
+        f"{_GITHUB_API}/repos/{owner}/{repo}/hooks/{hook_id}",
+        headers=headers,
+        timeout=10,
+    )
+    if resp.status_code == 404:
+        return  # 이미 삭제됨
+    _check_response(resp)
+
+
+# ── 8. PR 머지 ───────────────────────────────────────────
+def merge_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    merge_method: str = "squash",
+) -> bool:
+    """GitHub PR을 머지한다. 성공 시 True, 실패 시 False."""
+    headers = _gh_headers(token)
+    resp = requests.put(
+        f"{_GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+        headers=headers,
+        json={"merge_method": merge_method},
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
+# ── 9. PR의 모든 체크 상태 확인 ──────────────────────────
+def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> bool:
+    """PR의 head commit에 대해 check_runs + commit statuses가 모두 통과했는지 확인."""
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    # PR head SHA 가져오기
+    pr_resp = requests.get(f"{api}/pulls/{pr_number}", headers=headers, timeout=10)
+    if not pr_resp.ok:
+        return False
+    head_sha = pr_resp.json().get("head", {}).get("sha", "")
+    if not head_sha:
+        return False
+
+    # check_runs 확인 (API 실패 시 fail-closed)
+    cr_resp = requests.get(
+        f"{api}/commits/{head_sha}/check-runs", headers=headers, timeout=10,
+    )
+    if not cr_resp.ok:
+        return False
+    for cr in cr_resp.json().get("check_runs", []):
+        if cr.get("status") != "completed" or cr.get("conclusion") not in ("success", "skipped", "neutral"):
+            return False
+
+    # commit statuses 확인 (Terraform Cloud 등)
+    status_resp = requests.get(
+        f"{api}/commits/{head_sha}/status", headers=headers, timeout=10,
+    )
+    if not status_resp.ok:
+        return False
+    state = status_resp.json().get("state", "")
+    if state not in ("success", ""):
+        return False
+
+    return True

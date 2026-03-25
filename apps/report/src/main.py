@@ -216,7 +216,7 @@ def _run_terraform_job(job_id: str, req: TerraformRequest, repo: str, token: str
         workplan = get_report(req.document_id, req.workspace_id or "default")
 
         # 2. Terraform 생성
-        result = generate_terraform_code(workplan, repo, token, workspace_id=req.workspace_id)
+        result = generate_terraform_code(workplan, repo, token, workspace_id=req.workspace_id, deploy_log=req.deploy_log)
 
         # result = { "main.tf": "...", "vars.tf": "..." }
 

@@ -32,6 +32,12 @@ from sqlalchemy import inspect as _sa_inspect, text as _sa_text
 _insp = _sa_inspect(engine)
 _migrations = [
     ("documents", "submit_comment", "TEXT"),
+    ("documents", "pr_number", "INTEGER"),
+    ("documents", "pr_url", "VARCHAR(500)"),
+    ("documents", "pr_status", "VARCHAR(20)"),
+    ("workspaces", "github_webhook_id", "INTEGER"),
+    ("documents", "auto_merge", "BOOLEAN"),
+    ("documents", "deploy_log", "JSON"),
 ]
 with engine.begin() as _conn:
     for _tbl, _col, _coltype in _migrations:

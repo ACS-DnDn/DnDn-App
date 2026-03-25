@@ -7,6 +7,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -210,6 +211,20 @@ def _create_terraform_pr_if_needed(doc: Document, db: "Session") -> None:
             path_prefix=ws.path or None,
         )
         _logger.info("terraform PR 생성 완료: %s", result["pr_url"])
+        # PR 정보 DB 저장 (caller가 commit)
+        doc.pr_number = result["pr_number"]
+        doc.pr_url = result["pr_url"]
+        doc.pr_status = "open"
+        # deploy_log에 PR 생성 기록
+        entry = {
+            "event": "pr_created",
+            "status": "info",
+            "description": f"PR #{result['pr_number']} 생성",
+            "url": result["pr_url"],
+            "context": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        doc.deploy_log = [entry]
     except GitHubError as e:
         _logger.error("terraform PR 생성 실패: %s", e.message)
     except (requests_exc.RequestException, KeyError, ValueError) as e:
@@ -272,12 +287,17 @@ def get_documents(
             Document.workspace_id.in_(my_ws_ids), Document.status == "done"
         )
     elif tab == "action":
-        # 결재 대상 문서는 워크스페이스 무관 — Approval 기준으로 직접 조회
+        # 결재 대상 문서 + deploy_failed 작성자 문서
         query = (
             db.query(Document)
-            .join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            .outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
+            .distinct()
         )
     else:
         query = db.query(Document).filter(
@@ -378,6 +398,7 @@ def get_documents(
                 "status": doc.status,
                 "action": action_val,
                 "isRead": is_read_flag,
+                "prStatus": doc.pr_status,
             }
         )
 
@@ -435,6 +456,14 @@ def submit_document(
 
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
+
+    # 재상신 시 이전 PR/배포 정보 초기화 (새 결재·배포 사이클)
+    if not req.isDraft:
+        doc.pr_number = None
+        doc.pr_url = None
+        doc.pr_status = None
+        doc.auto_merge = None
+        doc.deploy_log = None
 
     # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
     need_html_update = False
@@ -596,6 +625,11 @@ def get_document_detail(
             refDocs=ref_docs,
             attachments=attachments_list,
             approvalLine=approval_line,
+            prNumber=doc.pr_number,
+            prUrl=doc.pr_url,
+            prStatus=doc.pr_status,
+            autoMerge=doc.auto_merge,
+            deployLog=doc.deploy_log or [],
         )
     )
 
@@ -657,7 +691,13 @@ def approve_document(
         new_status = "done"
 
         # 🚀 최종 결재 시 Terraform PR 생성
+        doc.auto_merge = req.autoMerge
         _create_terraform_pr_if_needed(doc, db)
+
+        # PR이 생성됐으면 배포 중으로 전환
+        if doc.pr_number:
+            doc.status = "deploying"
+            new_status = "deploying"
 
     # 6. DB 최종 반영
     db.commit()
@@ -779,11 +819,16 @@ def mark_all_documents_as_read(
     query = db.query(Document.id)
 
     if req.tab == "action":
-        # action 탭: 내가 결재할 차례거나 내가 반려한 문서들만 타겟팅
+        # action 탭: 내가 결재할 차례거나 내가 반려한 문서 + deploy_failed 작성자 문서
         query = (
-            query.join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            query.outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status.in_(["current", "rejected"])),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
+            .distinct()
         )
     elif req.tab == "all":
         # all 탭: 전체 문서 대상 (별도 필터 없음)

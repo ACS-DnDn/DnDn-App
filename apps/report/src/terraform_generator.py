@@ -367,8 +367,34 @@ def _format_opa_for_prompt(policies: list[dict]) -> str:
 _MAX_PROMPT_CHARS = 150_000  # Bedrock 프롬프트 전체 최대 크기
 
 
+def _build_deploy_log_section(deploy_log: list[dict] | None) -> str:
+    """이전 배포 실패 이력을 프롬프트 섹션으로 변환"""
+    if not deploy_log:
+        return ""
+    failures = [e for e in deploy_log if e.get("status") == "failure"]
+    if not failures:
+        return ""
+    lines = []
+    for e in failures:
+        event_labels = {
+            "checks_failed": "PR 검증 실패",
+            "apply_failed": "Terraform Apply 실패",
+        }
+        label = event_labels.get(e.get("event", ""), e.get("event", ""))
+        desc = e.get("description", "")
+        ctx_name = e.get("context", "")
+        line = f"- [{label}]"
+        if ctx_name:
+            line += f" ({ctx_name})"
+        if desc:
+            line += f": {desc}"
+        lines.append(line)
+    return "\n## 이전 배포 실패 이력 (반드시 참고하여 동일 원인이 재발하지 않도록 수정하세요)\n" + "\n".join(lines) + "\n"
+
+
 def _build_user_prompt(workplan_json: str, existing_tf: str, aws_docs_section: str,
-                       best_practices_section: str, opa_section: str) -> str:
+                       best_practices_section: str, opa_section: str,
+                       deploy_log_section: str = "") -> str:
     return f"""
 ## 작업계획서
 {workplan_json}
@@ -378,6 +404,7 @@ def _build_user_prompt(workplan_json: str, existing_tf: str, aws_docs_section: s
 {aws_docs_section}
 {best_practices_section}
 {opa_section}
+{deploy_log_section}
 
 위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
 
@@ -394,7 +421,7 @@ def _build_user_prompt(workplan_json: str, existing_tf: str, aws_docs_section: s
 """.strip()
 
 
-def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "") -> dict:
+def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "", deploy_log: list[dict] | None = None) -> dict:
     client = boto3.client("bedrock-runtime", region_name=REGION)
 
     aws_docs_section = (
@@ -434,13 +461,23 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
         logger.warning("workplan_json 축소: %d → %d자", len(workplan_json), _MAX_WORKPLAN_CHARS)
         workplan_json = workplan_json[:_MAX_WORKPLAN_CHARS] + "\n... (truncated)"
 
-    # 프롬프트 크기 안전장치: existing_tf부터 순차 축소
-    user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section)
+    deploy_log_section = _build_deploy_log_section(deploy_log)
+
+    # 프롬프트 크기 안전장치: existing_tf → deploy_log 순으로 축소
+    user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
     total = len(system) + len(user)
     if total > _MAX_PROMPT_CHARS:
         over = total - _MAX_PROMPT_CHARS
-        existing_tf = existing_tf[: max(0, len(existing_tf) - over)]
-        user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section)
+        # 1차: existing_tf 축소
+        if existing_tf and over > 0:
+            trim = min(len(existing_tf), over)
+            existing_tf = existing_tf[: len(existing_tf) - trim]
+            over -= trim
+        # 2차: deploy_log_section 축소
+        if deploy_log_section and over > 0:
+            trim = min(len(deploy_log_section), over)
+            deploy_log_section = deploy_log_section[: len(deploy_log_section) - trim]
+        user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
         logger.warning("프롬프트 축소: %d → %d자", total, len(system) + len(user))
 
     body = {
@@ -475,6 +512,7 @@ def generate_terraform_code(
     repo_name: str,
     github_token: str = None,
     workspace_id: str | None = None,
+    deploy_log: list[dict] | None = None,
 ) -> dict:
     """
     작업계획서 + OPA 정책 + MCP(AWS Provider 문서 + Checkov) → 테라폼 코드 생성
@@ -505,7 +543,7 @@ def generate_terraform_code(
     mcp_context = _fetch_mcp_context(workplan)
 
     print("[4/5] Bedrock으로 코드 생성 중...")
-    generated = _call_bedrock(workplan, existing_tf, mcp_context, opa_text)
+    generated = _call_bedrock(workplan, existing_tf, mcp_context, opa_text, deploy_log=deploy_log)
 
     print("[5/5] MCP Checkov 보안 스캔 중...")
     checkov_result = _run_checkov_scan(generated.get("files", []))

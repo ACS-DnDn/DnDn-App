@@ -81,6 +81,8 @@ const STATUS_MAP: Record<string, [string, string]> = {
   done: ['s-done', '완료'],
   rejected: ['s-rejected', '반려'],
   failed: ['s-failed', '실패'],
+  deploying: ['s-progress', '배포 중'],
+  deploy_failed: ['s-rejected', '배포 실패'],
 };
 
 export function ViewerPage() {
@@ -160,6 +162,7 @@ export function ViewerPage() {
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [approveOpinion, setApproveOpinion] = useState('');
+  const [autoMerge, setAutoMerge] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -173,6 +176,12 @@ export function ViewerPage() {
   const hasTerraform = !!doc.terraform && Object.keys(doc.terraform).length > 0;
   const tfHtml = hasTerraform ? renderTerraform(doc.terraform!) : '';
 
+  // 최종 결재자 여부: 결재 타입 중 가장 높은 seq가 현재 사용자인지
+  const approvalSteps = (doc.approvalLine ?? []).filter(s => s.type === '결재');
+  const lastApprover = approvalSteps.length > 0 ? approvalSteps[approvalSteps.length - 1] : null;
+  const isFinalApprover = viewMode === 'approver' && lastApprover?.status === 'current';
+  const showAutoMerge = isFinalApprover && hasTerraform;
+
   const [sCls, sLbl] = STATUS_MAP[doc.status] ?? ['s-progress', '진행 중'];
 
   async function handleApproveConfirm() {
@@ -180,9 +189,11 @@ export function ViewerPage() {
     setApproveModalOpen(false);
     setActionLoading(true);
     try {
+      const body: Record<string, unknown> = { comment: approveOpinion.trim() || null };
+      if (showAutoMerge) body.autoMerge = autoMerge;
       await apiFetch<{ success: boolean; data: { newStatus: string } }>(
         `/documents/${id}/approve`,
-        { method: 'POST', body: JSON.stringify({ comment: approveOpinion.trim() || null }) }
+        { method: 'POST', body: JSON.stringify(body) }
       );
       navigate('/documents', { replace: true });
     } catch {
@@ -335,6 +346,60 @@ export function ViewerPage() {
           </>
         )}
 
+        {/* 배포 현황 (PR이 있는 계획서만) */}
+        {!isReport && doc.prNumber && (
+          <div className="deploy-status-panel">
+            <div className="deploy-status-hd">
+              <svg viewBox="0 0 16 16" fill="none" stroke="#228BE6" strokeWidth="1.8"><path d="M2 8h12M8 2v12"/><circle cx="8" cy="8" r="6"/></svg>
+              배포 현황
+            </div>
+            <div className="deploy-info-row">
+              <span className="deploy-info-label">PR</span>
+              <a className="deploy-info-link" href={doc.prUrl} target="_blank" rel="noopener noreferrer">
+                #{doc.prNumber}
+              </a>
+              {doc.autoMerge !== undefined && (
+                <span className={`deploy-merge-badge ${doc.autoMerge ? 'auto' : 'manual'}`}>
+                  {doc.autoMerge ? '자동 Merge' : '수동 Merge'}
+                </span>
+              )}
+            </div>
+            {(doc.deployLog ?? []).length > 0 && (
+              <div className="deploy-timeline">
+                {(doc.deployLog ?? []).map((entry, i) => {
+                  const dotCls = entry.status === 'success' ? 'dt-success' : entry.status === 'failure' ? 'dt-failure' : 'dt-info';
+                  const eventLabels: Record<string, string> = {
+                    pr_created: 'PR 생성',
+                    checks_passed: '검증 통과',
+                    checks_failed: '검증 실패',
+                    merged: 'Merge',
+                    applied: 'Apply 성공',
+                    apply_failed: 'Apply 실패',
+                  };
+                  return (
+                    <div className="deploy-event" key={i}>
+                      <div className={`deploy-event-dot ${dotCls}`} />
+                      <div className="deploy-event-body">
+                        <div className="deploy-event-header">
+                          <span className="deploy-event-label">{eventLabels[entry.event] ?? entry.event}</span>
+                          {entry.context && <span className="deploy-event-ctx">{entry.context}</span>}
+                          <span className="deploy-event-time">{fmtDate(entry.timestamp)}</span>
+                        </div>
+                        {entry.description && <div className="deploy-event-desc">{entry.description}</div>}
+                        {entry.url && (
+                          <a className="deploy-event-link" href={entry.url} target="_blank" rel="noopener noreferrer">
+                            상세 보기 →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 보고서 모드: 계획서 작성 버튼 */}
         {isReport && (
           <div className="report-actions">
@@ -359,8 +424,8 @@ export function ViewerPage() {
           </div>
         )}
 
-        {/* 반려 문서 — 기안자 수정 버튼 */}
-        {doc.status === 'rejected' && doc.authorId && session?.id === doc.authorId && (
+        {/* 반려/배포실패 문서 — 기안자 수정 버튼 */}
+        {(doc.status === 'rejected' || doc.status === 'deploy_failed') && doc.authorId && session?.id === doc.authorId && (
           <div className="sidebar-actions">
             <button className="btn-edit-rejected" onClick={() => navigate(`/plan?editDocId=${doc.id}`)}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>
@@ -390,6 +455,15 @@ export function ViewerPage() {
         <div className="viewer-modal approve-reject-modal">
           <div className="approve-reject-body">
             <textarea className="approve-reject-textarea" value={approveOpinion} onChange={e => setApproveOpinion(e.target.value)} placeholder="결재 의견을 입력하세요 (선택)" />
+            {showAutoMerge && (
+              <div className="approve-pr-info">
+                <p className="approve-pr-notice">결재 승인 시 GitHub PR이 자동 생성됩니다.</p>
+                <label className="approve-auto-merge">
+                  <input type="checkbox" checked={autoMerge} onChange={e => setAutoMerge(e.target.checked)} />
+                  <span>PR 검증 통과 시 자동 Merge</span>
+                </label>
+              </div>
+            )}
           </div>
           <div className="approve-reject-actions">
             <button className="btn-modal-cancel" onClick={() => setApproveModalOpen(false)}>취소</button>

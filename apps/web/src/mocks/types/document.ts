@@ -1,5 +1,5 @@
 export type DocType = '계획서' | '작업계획서' | '이벤트보고서' | '주간보고서' | '헬스이벤트보고서';
-export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed';
+export type DocStatus = 'progress' | 'done' | 'rejected' | 'failed' | 'deploying' | 'deploy_failed';
 export type DocAction = 'approve' | 'rejected' | null;
 
 export interface ApprovalLineItem {
@@ -25,6 +25,15 @@ export interface AttachmentItem {
   sizeKb?: number;
 }
 
+export interface DeployLogEntry {
+  event: string;       // pr_created / checks_passed / checks_failed / merged / applied / apply_failed
+  status: string;      // success / failure / info
+  description?: string;
+  url?: string;
+  context?: string;
+  timestamp: string;
+}
+
 export interface Document {
   id: string;
   docNum?: string;
@@ -44,6 +53,11 @@ export interface Document {
   refDocs?: RefDocItem[];
   attachments?: AttachmentItem[];
   approvalLine?: ApprovalLineItem[];
+  prNumber?: number;
+  prUrl?: string;
+  prStatus?: string;
+  autoMerge?: boolean;
+  deployLog?: DeployLogEntry[];
 }
 
 export interface RefDocMeta {

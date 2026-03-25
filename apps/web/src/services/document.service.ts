@@ -12,6 +12,7 @@ interface ApiDocItem {
   action: string | null;
   isRead: boolean;
   workspace?: string;
+  prStatus?: string;
 }
 
 function mapDoc(item: ApiDocItem): Document {
@@ -27,6 +28,7 @@ function mapDoc(item: ApiDocItem): Document {
     isRead: item.isRead,
     icon: '📄',
     workspace: item.workspace ?? '',
+    prStatus: item.prStatus,
   };
 }
 
@@ -138,6 +140,9 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       refDocs?: { id: string; title: string; type: string }[];
       attachments?: { id: string; name: string; sizeKb?: number }[];
       approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
+      prNumber?: number; prUrl?: string; prStatus?: string;
+      autoMerge?: boolean;
+      deployLog?: import('@/mocks/types/document').DeployLogEntry[];
     } }>(`/documents/${id}`);
     const res = raw.data;
     return {
@@ -157,6 +162,11 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       refDocIds: res.refDocs?.map(d => d.id),
       attachments: res.attachments,
       approvalLine: res.approvalLine,
+      prNumber: res.prNumber,
+      prUrl: res.prUrl,
+      prStatus: res.prStatus,
+      autoMerge: res.autoMerge,
+      deployLog: res.deployLog,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;
