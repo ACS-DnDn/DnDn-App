@@ -98,6 +98,43 @@ def _notify(user: User, text: str) -> None:
 
 _logger = logging.getLogger(__name__)
 
+# ── 문서번호 채번 ──────────────────────────────────────────────
+_DOC_TYPE_CODE = {
+    "계획서": "PLN",
+    "이벤트보고서": "EVT",
+    "헬스이벤트보고서": "RPT",
+    "주간보고서": "RPT",
+}
+
+
+def _next_doc_num(db: "Session", doc_type: str) -> str:
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)."""
+    from sqlalchemy import cast, Integer, func as sa_func
+
+    code = _DOC_TYPE_CODE.get(doc_type, "DOC")
+    year = datetime.now(KST).year
+    prefix = f"{year}-{code}-"
+
+    suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
+    max_seq = (
+        db.query(sa_func.max(cast(suffix_expr, Integer)))
+        .filter(Document.doc_num.like(f"{prefix}%"))
+        .scalar()
+    )
+    seq = (max_seq or 0) + 1
+    return f"{prefix}{seq:04d}"
+
+
+def _s3_put_text(key: str, content: str) -> None:
+    """S3에 텍스트 파일을 저장합니다."""
+    if not key or not _S3_BUCKET:
+        return
+    _get_s3_client().put_object(
+        Bucket=_S3_BUCKET, Key=key,
+        Body=content.encode("utf-8"),
+        ContentType="text/html; charset=utf-8",
+    )
+
 
 def _s3_list_terraform_files(prefix: str) -> dict[str, str]:
     """S3 prefix 아래의 terraform 파일들을 {filename: content} 딕셔너리로 반환."""
@@ -243,7 +280,10 @@ def get_documents(
             .filter(Approval.status.in_(["current", "rejected"]))
         )
     else:
-        query = db.query(Document).filter(Document.workspace_id.in_(my_ws_ids))
+        query = db.query(Document).filter(
+            Document.workspace_id.in_(my_ws_ids),
+            Document.status != "draft",
+        )
 
     # 3. 검색어(keyword) 필터링
     if keyword:
@@ -394,6 +434,12 @@ def submit_document(
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
 
+    # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
+    need_html_update = False
+    if not req.isDraft and not doc.doc_num:
+        doc.doc_num = _next_doc_num(db, doc.type or "계획서")
+        need_html_update = bool(doc.html_key)
+
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
     db.query(Approval).filter(Approval.document_id == doc.id).delete()
     db.flush()
@@ -418,6 +464,22 @@ def submit_document(
     # 7. DB 최종 반영
     db.commit()
     db.refresh(doc)
+
+    # 7-1. S3 HTML 문서번호 갱신 (commit 성공 후 수행 — DB/S3 불일치 방지)
+    if need_html_update and doc.doc_num and doc.html_key:
+        try:
+            import re as _re
+            html = _s3_get_text(doc.html_key)
+            if html:
+                updated = _re.sub(
+                    r'(<div\s+class="doc-header-no">)\s*(</div>)',
+                    rf'\g<1>{doc.doc_num}\2',
+                    html,
+                )
+                if updated != html:
+                    _s3_put_text(doc.html_key, updated)
+        except (ClientError, ValueError, TypeError) as e:
+            _logger.warning("HTML 문서번호 갱신 실패: %s", e)
 
     # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
     if not req.isDraft:
@@ -493,7 +555,7 @@ def get_document_detail(
         )
 
     # Terraform 코드 (S3에서 조회)
-    terraform_data = _s3_get_json(doc.terraform_key) if doc.terraform_key else None
+    terraform_data = _s3_list_terraform_files(doc.terraform_key) if doc.terraform_key else None
 
     # 현재 사용자의 결재 액션 (approve/rejected 가능 여부)
     my_approval = (
@@ -515,6 +577,7 @@ def get_document_detail(
             type=doc.type,
             status=doc.status,
             action=action,
+            authorId=str(doc.author_id) if doc.author_id else None,
             author={"name": doc.author.name if doc.author else "DnDn Agent", "role": doc.author.position if doc.author else ""},
             createdAt=doc.created_at.isoformat() if doc.created_at else None,
             content=content,

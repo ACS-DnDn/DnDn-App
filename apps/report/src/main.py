@@ -44,10 +44,13 @@ from .s3_client import (
     save_terraform_files,
 )
 from .makejob import create_job, get_job
-from .models import ReportJob, Document, JobType, Workspace, User
-from .database import SessionLocal, get_db
+from .models import ReportJob, Document, JobType, Workspace, User, Attachment
+from .database import SessionLocal, get_db, Base, engine
 
 logger = logging.getLogger(__name__)
+
+# 테이블 자동 생성 (Attachment 등 신규 모델 반영)
+Base.metadata.create_all(bind=engine)
 
 # ── 문서번호 타입 매핑 ──────────────────────────────────────
 DOC_TYPE_CODE = {
@@ -122,7 +125,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
         db.commit()
 
         doc_type = "계획서"
-        doc_num = _next_doc_num(db, doc_type)
+        # doc_num은 상신 시점에 채번 (미상신 문서가 번호를 소모하지 않도록)
 
         # 담당자 정보
         author_label = req.author_name or ""
@@ -130,7 +133,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             author_label = f"{author_label} {req.author_position}".strip()
 
         doc_meta = {
-            "doc_num": doc_num,
+            "doc_num": "",
             "author_label": author_label,
             "company_logo_url": req.company_logo_url or "",
         }
@@ -151,7 +154,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
 
         doc = Document(
             id=doc_id,
-            doc_num=doc_num,
+            doc_num=None,
             title=title,
             type=doc_type,
             html_key=html_key,
@@ -159,9 +162,20 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             ref_doc_ids=req.ref_doc_ids or None,
             workspace_id=workspace_id,
             author_id=req.author_id or None,
-            status="done",
+            status="draft",
         )
         db.add(doc)
+
+        # 근거자료 첨부 — AI 생성 입력 데이터
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False).encode("utf-8")
+        canonical_size_kb = max(1, len(canonical_json_bytes) // 1024)
+        db.add(Attachment(
+            id=f"{doc_id}-canonical",
+            document_id=doc_id,
+            original_name="작업계획_요청데이터.json",
+            file_path=json_key,
+            size_kb=canonical_size_kb,
+        ))
 
         job.status = "done"
         job.document_id = doc_id

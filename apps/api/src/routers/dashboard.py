@@ -30,11 +30,17 @@ def get_dashboard(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     # 1. 문서 통계
-    pending_count = (
+    approval_pending = (
         db.query(Approval)
         .filter(Approval.user_id == current_user.id, Approval.status == "current")
         .count()
     )
+    rejected_pending = (
+        db.query(Document)
+        .filter(Document.author_id == current_user.id, Document.status == "rejected")
+        .count()
+    )
+    pending_count = approval_pending + rejected_pending
     ongoing_count = (
         db.query(Document)
         .filter(Document.author_id == current_user.id, Document.status == "progress")
@@ -58,6 +64,7 @@ def get_dashboard(
         .filter(
             Document.workspace_id.in_(my_ws_ids),
             Document.id.notin_(read_doc_ids),
+            Document.status != "draft",
         )
         .count()
     )
@@ -86,10 +93,38 @@ def get_dashboard(
             }
         )
 
+    # 3-1. 반려된 문서 — 기안자에게도 대시보드에 노출
+    rejected_docs = (
+        db.query(Document)
+        .filter(
+            Document.author_id == current_user.id,
+            Document.status == "rejected",
+        )
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    seen_ids = {d["id"] for d in pending_docs}
+    for doc in rejected_docs:
+        if str(doc.id) not in seen_ids:
+            pending_docs.append(
+                {
+                    "id": str(doc.id),
+                    "docNum": doc.doc_num or str(doc.id)[:8],
+                    "title": doc.title,
+                    "status": "rejected",
+                    "type": doc.type if doc.type else "작업 계획서",
+                    "author": doc.author.name if doc.author else "DnDn Agent",
+                    "date": _to_kst_str(doc.created_at),
+                }
+            )
+
     # 4. 결재 완료/내 문서 (Completed Docs)
     completed_docs = []
     my_docs = (
-        db.query(Document).filter(Document.author_id == current_user.id).order_by(Document.created_at.desc()).limit(5).all()
+        db.query(Document).filter(
+            Document.author_id == current_user.id,
+            Document.status != "draft",
+        ).order_by(Document.created_at.desc()).limit(5).all()
     )
     for doc in my_docs:
         completed_docs.append(

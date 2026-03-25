@@ -15,6 +15,8 @@
 .s-failed { background: var(--red-soft); color: var(--red); }
 .s-failed::before { background: var(--red); }
 
+.btn-back { width: 30px; height: 30px; border: 1px solid var(--border); background: var(--bg-card); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); transition: all .12s; padding: 0; flex-shrink: 0; }
+.btn-back:hover { background: var(--mint-soft); color: var(--mint); border-color: var(--mint); }
 .toolbar-spacer { flex: 1; }
 .btn-tf-popup { padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(112,72,232,.22); background: var(--purple-soft); cursor: pointer; font-size: 12px; font-weight: 700; color: var(--purple); display: flex; align-items: center; gap: 6px; transition: all .15s; font-family: 'Pretendard', sans-serif; }
 .btn-tf-popup:hover { background: rgba(112,72,232,.14); }
@@ -110,6 +112,7 @@
 .step-dot.dot-approved { background: var(--green); }
 .step-dot.dot-current { background: var(--mint); box-shadow: 0 0 0 3px rgba(34,139,230,.2); }
 .step-dot.dot-wait { background: var(--bg-card); border: 2px solid var(--border-med); }
+.step-dot.dot-rejected { background: var(--orange); }
 .step-content { flex: 1; min-width: 0; }
 .step-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap; }
 .step-seq { font-size: 9.5px; font-weight: 700; color: var(--text-muted); min-width: 26px; flex-shrink: 0; }
@@ -136,6 +139,10 @@
 .btn-approve:hover { background: #1c7ed6; }
 .btn-reject { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--border-med); background: transparent; color: var(--text-sub); font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .btn-reject:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-soft); }
+
+/* 반려 문서 수정 버튼 */
+.btn-edit-rejected { width: 100%; padding: 10px; border-radius: 9px; border: 1.5px solid var(--orange); background: var(--orange-soft); color: var(--orange); font-size: 13px; font-weight: 700; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.btn-edit-rejected:hover { background: var(--orange); color: #fff; }
 
 /* 계획서 작성 버튼 (보고서 모드) */
 .report-actions { padding: 14px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }
@@ -201,3 +208,16 @@ pre.tf-pre { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,2
 .btn-modal-approve:hover { background: #1c7ed6; }
 .btn-modal-reject { flex: 1; padding: 10px; border-radius: 9px; border: none; background: var(--orange); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: background .15s; }
 .btn-modal-reject:hover { background: #e8590c; }
+
+/* 참조문서 모달 */
+.ref-doc-modal { background: var(--bg-card); width: min(900px, 92vw); height: min(80vh, 700px); }
+.ref-doc-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.ref-doc-modal-title { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.ref-doc-modal-num { font-size: 11.5px; font-weight: 600; color: var(--mint); background: var(--mint-soft); padding: 2px 8px; border-radius: 5px; flex-shrink: 0; }
+.ref-doc-modal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ref-doc-modal-open { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border-med); background: transparent; cursor: pointer; color: var(--text-muted); font-size: 12px; display: flex; align-items: center; justify-content: center; transition: all .12s; }
+.ref-doc-modal-open:hover { background: var(--mint-soft); color: var(--mint); border-color: var(--mint); }
+.ref-doc-modal-close { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border-med); background: transparent; cursor: pointer; color: var(--text-muted); font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all .12s; }
+.ref-doc-modal-close:hover { background: var(--red-soft); color: var(--red); border-color: var(--red); }
+.ref-doc-modal-body { flex: 1; overflow: hidden; padding: 0; }
+.ref-doc-iframe { width: 100%; height: 100%; border: none; }

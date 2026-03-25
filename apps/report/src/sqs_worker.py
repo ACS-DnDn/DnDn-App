@@ -37,8 +37,11 @@ from datetime import datetime, timezone
 from sqlalchemy import func as sa_func
 
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
-from .database import SessionLocal
-from .models import Document
+from .database import SessionLocal, Base, engine
+from .models import Document, Attachment
+
+# 테이블 자동 생성 (독립 실행 시에도 Attachment 테이블 보장)
+Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -89,6 +92,77 @@ def _next_doc_num(db, doc_type: str) -> str:
 
 def _sqs_client():
     return boto3.client("sqs", region_name=REGION)
+
+
+# raw 디렉토리 → 첨부파일 표시명 매핑
+_EVIDENCE_DIR_LABELS = {
+    "cloudtrail": "CloudTrail_이벤트로그",
+    "advisor": "TrustedAdvisor_점검결과",
+    "access-analyzer": "AccessAnalyzer_분석결과",
+    "cost-explorer": "CostExplorer_비용데이터",
+    "cloudwatch": "CloudWatch_메트릭",
+    "config": "Config_리소스데이터",
+}
+
+
+def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, canonical_size_kb: int):
+    """활동보고서의 Worker raw evidence 파일들을 첨부파일로 등록."""
+    # 1) 정제된 canonical 데이터
+    db.add(Attachment(
+        id=f"{doc_id}-canonical",
+        document_id=doc_id,
+        original_name="활동보고_정제데이터.json",
+        file_path=json_key,
+        size_kb=canonical_size_kb,
+    ))
+
+    # 2) raw evidence 파일들 (Worker가 S3에 업로드한 수집 데이터)
+    raw_prefix_uri = (
+        canonical.get("meta", {}).get("evidence", {}).get("raw_prefix_s3_uri", "")
+    )
+    if not raw_prefix_uri:
+        return
+
+    # s3://bucket/prefix/raw/ → bucket, key_prefix
+    stripped = raw_prefix_uri.replace("s3://", "")
+    slash_idx = stripped.find("/")
+    if slash_idx < 0:
+        return
+    bucket = stripped[:slash_idx]
+    key_prefix = stripped[slash_idx + 1:]
+
+    try:
+        attachments = []
+        paginator = _s3_client().get_paginator("list_objects_v2")
+        idx = 0
+        for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                size_kb = max(1, (obj["Size"] + 1023) // 1024)
+                filename = key.split("/")[-1]
+
+                # raw/ 이후 첫 디렉토리로 카테고리 판별
+                relative = key[len(key_prefix):]
+                category = relative.split("/")[0] if "/" in relative else ""
+
+                if category == "meta":
+                    continue  # job_payload 등 메타데이터는 스킵
+
+                label = _EVIDENCE_DIR_LABELS.get(category, category)
+                display_name = f"{label}_{filename}" if label else filename
+
+                attachments.append(Attachment(
+                    id=f"{doc_id}-evidence-{idx}",
+                    document_id=doc_id,
+                    original_name=display_name,
+                    file_path=key,
+                    size_kb=size_kb,
+                ))
+                idx += 1
+        db.add_all(attachments)
+    except Exception as e:
+        logger.warning("활동보고서 evidence 파일 목록 조회 실패: %s", e)
+        raise
 
 
 def _html_exists(doc_id: str, workspace_id: str) -> bool:
@@ -182,7 +256,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     canonical = _read_canonical_from_s3(s3_key)
 
     # canonical JSON을 reports/ 경로에도 저장 (API에서 조회용)
-    save_report(doc_id, canonical, workspace_id)
+    json_key = save_report(doc_id, canonical, workspace_id)
 
     # DB에 Document 레코드 생성 전 문서번호 채번 (HTML 생성에 필요)
     doc_type = {
@@ -233,11 +307,46 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             title=title,
             type=doc_type,
             html_key=html_key,
-            json_key=f"{workspace_id}/reports/{doc_id}.json",
+            json_key=json_key,
             workspace_id=workspace_id,
             status="done",
         )
         db.add(doc)
+
+        # 근거자료 첨부 (indent=2로 저장되므로 동일 옵션으로 크기 계산)
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False, indent=2).encode("utf-8")
+        canonical_size_kb = max(1, (len(canonical_json_bytes) + 1023) // 1024)
+
+        if event_type == "weekly":
+            # 활동보고서: Worker가 수집한 raw evidence 파일들 등록
+            _register_weekly_evidence(db, doc_id, canonical, json_key, canonical_size_kb)
+        else:
+            # 이벤트/헬스 보고서: 원본 + 정제 데이터
+            raw_name_map = {
+                "findings": "SecurityHub_Finding_원본.json",
+                "health": "AWS_Health_Event_원본.json",
+            }
+            raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
+            try:
+                raw_size_bytes = _s3_client().head_object(Bucket=S3_BUCKET, Key=s3_key)["ContentLength"]
+                raw_size_kb = max(1, (raw_size_bytes + 1023) // 1024)
+            except Exception:
+                raw_size_kb = canonical_size_kb
+            db.add(Attachment(
+                id=f"{doc_id}-raw",
+                document_id=doc_id,
+                original_name=raw_name,
+                file_path=s3_key,
+                size_kb=raw_size_kb,
+            ))
+            db.add(Attachment(
+                id=f"{doc_id}-canonical",
+                document_id=doc_id,
+                original_name="보고서_정제데이터.json",
+                file_path=json_key,
+                size_kb=canonical_size_kb,
+            ))
+
         db.commit()
         created = True
     except Exception as e:

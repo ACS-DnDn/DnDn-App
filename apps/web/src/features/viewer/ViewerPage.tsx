@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getAttachmentDownloadUrl } from '@/services/document.service';
 import { apiFetch } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 import './ViewerPage.css';
 
 function escHtml(s: string) {
@@ -36,7 +37,7 @@ function fmtDate(iso?: string | null): string | undefined {
 
 const DOT_MAP: Record<string, string> = {
   author: 'dot-author', approved: 'dot-approved', current: 'dot-current',
-  wait: 'dot-wait', rejected: 'dot-wait',
+  wait: 'dot-wait', rejected: 'dot-rejected',
 };
 const STATUS_LABEL: Record<string, string> = {
   author: '기안', approved: '결재', current: '대기', wait: '대기', rejected: '반려',
@@ -87,6 +88,7 @@ const STATUS_MAP: Record<string, [string, string]> = {
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { session } = useAuth();
 
   const [doc, setDoc] = useState<import('@/mocks/types/document').Document | undefined>(undefined);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -124,6 +126,34 @@ export function ViewerPage() {
   const [attachChecked, setAttachChecked] = useState<boolean[]>([]);
   useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
+
+  /* 참조문서 모달 */
+  const [refModalOpen, setRefModalOpen] = useState(false);
+  const [refModalDoc, setRefModalDoc] = useState<{ id: string; docNum: string; name: string; content?: string } | null>(null);
+  const [refBlobUrl, setRefBlobUrl] = useState<string | null>(null);
+
+  async function openRefDocModal(rd: { id: string; docNum: string; name: string }) {
+    setRefModalDoc({ ...rd });
+    setRefModalOpen(true);
+    try {
+      const result = await getDocumentById(rd.id);
+      if (result?.content) {
+        const blob = new Blob([result.content], { type: 'text/html' });
+        setRefBlobUrl(URL.createObjectURL(blob));
+      }
+    } catch { /* skip */ }
+  }
+
+  function closeRefDocModal() {
+    setRefModalOpen(false);
+    setRefModalDoc(null);
+    if (refBlobUrl) { URL.revokeObjectURL(refBlobUrl); setRefBlobUrl(null); }
+  }
+
+  // 언마운트 시 refBlobUrl 메모리 누수 방지
+  useEffect(() => {
+    return () => { if (refBlobUrl) URL.revokeObjectURL(refBlobUrl); };
+  }, [refBlobUrl]);
 
   /* 모달 */
   const [tfModalOpen, setTfModalOpen] = useState(false);
@@ -186,6 +216,9 @@ export function ViewerPage() {
       {/* ── 문서 본문 ── */}
       <main className="doc-main">
         <div className="doc-toolbar">
+          <button className="btn-back" onClick={() => navigate(-1)} title="뒤로 가기">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 2L4 8l6 6"/></svg>
+          </button>
           <span className={`doc-status-badge ${sCls}`}>{sLbl}</span>
           <div className="toolbar-spacer" />
           {hasTerraform && (
@@ -216,7 +249,7 @@ export function ViewerPage() {
               {refDocList.length === 0 ? (
                 <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)' }}>참조 문서 없음</div>
               ) : refDocList.map(rd => (
-                <div key={rd.id} className="sidebar-ref-item" onClick={() => navigate(`/viewer/${rd.id}`)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/viewer/${rd.id}`); } }}>
+                <div key={rd.id} className="sidebar-ref-item" onClick={() => openRefDocModal(rd)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRefDocModal(rd); } }}>
                   <div className="sidebar-ref-no">{rd.docNum}</div>
                   <div className="sidebar-ref-row">
                     <span className="sidebar-ref-name">{rd.name}</span>
@@ -276,7 +309,7 @@ export function ViewerPage() {
                           {viewMode === 'completed' && (s.statusCls === 'current' || s.statusCls === 'wait') ? '결재' : s.status}
                         </div>
                       </div>
-                      {s.comment && <div className="step-comment">{s.comment}</div>}
+                      {s.comment && <div className={`step-comment${s.statusCls === 'rejected' ? ' reject-comment' : ''}`}>{s.comment}</div>}
                     </div>
                   </div>
                 ))}
@@ -326,6 +359,16 @@ export function ViewerPage() {
             </button>
           </div>
         )}
+
+        {/* 반려 문서 — 기안자 수정 버튼 */}
+        {doc.status === 'rejected' && doc.authorId && session?.id === doc.authorId && (
+          <div className="sidebar-actions">
+            <button className="btn-edit-rejected" onClick={() => navigate(`/plan?editDocId=${doc.id}`)}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>
+              수정
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* ── Terraform 모달 ── */}
@@ -370,6 +413,31 @@ export function ViewerPage() {
           <div className="approve-reject-actions">
             <button className="btn-modal-cancel" onClick={() => setRejectModalOpen(false)}>취소</button>
             <button className="btn-modal-reject" onClick={handleReject}>반려</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 참조문서 모달 ── */}
+      <div className={`viewer-modal-overlay${refModalOpen ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeRefDocModal(); }}>
+        <div className="viewer-modal ref-doc-modal">
+          <div className="ref-doc-modal-header">
+            <div className="ref-doc-modal-title">
+              {refModalDoc?.docNum && <span className="ref-doc-modal-num">{refModalDoc.docNum}</span>}
+              {refModalDoc?.name}
+            </div>
+            <div className="ref-doc-modal-actions">
+              <button className="ref-doc-modal-open" onClick={() => { closeRefDocModal(); navigate(`/viewer/${refModalDoc?.id}`); }} title="문서로 이동">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3H3v10h10v-2"/><path d="M8 2h6v6"/><path d="M14 2L7 9"/></svg>
+              </button>
+              <button className="ref-doc-modal-close" onClick={closeRefDocModal}>&times;</button>
+            </div>
+          </div>
+          <div className="ref-doc-modal-body">
+            {refBlobUrl ? (
+              <iframe className="ref-doc-iframe" src={refBlobUrl} title="참조 문서 미리보기" />
+            ) : (
+              <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>문서를 불러오는 중...</div>
+            )}
           </div>
         </div>
       </div>

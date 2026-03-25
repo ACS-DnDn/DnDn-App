@@ -96,6 +96,7 @@ class DocumentAuthor(BaseModel):
 
 class DocumentRefDoc(BaseModel):
     id: str
+    docNum: str
     title: str
     type: str
 
@@ -123,6 +124,7 @@ class DocumentDetailResponse(BaseModel):
     type: str
     status: str
     action: Optional[str] = None
+    authorId: Optional[str] = None
     author: DocumentAuthor
     createdAt: Optional[str] = None
     content: Optional[str] = None

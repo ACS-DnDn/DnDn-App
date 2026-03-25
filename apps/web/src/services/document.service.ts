@@ -115,7 +115,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
   try {
     const raw = await apiFetch<{ success: boolean; data: {
       id: string; title: string; type: string; status: string; action?: string | null;
-      author?: { name: string }; createdAt?: string; workspace?: string;
+      authorId?: string | null; author?: { name: string }; createdAt?: string; workspace?: string;
       content?: string; terraform?: Record<string, string>;
       refDocs?: { id: string; title: string; type: string }[];
       attachments?: { id: string; name: string; sizeKb?: number }[];
@@ -130,6 +130,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       type: res.type as Document['type'],
       status: res.status as Document['status'],
       action: (res.action ?? null) as Document['action'],
+      authorId: res.authorId ?? undefined,
       icon: '📄',
       workspace: res.workspace ?? '',
       content: res.content,
