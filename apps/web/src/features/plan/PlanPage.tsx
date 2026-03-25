@@ -126,13 +126,15 @@ export function PlanPage() {
   useEffect(() => {
     const editDocId = searchParams.get('editDocId');
     if (!editDocId) return;
+    let blobUrl: string | null = null;
     getDocumentById(editDocId).then(doc => {
       if (!doc) return;
       setDraftDocumentId(editDocId);
       // HTML 문서 로드
       if (doc.content) {
         const blob = new Blob([doc.content], { type: 'text/html' });
-        setIframeSrc(URL.createObjectURL(blob));
+        blobUrl = URL.createObjectURL(blob);
+        setIframeSrc(blobUrl);
         setDocState('ready');
       }
       // Terraform 파일 로드
@@ -150,7 +152,10 @@ export function PlanPage() {
       }
       // 제목 로드
       if (doc.name) setNlTarget(doc.name);
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('문서 로드 실패:', err);
+    });
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [searchParams]);
 
   /* ── scroll log panel ── */

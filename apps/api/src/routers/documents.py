@@ -430,7 +430,7 @@ def submit_document(
     doc.work_date = req.work_date
     doc.ref_doc_ids = req.refDocIds
     doc.is_draft = req.isDraft
-    if req.authorComment:
+    if req.authorComment is not None:
         doc.submit_comment = req.authorComment.strip()
 
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
@@ -478,12 +478,14 @@ def submit_document(
                     r'(문서번호:\s*)(.*?)(<br|</div>)',
                     rf'\g<1>{doc.doc_num}\3',
                     html,
+                    flags=_re.DOTALL,
                 )
                 # 푸터: 기존 문서번호 텍스트 치환
                 updated = _re.sub(
                     r'(<div\s+class="doc-footer"><span>).*?(\s*&nbsp;/&nbsp;)',
                     rf'\g<1>{doc.doc_num}\2',
                     updated,
+                    flags=_re.DOTALL,
                 )
                 if updated != html:
                     _s3_put_text(doc.html_key, updated)
