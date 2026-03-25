@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Document, Workspace
+from apps.api.src.models import User, Document, Workspace, DocumentRead
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.github import (
@@ -236,6 +236,11 @@ def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
+def _mark_unread(db: Session, doc: Document) -> None:
+    """문서 상태 변경 시 기존 읽음 기록을 삭제하여 안읽음으로 전환."""
+    db.query(DocumentRead).filter(DocumentRead.document_id == doc.id).delete()
+
+
 def _append_deploy_log(
     db: Session,
     doc: Document,
@@ -351,6 +356,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         # 머지 완료만 추적 (DnDn이 PR 라이프사이클 관리)
         if action == "closed" and merged and doc.pr_status != "merged":
             doc.pr_status = "merged"
+            _mark_unread(db, doc)
             _append_deploy_log(db, doc, "merged", "success",
                                description="PR이 Merge되었습니다.",
                                url=pr.get("html_url"))
@@ -386,6 +392,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 if first_failure:
                     doc.pr_status = "checks_failed"
                     doc.status = "deploy_failed"
+                    _mark_unread(db, doc)
                 _append_deploy_log(db, doc, "checks_failed", "failure",
                                    description=cr_desc, url=cr_url, context=cr_ctx)
                 db.commit()
@@ -443,6 +450,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                         if first_failure:
                             doc.pr_status = "checks_failed"
                             doc.status = "deploy_failed"
+                            _mark_unread(db, doc)
                         _append_deploy_log(db, doc, "checks_failed", "failure",
                                            description=st_desc, url=st_url, context=st_ctx)
                         db.commit()
@@ -485,6 +493,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     if new_pr_status and new_pr_status != doc.pr_status:
                         doc.pr_status = new_pr_status
                         doc.status = new_doc_status
+                        _mark_unread(db, doc)
                         _append_deploy_log(db, doc, new_pr_status, "success" if new_pr_status == "applied" else "failure",
                                            description=apply_desc, url=apply_url, context=apply_ctx)
                         db.commit()
@@ -528,6 +537,7 @@ def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
         merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
         if merged:
             doc.pr_status = "merged"
+            _mark_unread(db, doc)
             _append_deploy_log(db, doc, "merged", "success",
                                description="PR 검증 통과 — 자동 Merge 완료")
             db.commit()
