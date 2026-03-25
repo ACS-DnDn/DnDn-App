@@ -3,6 +3,7 @@ from sqlalchemy import (
     String,
     Text,
     Boolean,
+    Integer,
     ForeignKey,
     DateTime,
     JSON,
@@ -91,3 +92,15 @@ class Document(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+
+    id = Column(String(50), primary_key=True)
+    document_id = Column(
+        String(50), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    original_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    size_kb = Column(Integer, default=0)

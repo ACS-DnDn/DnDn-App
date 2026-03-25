@@ -38,7 +38,7 @@ from sqlalchemy import func as sa_func
 
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
 from .database import SessionLocal
-from .models import Document
+from .models import Document, Attachment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -227,17 +227,30 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     created = False
     db = SessionLocal()
     try:
+        json_key = f"{workspace_id}/reports/{doc_id}.json"
         doc = Document(
             id=doc_id,
             doc_num=doc_num,
             title=title,
             type=doc_type,
             html_key=html_key,
-            json_key=f"{workspace_id}/reports/{doc_id}.json",
+            json_key=json_key,
             workspace_id=workspace_id,
             status="done",
         )
         db.add(doc)
+
+        # 근거자료 첨부 — canonical JSON (원본 이벤트 데이터)
+        canonical_json_str = json.dumps(canonical, ensure_ascii=False)
+        canonical_size_kb = max(1, len(canonical_json_str.encode("utf-8")) // 1024)
+        db.add(Attachment(
+            id=f"{doc_id}-canonical",
+            document_id=doc_id,
+            original_name="보고서_원본데이터.json",
+            file_path=json_key,
+            size_kb=canonical_size_kb,
+        ))
+
         db.commit()
         created = True
     except Exception as e:

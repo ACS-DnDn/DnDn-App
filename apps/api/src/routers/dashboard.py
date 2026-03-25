@@ -58,6 +58,7 @@ def get_dashboard(
         .filter(
             Document.workspace_id.in_(my_ws_ids),
             Document.id.notin_(read_doc_ids),
+            Document.status != "draft",
         )
         .count()
     )
@@ -89,7 +90,10 @@ def get_dashboard(
     # 4. 결재 완료/내 문서 (Completed Docs)
     completed_docs = []
     my_docs = (
-        db.query(Document).filter(Document.author_id == current_user.id).order_by(Document.created_at.desc()).limit(5).all()
+        db.query(Document).filter(
+            Document.author_id == current_user.id,
+            Document.status != "draft",
+        ).order_by(Document.created_at.desc()).limit(5).all()
     )
     for doc in my_docs:
         completed_docs.append(

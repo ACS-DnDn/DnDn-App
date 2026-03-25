@@ -118,7 +118,7 @@ export function PlanPage() {
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === doc.id)) return prev;
-      return [...prev, { no: doc.id, name: `${doc.icon} ${doc.name}` }];
+      return [...prev, { no: doc.id, name: `${doc.docNum ?? doc.id} — ${doc.name}` }];
     });
   }, [searchParams, docList]);
 
@@ -139,7 +139,7 @@ export function PlanPage() {
   /* ══════════════════════════════
      결재선
   ══════════════════════════════ */
-  const authorInfo = { name: session.name, rank: session.role };
+  const authorInfo = { name: session.name, rank: session.position ?? session.role };
 
   function removeApprover(idx: number) {
     setApprovers(prev => prev.filter((_, i) => i !== idx));
@@ -237,7 +237,7 @@ export function PlanPage() {
     if (!d) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === d.id)) return prev;
-      return [...prev, { no: d.id, name: `${d.id} — ${d.name}` }];
+      return [...prev, { no: d.id, name: `${d.docNum ?? d.id} — ${d.name}` }];
     });
     setDocPopupOpen(false);
   }
@@ -619,7 +619,7 @@ export function PlanPage() {
           <div className="divider-v" />
           <div className="profile-info">
             <span className="profile-name">{session.name}</span>
-            <span className="profile-role">{session.role}</span>
+            <span className="profile-role">{session.position ?? session.role}</span>
           </div>
           <span className="company-name">{session.company.name}</span>
           <div className="divider-v" />

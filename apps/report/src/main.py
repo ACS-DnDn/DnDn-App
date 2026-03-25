@@ -44,7 +44,7 @@ from .s3_client import (
     save_terraform_files,
 )
 from .makejob import create_job, get_job
-from .models import ReportJob, Document, JobType, Workspace, User
+from .models import ReportJob, Document, JobType, Workspace, User, Attachment
 from .database import SessionLocal, get_db
 
 logger = logging.getLogger(__name__)
@@ -162,6 +162,17 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             status="done",
         )
         db.add(doc)
+
+        # 근거자료 첨부 — canonical JSON
+        canonical_json_str = json.dumps(canonical, ensure_ascii=False)
+        canonical_size_kb = max(1, len(canonical_json_str.encode("utf-8")) // 1024)
+        db.add(Attachment(
+            id=f"{doc_id}-canonical",
+            document_id=doc_id,
+            original_name="작업계획_원본데이터.json",
+            file_path=json_key,
+            size_kb=canonical_size_kb,
+        ))
 
         job.status = "done"
         job.document_id = doc_id
