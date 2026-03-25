@@ -91,8 +91,13 @@ export function DocumentsPage() {
       if (pickEnd) docs = docs.filter(d => d.date <= pickEnd + ' 23:59');
     }
 
-    return [...docs].sort((a, b) => b.date.localeCompare(a.date));
-  }, [allDocs, searchQuery, searchField, typeFilter, statusFilter, pickStep, pickStart, pickEnd]);
+    return [...docs].sort((a, b) => {
+      const aRead = readIds.has(a.id) ? 1 : 0;
+      const bRead = readIds.has(b.id) ? 1 : 0;
+      if (aRead !== bRead) return aRead - bRead;
+      return b.date.localeCompare(a.date);
+    });
+  }, [allDocs, readIds, searchQuery, searchField, typeFilter, statusFilter, pickStep, pickStart, pickEnd]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageDocs = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
