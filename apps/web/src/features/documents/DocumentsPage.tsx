@@ -361,8 +361,7 @@ export function DocumentsPage() {
 
       {/* 테이블 */}
       <div className="table-wrap">
-        {pageDocs.length > 0 ? (
-          <table className="doc-table">
+        <table className="doc-table">
             <colgroup>
               <col style={{ width: 44 }} />
               <col style={{ width: '15%' }} />
@@ -414,7 +413,7 @@ export function DocumentsPage() {
               </tr>
             </thead>
             <tbody>
-              {pageDocs.map(doc => {
+              {pageDocs.length > 0 ? pageDocs.map(doc => {
                 const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 return (
                   <tr
@@ -438,15 +437,18 @@ export function DocumentsPage() {
                     <td>{STATUS_LABELS[doc.status] || doc.status}</td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan={7} className="empty-state-cell">
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🗂️</div>
+                      <div className="empty-state-title">해당하는 문서가 없습니다</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon">🗂️</div>
-            <div className="empty-state-title">해당하는 문서가 없습니다</div>
-          </div>
-        )}
 
         {pageDocs.length > 0 && (
           <div className="pagination">{renderPagination()}</div>

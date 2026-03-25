@@ -238,8 +238,7 @@ export function PendingPage() {
 
       {/* 테이블 */}
       <div className="table-wrap">
-        {pageDocs.length > 0 ? (
-          <table className="doc-table">
+        <table className="doc-table">
             <colgroup>
               <col style={{ width: 44 }} />
               <col style={{ width: '16%' }} />
@@ -273,7 +272,7 @@ export function PendingPage() {
               </tr>
             </thead>
             <tbody>
-              {pageDocs.map(doc => {
+              {pageDocs.length > 0 ? pageDocs.map(doc => {
                 const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : doc.status === 'deploy_failed' ? 'badge badge-rejected' : 'badge badge-progress';
                 const badgeLabel = doc.status === 'rejected' ? '반려' : doc.status === 'deploy_failed' ? '배포 실패' : '결재 대기';
@@ -289,15 +288,18 @@ export function PendingPage() {
                     <td style={{ textAlign: 'center' }}><span className={badgeCls}>{badgeLabel}</span></td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan={6} className="empty-state-cell">
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🗂️</div>
+                      <div className="empty-state-title">처리할 문서가 없습니다</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon">🗂️</div>
-            <div className="empty-state-title">처리할 문서가 없습니다</div>
-          </div>
-        )}
         {pageDocs.length > 0 && <div className="pagination">{renderPagination()}</div>}
       </div>
     </div>
