@@ -7,9 +7,19 @@ import './PendingPage.css';
 const PAGE_SIZE = 10;
 
 function formatDate(d: string) {
-  const parts = d.split(' ');
-  const dateParts = (parts[0] ?? '').split('-');
-  return `${dateParts[0] ?? ''}.${dateParts[1] ?? ''}.${dateParts[2] ?? ''} ${parts[1] ?? ''}`.trim();
+  const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
+  if (isNaN(utc.getTime())) {
+    const parts = d.split(' ');
+    const dp = (parts[0] ?? '').split('-');
+    return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
+  }
+  const ko = new Date(utc.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const y = ko.getFullYear();
+  const m = String(ko.getMonth() + 1).padStart(2, '0');
+  const day = String(ko.getDate()).padStart(2, '0');
+  const hh = String(ko.getHours()).padStart(2, '0');
+  const mi = String(ko.getMinutes()).padStart(2, '0');
+  return `${y}.${m}.${day} ${hh}:${mi}`;
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }

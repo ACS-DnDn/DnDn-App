@@ -6,6 +6,23 @@ import { getDocuments } from '@/services/document.service';
 import type { DashboardData, Document } from '@/mocks';
 import './DashboardPage.css';
 
+function formatDate(d: string) {
+  const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
+  const kst = new Date(utc.getTime() + (isNaN(utc.getTime()) ? 0 : 0));
+  if (isNaN(kst.getTime())) {
+    const parts = d.split(' ');
+    const dp = (parts[0] ?? '').split('-');
+    return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
+  }
+  const ko = new Date(kst.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const y = ko.getFullYear();
+  const m = String(ko.getMonth() + 1).padStart(2, '0');
+  const day = String(ko.getDate()).padStart(2, '0');
+  const hh = String(ko.getHours()).padStart(2, '0');
+  const mi = String(ko.getMinutes()).padStart(2, '0');
+  return `${y}.${m}.${day} ${hh}:${mi}`;
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const session = useSession();
@@ -134,7 +151,7 @@ export function DashboardPage() {
                     </td>
                     <td className="td-type">{d.type}</td>
                     <td className="td-author">{d.author}</td>
-                    <td className="td-date">{d.date}</td>
+                    <td className="td-date">{formatDate(d.date)}</td>
                   </tr>
                 );
               })}
@@ -182,7 +199,7 @@ export function DashboardPage() {
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{d.type}</td>
                   <td className="td-author">{d.author}</td>
-                  <td className="td-date">{d.date}</td>
+                  <td className="td-date">{formatDate(d.date)}</td>
                 </tr>
               ))}
             </tbody>
