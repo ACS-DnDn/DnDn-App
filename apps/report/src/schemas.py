@@ -20,6 +20,7 @@ class WorkPlanRequest(BaseModel):
     target: str | None = None
     content: str | None = None
     ref_doc_ids: list[str] = []
+    author_id: str | None = None           # 접속자 DB user ID
     author_name: str | None = None       # 접속자 이름
     author_position: str | None = None   # 접속자 직책
     company_logo_url: str | None = None  # 회사 로고 URL

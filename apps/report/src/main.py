@@ -158,6 +158,7 @@ def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):
             json_key=json_key,
             ref_doc_ids=req.ref_doc_ids or None,
             workspace_id=workspace_id,
+            author_id=req.author_id or None,
             status="done",
         )
         db.add(doc)

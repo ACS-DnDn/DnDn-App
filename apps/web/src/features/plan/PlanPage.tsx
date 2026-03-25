@@ -274,6 +274,7 @@ export function PlanPage() {
           target: nlTarget,
           content: nlInput,
           ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
+          authorId: session.id,
           authorName: session.name,
           authorPosition: session.position || undefined,
           companyLogoUrl: session.company?.logoUrl || undefined,
