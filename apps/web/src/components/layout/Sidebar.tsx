@@ -154,23 +154,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="nav-item" style={{ gap: 10, cursor: 'default', pointerEvents: 'none' }}>
-            {logoSrc && (
-              <img className="sidebar-company-logo" src={logoSrc} alt="" />
-            )}
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{session.name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{session.position ?? session.role}</div>
-            </div>
-            <button
-              className="sidebar-toggle"
-              onClick={(e) => { e.stopPropagation(); toggle(); }}
-              style={{ pointerEvents: 'all' }}
-              aria-label="테마 전환"
-            >
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </button>
-          </div>
           <button
             className="sidebar-logout"
             onClick={() => { onClose(); logout(); }}
@@ -182,6 +165,22 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             </svg>
             로그아웃
           </button>
+          <div className="sidebar-profile">
+            {logoSrc && (
+              <img className="sidebar-company-logo" src={logoSrc} alt="" />
+            )}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{session.name}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{session.position ?? session.role}</div>
+            </div>
+            <button
+              className="sidebar-toggle"
+              onClick={(e) => { e.stopPropagation(); toggle(); }}
+              aria-label="테마 전환"
+            >
+              <div className="toggle-track"><div className="toggle-thumb" /></div>
+            </button>
+          </div>
         </div>
       </aside>
     </>
