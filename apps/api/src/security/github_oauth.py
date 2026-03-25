@@ -381,7 +381,7 @@ def register_webhook(
         json={
             "name": "web",
             "active": True,
-            "events": ["check_run", "pull_request"],
+            "events": ["check_run", "pull_request", "status"],
             "config": {
                 "url": url,
                 "content_type": "json",
@@ -423,3 +423,57 @@ def unregister_webhook(
     if resp.status_code == 404:
         return  # 이미 삭제됨
     _check_response(resp)
+
+
+# ── 8. PR 머지 ───────────────────────────────────────────
+def merge_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    merge_method: str = "squash",
+) -> bool:
+    """GitHub PR을 머지한다. 성공 시 True, 실패 시 False."""
+    headers = _gh_headers(token)
+    resp = requests.put(
+        f"{_GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+        headers=headers,
+        json={"merge_method": merge_method},
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
+# ── 9. PR의 모든 체크 상태 확인 ──────────────────────────
+def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> bool:
+    """PR의 head commit에 대해 check_runs + commit statuses가 모두 통과했는지 확인."""
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    # PR head SHA 가져오기
+    pr_resp = requests.get(f"{api}/pulls/{pr_number}", headers=headers, timeout=10)
+    if not pr_resp.ok:
+        return False
+    head_sha = pr_resp.json().get("head", {}).get("sha", "")
+    if not head_sha:
+        return False
+
+    # check_runs 확인
+    cr_resp = requests.get(
+        f"{api}/commits/{head_sha}/check-runs", headers=headers, timeout=10,
+    )
+    if cr_resp.ok:
+        for cr in cr_resp.json().get("check_runs", []):
+            if cr.get("status") != "completed" or cr.get("conclusion") not in ("success", "skipped", "neutral"):
+                return False
+
+    # commit statuses 확인 (Terraform Cloud 등)
+    status_resp = requests.get(
+        f"{api}/commits/{head_sha}/status", headers=headers, timeout=10,
+    )
+    if status_resp.ok:
+        state = status_resp.json().get("state", "")
+        if state not in ("success", ""):
+            return False
+
+    return True

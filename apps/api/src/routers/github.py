@@ -32,9 +32,12 @@ from apps.api.src.security.github_oauth import (
     get_repos,
     get_branches,
     register_webhook,
+    merge_pr,
+    get_pr_checks_passed,
     GitHubError,
     GITHUB_WEBHOOK_SECRET,
 )
+from apps.api.src.models import Approval
 from apps.api.src.security.slack_oauth import send_message, SlackError
 
 _logger = logging.getLogger(__name__)
@@ -233,18 +236,35 @@ def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
-def _notify_pr_status(user: User | None, doc: Document, new_status: str) -> None:
-    """PR 상태 변경 Slack 알림."""
-    if not user or not user.slack_access_token or user.slack_notify is False or not user.slack_user_id:
-        return
-    emoji = {"merged": "🟢", "closed": "🔴", "checks_failed": "⚠️", "open": "🔄"}.get(new_status, "📋")
-    text = f"{emoji} PR 상태 변경: {doc.title} → {new_status}"
+def _notify_pr_status(db: Session, doc: Document, new_status: str) -> None:
+    """PR 상태 변경 Slack 알림 — 문서 작성자 + 결재선 전원에게 DM."""
+    status_labels = {
+        "merged": "🟢 PR 머지 완료 (Apply 진행 중)",
+        "closed": "🔴 PR 닫힘",
+        "checks_failed": "⚠️ PR 검증 실패",
+        "applied": "✅ Terraform Apply 완료",
+        "apply_failed": "❌ Terraform Apply 실패",
+    }
+    label = status_labels.get(new_status, f"📋 PR 상태: {new_status}")
+    text = f"{label}\n📄 {doc.title}"
     if doc.pr_url:
         text += f"\n{doc.pr_url}"
-    try:
-        send_message(user.slack_access_token, user.slack_user_id, text)
-    except SlackError:
-        pass
+
+    # 알림 대상: 작성자 + 결재선 사용자 (중복 제거)
+    user_ids: set[str] = set()
+    if doc.author_id:
+        user_ids.add(doc.author_id)
+    approvals = db.query(Approval).filter(Approval.document_id == doc.id).all()
+    for a in approvals:
+        user_ids.add(a.user_id)
+
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    for u in users:
+        if u.slack_access_token and u.slack_user_id and u.slack_notify is not False:
+            try:
+                send_message(u.slack_access_token, u.slack_user_id, text)
+            except SlackError:
+                pass
 
 
 def _find_doc_by_pr(db: Session, repo_full_name: str, pr_number: int) -> Document | None:
@@ -311,12 +331,13 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         if new_status and new_status != doc.pr_status:
             doc.pr_status = new_status
             db.commit()
-            _notify_pr_status(doc.author, doc, new_status)
+            _notify_pr_status(db, doc, new_status)
 
     # ── check_run 이벤트 ──
     elif event == "check_run":
         check_run = payload.get("check_run", {})
-        conclusion = check_run.get("conclusion")  # success / failure / timed_out / ...
+        conclusion = check_run.get("conclusion")
+        action = check_run.get("status")  # completed
         pull_requests = check_run.get("pull_requests", [])
 
         for pr_ref in pull_requests:
@@ -325,21 +346,110 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 continue
 
             doc = _find_doc_by_pr(db, repo_full, pr_number)
-            if not doc:
+            if not doc or doc.pr_status in ("merged", "closed"):
                 continue
 
-            new_status = None
             if conclusion in ("failure", "timed_out", "action_required"):
-                new_status = "checks_failed"
-            elif conclusion == "success" and doc.pr_status == "checks_failed":
-                new_status = "open"
+                if doc.pr_status != "checks_failed":
+                    doc.pr_status = "checks_failed"
+                    db.commit()
+                    _notify_pr_status(db, doc, "checks_failed")
+            elif conclusion == "success" and action == "completed":
+                # 개별 check 성공 → 전체 통과 여부 확인 후 자동 머지
+                _try_auto_merge(db, doc, repo_full)
 
-            if new_status and new_status != doc.pr_status:
-                doc.pr_status = new_status
-                db.commit()
-                _notify_pr_status(doc.author, doc, new_status)
+    # ── status 이벤트 (Terraform Cloud 등 외부 CI) ──
+    elif event == "status":
+        state = payload.get("state", "")  # pending / success / failure / error
+        branches = payload.get("branches", [])
+        context = payload.get("context", "")
+        sha = payload.get("sha", "")
+
+        # Terraform Cloud apply 결과인지 확인 (머지 후 default branch의 status)
+        # 머지 전 PR의 status는 check_run과 함께 처리
+        for branch_info in branches:
+            branch_name = branch_info.get("name", "")
+
+            # dndn/ prefix가 있는 브랜치의 status → PR 검증 결과
+            if branch_name.startswith("dndn/"):
+                # PR에 연결된 문서 찾기 — sha로 PR을 역추적
+                docs = (
+                    db.query(Document)
+                    .join(Workspace, Document.workspace_id == Workspace.id)
+                    .filter(
+                        Document.pr_status.in_(["open", "checks_failed"]),
+                        Workspace.github_org == repo_full.split("/")[0] if "/" in repo_full else "",
+                        Workspace.repo == repo_full.split("/")[1] if "/" in repo_full else "",
+                    )
+                    .all()
+                )
+                for doc in docs:
+                    if doc.pr_status in ("merged", "closed"):
+                        continue
+                    if state == "failure" or state == "error":
+                        if doc.pr_status != "checks_failed":
+                            doc.pr_status = "checks_failed"
+                            db.commit()
+                            _notify_pr_status(db, doc, "checks_failed")
+                    elif state == "success":
+                        _try_auto_merge(db, doc, repo_full)
+                break
+
+            # default branch의 status (머지 후) → apply 결과 추적
+            # Terraform Cloud context 패턴: "Terraform Cloud/..."
+            if "terraform" in context.lower() or "Terraform Cloud" in context:
+                # 머지된 문서 중 해당 repo의 것을 찾아 apply 결과 업데이트
+                merged_docs = (
+                    db.query(Document)
+                    .join(Workspace, Document.workspace_id == Workspace.id)
+                    .filter(
+                        Document.pr_status == "merged",
+                        Workspace.github_org == repo_full.split("/")[0] if "/" in repo_full else "",
+                        Workspace.repo == repo_full.split("/")[1] if "/" in repo_full else "",
+                    )
+                    .all()
+                )
+                for doc in merged_docs:
+                    new_status = None
+                    if state == "success":
+                        new_status = "applied"
+                    elif state in ("failure", "error"):
+                        new_status = "apply_failed"
+
+                    if new_status and new_status != doc.pr_status:
+                        doc.pr_status = new_status
+                        db.commit()
+                        _notify_pr_status(db, doc, new_status)
+                break
 
     return JSONResponse({"received": True})
+
+
+def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
+    """모든 체크 통과 시 PR을 자동 머지한다."""
+    if not doc.pr_number or doc.pr_status in ("merged", "closed"):
+        return
+
+    ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+    if not ws:
+        return
+    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+    if not owner_user or not owner_user.github_access_token:
+        return
+
+    # 전체 체크 통과 확인
+    if not get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number):
+        return
+
+    # 머지 실행
+    merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
+    if merged:
+        doc.pr_status = "merged"
+        db.commit()
+        _logger.info("PR 자동 머지 완료: %s #%s", repo_full, doc.pr_number)
+        _notify_pr_status(db, doc, "merged")
+    else:
+        _logger.warning("PR 자동 머지 실패: %s #%s", repo_full, doc.pr_number)
 
 
 # ---------------------------------------------------------
