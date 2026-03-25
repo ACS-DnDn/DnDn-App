@@ -232,3 +232,123 @@ def get_branches(token: str, owner: str, repo: str) -> list[BranchItem]:
         BranchItem(name=b["name"], is_default=(b["name"] == default_branch))
         for b in resp.json()
     ]
+
+
+# ── 6. Terraform PR 생성 ────────────────────────────────
+def create_terraform_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    base_branch: str,
+    head_branch: str,
+    files: dict[str, str],
+    title: str,
+    body: str,
+    path_prefix: str | None = None,
+) -> dict:
+    """GitHub API로 새 브랜치에 terraform 파일을 커밋하고 PR을 생성한다.
+
+    Args:
+        token: GitHub access token
+        owner: GitHub org/user
+        repo: 레포지토리명
+        base_branch: 베이스 브랜치 (e.g. main)
+        head_branch: 생성할 브랜치명 (e.g. dndn/2026-PLN-0004)
+        files: {filename: content} 딕셔너리
+        title: PR 제목
+        body: PR 본문
+        path_prefix: 레포 내 경로 접두사 (e.g. terraform/)
+
+    Returns:
+        {"pr_url": "...", "pr_number": 123}
+    """
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    # 1) base branch의 최신 커밋 SHA 가져오기
+    ref_resp = requests.get(f"{api}/git/ref/heads/{base_branch}", headers=headers, timeout=10)
+    _check_response(ref_resp)
+    base_sha = ref_resp.json()["object"]["sha"]
+
+    # 2) base 커밋의 tree SHA 가져오기
+    commit_resp = requests.get(f"{api}/git/commits/{base_sha}", headers=headers, timeout=10)
+    _check_response(commit_resp)
+    base_tree_sha = commit_resp.json()["tree"]["sha"]
+
+    # 3) blob 생성 + tree 구성
+    tree_items = []
+    for filename, content in files.items():
+        file_path = f"{path_prefix}/{filename}" if path_prefix else filename
+        blob_resp = requests.post(
+            f"{api}/git/blobs",
+            headers=headers,
+            json={"content": content, "encoding": "utf-8"},
+            timeout=10,
+        )
+        _check_response(blob_resp)
+        tree_items.append({
+            "path": file_path,
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob_resp.json()["sha"],
+        })
+
+    # 4) tree 생성
+    tree_resp = requests.post(
+        f"{api}/git/trees",
+        headers=headers,
+        json={"base_tree": base_tree_sha, "tree": tree_items},
+        timeout=10,
+    )
+    _check_response(tree_resp)
+    new_tree_sha = tree_resp.json()["sha"]
+
+    # 5) 커밋 생성
+    commit_create_resp = requests.post(
+        f"{api}/git/commits",
+        headers=headers,
+        json={
+            "message": title,
+            "tree": new_tree_sha,
+            "parents": [base_sha],
+        },
+        timeout=10,
+    )
+    _check_response(commit_create_resp)
+    new_commit_sha = commit_create_resp.json()["sha"]
+
+    # 6) 새 브랜치 생성 (이미 존재하면 업데이트)
+    ref_create_resp = requests.post(
+        f"{api}/git/refs",
+        headers=headers,
+        json={"ref": f"refs/heads/{head_branch}", "sha": new_commit_sha},
+        timeout=10,
+    )
+    if ref_create_resp.status_code == 422:
+        # 브랜치가 이미 존재 → ref 업데이트
+        ref_update_resp = requests.patch(
+            f"{api}/git/refs/heads/{head_branch}",
+            headers=headers,
+            json={"sha": new_commit_sha, "force": True},
+            timeout=10,
+        )
+        _check_response(ref_update_resp)
+    else:
+        _check_response(ref_create_resp)
+
+    # 7) PR 생성
+    pr_resp = requests.post(
+        f"{api}/pulls",
+        headers=headers,
+        json={
+            "title": title,
+            "body": body,
+            "head": head_branch,
+            "base": base_branch,
+        },
+        timeout=10,
+    )
+    _check_response(pr_resp)
+    pr_data = pr_resp.json()
+
+    return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
