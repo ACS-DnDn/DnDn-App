@@ -357,7 +357,8 @@ HTML 구조 규칙 (반드시 준수):
 - 심각도: <span class="r-hi">상</span> / <span class="r-mid">중</span> / <span class="r-low">하</span>
 - KPI 카드: <table class="tbl-summary"><tbody><tr><td><div class="s-label">지표명</div><div class="s-value">값</div></td></tr></tbody></table>
 - code 태그: <code>리소스ID</code>
-- 푸터: <div class="doc-footer"><span>{doc_num} &nbsp;/&nbsp; {now_kst}</span></div>{author_rule}
+- 푸터: <div class="doc-footer"><span>{doc_num} &nbsp;/&nbsp; {now_kst}</span></div>
+- ⚠️ 문서번호 필드(헤더·푸터)에는 위에 제시된 값을 **그대로** 출력하세요. 절대 임의의 번호를 생성하지 마세요.{author_rule}
 """
 
 

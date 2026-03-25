@@ -154,6 +154,7 @@
 .doc-panel.no-approval .panel-tab-content { height: auto; flex: 1; overflow-y: auto; }
 .doc-panel.no-approval .panel-tab-content.active { display: flex; flex-direction: column; }
 .doc-panel.no-approval .sidebar-refs { overflow-y: auto; }
+.doc-panel.no-approval .attach-list { max-height: none; flex: 1; }
 
 /* ── 모달 공통 ── */
 .viewer-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.48); z-index: 500; align-items: center; justify-content: center; padding: 20px; }

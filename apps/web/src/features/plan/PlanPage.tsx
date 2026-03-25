@@ -970,7 +970,7 @@ export function PlanPage() {
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>검색 결과가 없습니다.</div>
             ) : currentPageDocs.map(d => (
               <div key={d.id} className={`doc-popup-item${selectedDocNo === d.id ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.id ? null : d.id)}>
-                <div className="doc-item-no">{d.id}</div>
+                <div className="doc-item-no">{d.docNum || d.id.slice(0, 8)}</div>
                 <div className="doc-item-name">{d.name}</div>
                 <div className="doc-item-author">{d.author}</div>
                 <div className="doc-item-date">{d.date}</div>
