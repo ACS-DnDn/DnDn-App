@@ -327,6 +327,7 @@ def get_documents(
             .distinct()
         )
     else:
+        # 워크스페이스 내 non-draft 문서 + 본인이 작성한 draft 문서 포함
         query = db.query(Document).filter(
             or_(
                 and_(Document.workspace_id.in_(my_ws_ids), Document.status != "draft"),
