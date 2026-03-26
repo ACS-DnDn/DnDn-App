@@ -64,6 +64,20 @@ with engine.begin() as _conn:
             existing_cols = [c["name"] for c in _insp.get_columns(_tbl)]
             if _col not in existing_cols:
                 _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+    # 기존 워크스페이스에 code가 없으면 자동 백필 (API와 동일 로직)
+    import random as _random
+    _WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+    _rows = _conn.execute(_sa_text("SELECT id FROM workspaces WHERE code IS NULL")).fetchall()
+    if _rows:
+        _existing_codes = {r[0] for r in _conn.execute(_sa_text("SELECT code FROM workspaces WHERE code IS NOT NULL")).fetchall()}
+        for (_ws_id,) in _rows:
+            for _ in range(100):
+                _code = "".join(_random.choices(_WS_CODE_CHARS, k=3))
+                if _code not in _existing_codes:
+                    break
+            _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
+            _existing_codes.add(_code)
+    del _random, _WS_CODE_CHARS
 del _insp, _migrations
 
 # ── 문서번호 타입 매핑 (API와 동일) ─────────────────────────

@@ -74,6 +74,16 @@ with engine.begin() as _conn:
         _conn.execute(_sa_text(
             "CREATE UNIQUE INDEX idx_workspaces_code_unique ON workspaces(code)"
         ))
+    # acct_id unique index (기존 테이블에 제약 추가)
+    _acct_idx = _conn.execute(_sa_text(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workspaces' "
+        "AND INDEX_NAME = 'idx_workspaces_acct_id_unique'"
+    )).scalar()
+    if not _acct_idx:
+        _conn.execute(_sa_text(
+            "CREATE UNIQUE INDEX idx_workspaces_acct_id_unique ON workspaces(acct_id)"
+        ))
 del _random, _WS_CODE_CHARS
 
 # 2. FastAPI 앱 초기화

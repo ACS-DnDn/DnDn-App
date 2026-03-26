@@ -344,10 +344,13 @@ def create_workspace(
             db.commit()
             db.refresh(ws)
             break
-        except _IntegrityError:
+        except _IntegrityError as e:
             db.rollback()
+            # acct_id 중복은 재시도 불필요 — 즉시 409
+            if "acct_id" in str(e.orig):
+                raise HTTPException(status_code=409, detail="CONFLICT") from None
             if _attempt == 2:
-                raise HTTPException(status_code=503, detail="워크스페이스 코드 생성 실패")
+                raise HTTPException(status_code=503, detail="워크스페이스 코드 생성 실패") from None
 
     # GitHub webhook 자동 등록 (best-effort)
     if current_user.github_access_token and GITHUB_WEBHOOK_SECRET:
