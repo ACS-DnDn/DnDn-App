@@ -17,10 +17,16 @@ def _check_ws_member(db: Session, workspace_id: str, current_user: User) -> Work
     if not ws:
         raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
+    # 부서 미배정 사용자는 접근 불가 (None == None 방지)
+    if current_user.company_id is None or current_user.department_id is None:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
     # 워크스페이스 소유자의 부서와 현재 사용자의 부서가 동일한지 확인
     owner = db.query(User).filter(User.id == ws.owner_id).first()
     if (
         not owner
+        or owner.company_id is None
+        or owner.department_id is None
         or owner.company_id != current_user.company_id
         or owner.department_id != current_user.department_id
     ):
