@@ -328,8 +328,10 @@ def get_documents(
         )
     else:
         query = db.query(Document).filter(
-            Document.workspace_id.in_(my_ws_ids),
-            Document.status != "draft",
+            or_(
+                and_(Document.workspace_id.in_(my_ws_ids), Document.status != "draft"),
+                and_(Document.author_id == current_user.id, Document.status == "draft"),
+            )
         )
 
     # 3. 검색어(keyword) 필터링
