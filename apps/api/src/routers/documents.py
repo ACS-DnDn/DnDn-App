@@ -1048,8 +1048,8 @@ def download_attachment(
         try:
             obj = s3.get_object(Bucket=_S3_BUCKET, Key=attachment.file_path)
             content = obj["Body"].read().decode("utf-8")
-        except ClientError:
-            raise HTTPException(status_code=404, detail="FILE_NOT_FOUND")
+        except ClientError as err:
+            raise HTTPException(status_code=404, detail="FILE_NOT_FOUND") from err
         content = _replace_s3_uris_with_presigned(content, s3, _PRESIGNED_EXPIRES)
         media_type = "application/x-ndjson" if attachment.original_name.lower().endswith(".jsonl") else "application/json"
         return Response(
