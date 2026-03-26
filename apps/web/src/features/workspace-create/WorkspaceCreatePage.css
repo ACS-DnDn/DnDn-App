@@ -135,7 +135,7 @@
   .seq-list { padding-left: 28px; gap: 36px; }
   .seq-step::before { left: -36px; }
   .seq-step:not(:last-child)::after { left: -24px; }
-  .policy-detail { width: calc(100vw - 48px); }
+  .policy-detail { width: calc(100vw - 48px); max-width: 100%; box-sizing: border-box; }
   .profile-header { flex-direction: column; align-items: flex-start; gap: 16px; }
   .wizard-foot { flex-wrap: wrap; gap: 10px; }
   .btn-wiz { padding: 10px 22px; font-size: 14px; }

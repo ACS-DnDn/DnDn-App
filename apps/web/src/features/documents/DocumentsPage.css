@@ -119,7 +119,8 @@
   .td-type { display: none; }
   .td-author { display: none; }
   .documents-page .doc-table th.td-check,
-  .documents-page .doc-table th.th-type { display: none; }
+  .documents-page .doc-table th.th-type,
+  .documents-page .doc-table th:nth-child(5) { display: none; }
   .td-docnum { font-size: 10.5px; }
   .td-date { font-size: 10.5px; }
   .btn-read-action { font-size: 11px; padding: 6px 10px; }
