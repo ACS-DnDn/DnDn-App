@@ -206,7 +206,7 @@ export function DashboardPage() {
                 </td></tr>
               ) : recentDocs.map((d) => (
                 <tr key={d.id} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
-                  <td className="td-num">{d.docNum || '-'}</td>
+                  <td className="td-num">{d.docNum || 'Editing'}</td>
                   <td><div className="doc-title">{d.name}</div></td>
                   <td className="td-type">{TYPE_LABELS[d.type] || d.type}</td>
                   <td className="td-author">{d.author}</td>

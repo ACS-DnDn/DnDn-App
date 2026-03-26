@@ -419,7 +419,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.length > 0 ? pageDocs.map(doc => {
-                const docNum = doc.docNum || '-';
+                const docNum = doc.docNum || 'Editing';
                 return (
                   <tr
                     key={doc.id}

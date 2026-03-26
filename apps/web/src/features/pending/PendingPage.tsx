@@ -273,7 +273,7 @@ export function PendingPage() {
             </thead>
             <tbody>
               {pageDocs.length > 0 ? pageDocs.map(doc => {
-                const docNum = doc.docNum || '-';
+                const docNum = doc.docNum || 'Editing';
                 const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : doc.status === 'deploy_failed' ? 'badge badge-rejected' : 'badge badge-progress';
                 const badgeLabel = doc.status === 'rejected' ? '반려' : doc.status === 'deploy_failed' ? '배포 실패' : '결재 대기';
                 return (
