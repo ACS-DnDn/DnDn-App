@@ -14,5 +14,5 @@ spec:
       app: dndn-report-api
   endpoints:
     - port: http
-      path: /metrics
+      path: /metrics/
       interval: 30s
