@@ -103,18 +103,20 @@ _logger = logging.getLogger(__name__)
 _DOC_TYPE_CODE = {
     "계획서": "PLN",
     "이벤트보고서": "EVT",
-    "헬스이벤트보고서": "RPT",
+    "헬스이벤트보고서": "EVT",
     "주간보고서": "RPT",
 }
 
 
-def _next_doc_num(db: "Session", doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)."""
+def _next_doc_num(db: "Session", doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-PLN-0001)."""
     from sqlalchemy import cast, Integer, func as sa_func
 
     code = _DOC_TYPE_CODE.get(doc_type, "DOC")
     year = datetime.now(KST).year
-    prefix = f"{year}-{code}-"
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -472,7 +474,7 @@ def submit_document(
     # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
     need_html_update = False
     if not req.isDraft and not doc.doc_num:
-        doc.doc_num = _next_doc_num(db, doc.type or "계획서")
+        doc.doc_num = _next_doc_num(db, doc.type or "계획서", doc.workspace_id)
         need_html_update = bool(doc.html_key)
 
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
@@ -956,6 +958,10 @@ def presign_upload(
     current_user: User = Depends(get_current_user),
 ):
     """S3 presigned PUT URL을 발급한다. 프론트에서 이 URL로 직접 업로드."""
+    # Path Traversal 방지: 파일명에 경로 구분자 포함 차단
+    if any(c in fileName for c in ("../", "/", "\\", "\x00")):
+        raise HTTPException(status_code=400, detail="INVALID_FILENAME")
+
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
@@ -966,7 +972,8 @@ def presign_upload(
 
     attachment_id = str(__import__("uuid").uuid4())
     workspace_id = doc.workspace_id or "default"
-    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{fileName}"
+    safe_name = os.path.basename(fileName)
+    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{safe_name}"
 
     # presigned PUT URL 생성
     s3 = _get_s3_client()

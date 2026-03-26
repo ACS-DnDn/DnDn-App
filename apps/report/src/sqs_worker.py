@@ -38,10 +38,38 @@ from sqlalchemy import func as sa_func
 
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
 from .database import SessionLocal, Base, engine
-from .models import Document, Attachment
+from .models import Document, Attachment, Workspace
 
 # 테이블 자동 생성 (독립 실행 시에도 Attachment 테이블 보장)
 Base.metadata.create_all(bind=engine)
+
+# 기존 테이블에 누락된 컬럼 자동 추가 (create_all은 새 컬럼을 추가하지 않으므로)
+from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+_insp = _sa_inspect(engine)
+_migrations = [
+    ("workspaces", "code", "VARCHAR(20)"),
+]
+with engine.begin() as _conn:
+    for _tbl, _col, _coltype in _migrations:
+        if _tbl in _insp.get_table_names():
+            _existing_cols = [c["name"] for c in _insp.get_columns(_tbl)]
+            if _col not in _existing_cols:
+                _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+    # 기존 워크스페이스에 code가 없으면 자동 백필 (API와 동일 로직)
+    import random as _random
+    _WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+    _rows = _conn.execute(_sa_text("SELECT id FROM workspaces WHERE code IS NULL")).fetchall()
+    if _rows:
+        _existing_codes = {r[0] for r in _conn.execute(_sa_text("SELECT code FROM workspaces WHERE code IS NOT NULL")).fetchall()}
+        for (_ws_id,) in _rows:
+            for _ in range(100):
+                _code = "".join(_random.choices(_WS_CODE_CHARS, k=3))
+                if _code not in _existing_codes:
+                    break
+            _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
+            _existing_codes.add(_code)
+    del _random, _WS_CODE_CHARS
+del _insp, _migrations
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -51,11 +79,11 @@ REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 DNDN_API_URL = os.getenv("DNDN_API_URL", "http://dndn-api.dndn-api.svc.cluster.local:8000")
 
-
+# ── 문서번호 타입 매핑 (API와 동일) ─────────────────────────
 DOC_TYPE_CODE = {
     "계획서": "PLN",
     "이벤트보고서": "EVT",
-    "헬스이벤트보고서": "RPT",
+    "헬스이벤트보고서": "EVT",
     "주간보고서": "RPT",
 }
 
@@ -72,13 +100,19 @@ def _extract_title_from_html(html: str, fallback: str) -> str:
     return fallback
 
 
-def _next_doc_num(db, doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-EVT-0001)."""
+from datetime import timedelta
+KST = timezone(timedelta(hours=9))
+
+
+def _next_doc_num(db, doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-EVT-0001)."""
     from sqlalchemy import cast, Integer
 
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
-    year = datetime.now(timezone.utc).year
-    prefix = f"{year}-{code}-"
+    year = datetime.now(KST).year
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -272,7 +306,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             logger.info("스킵 (Document 이미 존재): %s", doc_id)
             db.close()
             return
-        doc_num = _next_doc_num(db, doc_type)
+        doc_num = _next_doc_num(db, doc_type, workspace_id)
         logo_url = _get_company_logo(db, workspace_id)
     finally:
         db.close()
