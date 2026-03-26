@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -95,7 +96,7 @@ def upload_logo(
         ContentType=file.content_type,
     )
 
-    logo_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+    logo_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}?v={int(time.time())}"
     company.logo_url = logo_url
     db.commit()
     db.refresh(company)
