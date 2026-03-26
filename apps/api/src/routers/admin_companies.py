@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Company
@@ -43,7 +43,7 @@ def list_companies(
     db: Session = Depends(get_db),
     _: User = Depends(require_superadmin),
 ):
-    companies = db.query(Company).order_by(Company.id).all()
+    companies = db.query(Company).options(selectinload(Company.users)).order_by(Company.id).all()
     return SuccessResponse(data=[_to_response(c) for c in companies])
 
 
