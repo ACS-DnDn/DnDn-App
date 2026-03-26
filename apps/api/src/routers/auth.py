@@ -322,7 +322,7 @@ def get_my_info(current_user: User = Depends(get_current_user)):
 
     if current_user.company:
         company_data["name"] = current_user.company.name
-        company_data["logoUrl"] = current_user.company.logo_url
+        company_data["logoUrl"] = current_user.company.logo_url or ""
 
     created_at = None
     if current_user.created_at:
