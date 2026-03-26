@@ -8,6 +8,7 @@ from typing import Union
 import urllib.request
 import json
 import datetime
+import logging
 
 from apps.api.src.database import get_db
 from apps.api.src.models import User
@@ -20,12 +21,17 @@ from apps.api.src.schemas.auth import (
     ChallengeRequest,
     RefreshRequest,
     RefreshResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ConfirmResetRequest,
 )
 from apps.api.src.security.cognito import (
     login,
     respond_new_password,
     refresh_token,
     logout,
+    forgot_password,
+    confirm_reset_password,
     LoginResult,
     ChallengeResult,
     CognitoError,
@@ -74,7 +80,7 @@ def get_jwks():
             if not cache_valid and (jwks_cache is None or "data" not in jwks_cache):
                 raise
             # 이전 캐시가 있으면 로그만 남기고 기존 캐시를 계속 사용한다.
-            print(f"JWKS fetch error, using cached JWKS if available: {e}")
+            logging.getLogger(__name__).warning("JWKS fetch error, using cached JWKS: %s", e)
 
     if isinstance(jwks_cache, dict) and "data" in jwks_cache:
         return jwks_cache["data"]
@@ -147,7 +153,7 @@ async def get_current_user(
 
         cognito_user_id = payload.get("sub")
         email = payload.get("email")
-        username = payload.get("cognito:username", "알수없는유저")
+        username = payload.get("cognito:username") or f"unknown-{cognito_user_id[:8] if cognito_user_id else 'none'}"
 
         if cognito_user_id is None:
             raise credentials_exception
@@ -167,18 +173,11 @@ async def get_current_user(
             db.refresh(user)
 
     if user is None:
-        # 3차: 완전히 새 유저 (AdminCreateUser 없이 직접 Cognito 가입한 경우 — 기본 fallback)
-        import uuid as _uuid
-        user = User(
-            id=str(_uuid.uuid4()),
-            cognito_sub=cognito_user_id,
-            email=email if email else f"{username}@placeholder.com",
-            name=username,
-            role="member",
+        # DB에 등록되지 않은 유저 — HR에서 사전 생성 필수
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="등록되지 않은 사용자입니다. HR 관리자에게 문의하세요.",
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
 
     return user
 
@@ -282,18 +281,54 @@ def auth_logout(token: str = Depends(_extract_access_token)):
 
 
 # -------------------------------------------------------------------
-# 5. 내 정보 조회 (GET /auth/me) — DB User + 회사 정보
+# 5. 비밀번호 재설정 요청 (POST /auth/forgot-password)
+# -------------------------------------------------------------------
+@router.post("/forgot-password", response_model=SuccessResponse[ForgotPasswordResponse])
+def auth_forgot_password(req: ForgotPasswordRequest):
+    """비밀번호 재설정 인증 코드를 이메일로 발송."""
+    try:
+        result = forgot_password(req.email)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(
+        data=ForgotPasswordResponse(destination=result.destination)
+    )
+
+
+# -------------------------------------------------------------------
+# 6. 비밀번호 재설정 확인 (POST /auth/confirm-reset)
+# -------------------------------------------------------------------
+@router.post("/confirm-reset", response_model=SuccessResponse[dict])
+def auth_confirm_reset(req: ConfirmResetRequest):
+    """인증 코드 + 새 비밀번호로 비밀번호 변경."""
+    try:
+        confirm_reset_password(req.email, req.code, req.newPassword)
+    except CognitoError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    return SuccessResponse(data={"message": "비밀번호가 변경되었습니다."})
+
+
+# -------------------------------------------------------------------
+# 7. 내 정보 조회 (GET /auth/me) — DB User + 회사 정보
 # -------------------------------------------------------------------
 @router.get(
     "/me", response_model=SuccessResponse[UserMeResponse], summary="내 정보 조회"
 )
 def get_my_info(current_user: User = Depends(get_current_user)):
     """Cognito JWT를 검증하고 유저 및 소속 회사 정보를 반환한다."""
-    company_data = {"name": "소속 회사 없음", "logoUrl": ""}
-
-    if current_user.company:
-        company_data["name"] = current_user.company.name
-        company_data["logoUrl"] = current_user.company.logo_url
+    company_data = None
+    if current_user.role == "superadmin":
+        # 슈퍼어드민은 회사 소속이 없음
+        company_data = {"name": "슈퍼어드민", "logoUrl": ""}
+    elif current_user.company:
+        company_data = {
+            "name": current_user.company.name,
+            "logoUrl": current_user.company.logo_url or "",
+        }
+    else:
+        company_data = {"name": "소속 회사 없음", "logoUrl": ""}
 
     created_at = None
     if current_user.created_at:
@@ -304,6 +339,7 @@ def get_my_info(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "email": current_user.email,
         "role": current_user.role,
+        "position": current_user.position,
         "company": company_data,
         "createdAt": created_at,
     }

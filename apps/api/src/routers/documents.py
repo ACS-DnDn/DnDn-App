@@ -1,17 +1,30 @@
 import os
 import json
+import logging
 from urllib.parse import quote
 
 import boto3
 from botocore.exceptions import ClientError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime | None) -> str:
+    """UTC datetime → KST 'YYYY-MM-DD HH:MM' 문자열"""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST).strftime("%Y-%m-%d %H:%M")
+
 from apps.api.src.database import get_db
-from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment
+from apps.api.src.models import Document, Approval, User, DocumentRead, Attachment, Workspace
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.documents import (
@@ -28,7 +41,9 @@ from apps.api.src.schemas.documents import (
     RefDocumentDetailResponse,
     DocumentDetailResponse,
 )
+import requests.exceptions as requests_exc
 from apps.api.src.security.slack_oauth import send_message, SlackError
+from apps.api.src.security.github_oauth import create_terraform_pr, GitHubError
 
 _S3_BUCKET = os.getenv("S3_BUCKET", "")
 _AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -74,12 +89,167 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 
 def _notify(user: User, text: str) -> None:
-    """Slack 알림 발송 — 실패해도 메인 플로우에 영향 없음."""
-    if user and user.slack_access_token and user.slack_notify:
+    """결재 관련 Slack DM 알림 — 실패해도 메인 플로우에 영향 없음."""
+    if user and user.slack_access_token and user.slack_notify is not False and user.slack_user_id:
         try:
-            send_message(user.slack_access_token, user.slack_channel or "general", text)
+            send_message(user.slack_access_token, user.slack_user_id, text)
         except SlackError:
             pass
+
+
+_logger = logging.getLogger(__name__)
+
+# ── 문서번호 채번 ──────────────────────────────────────────────
+_DOC_TYPE_CODE = {
+    "계획서": "PLN",
+    "이벤트보고서": "EVT",
+    "헬스이벤트보고서": "RPT",
+    "주간보고서": "RPT",
+}
+
+
+def _next_doc_num(db: "Session", doc_type: str) -> str:
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)."""
+    from sqlalchemy import cast, Integer, func as sa_func
+
+    code = _DOC_TYPE_CODE.get(doc_type, "DOC")
+    year = datetime.now(KST).year
+    prefix = f"{year}-{code}-"
+
+    suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
+    max_seq = (
+        db.query(sa_func.max(cast(suffix_expr, Integer)))
+        .filter(Document.doc_num.like(f"{prefix}%"))
+        .scalar()
+    )
+    seq = (max_seq or 0) + 1
+    return f"{prefix}{seq:04d}"
+
+
+def _s3_put_text(key: str, content: str) -> None:
+    """S3에 텍스트 파일을 저장합니다."""
+    if not key or not _S3_BUCKET:
+        return
+    _get_s3_client().put_object(
+        Bucket=_S3_BUCKET, Key=key,
+        Body=content.encode("utf-8"),
+        ContentType="text/html; charset=utf-8",
+    )
+
+
+def _s3_list_terraform_files(prefix: str) -> dict[str, str]:
+    """S3 prefix 아래의 terraform 파일들을 {filename: content} 딕셔너리로 반환."""
+    if not prefix or not _S3_BUCKET:
+        return {}
+    s3 = _get_s3_client()
+    result = {}
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=prefix + "/"):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                filename = key.rsplit("/", 1)[-1]
+                if not filename:
+                    continue
+                body = s3.get_object(Bucket=_S3_BUCKET, Key=key)["Body"].read().decode("utf-8")
+                result[filename] = body
+    except ClientError as e:
+        _logger.warning("terraform S3 파일 조회 실패: %s", e)
+    return result
+
+
+def _create_terraform_pr_if_needed(doc: Document, db: "Session") -> None:
+    """최종결재 완료 시 terraform 파일이 있으면 고객 repo에 PR 생성."""
+    if not doc.terraform_key:
+        return
+
+    # 워크스페이스 정보
+    ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+    if not ws:
+        _logger.warning("terraform PR: 워크스페이스 없음 (doc=%s)", doc.id)
+        return
+
+    # GitHub 토큰 — 워크스페이스 owner의 토큰 사용
+    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+    if not owner_user or not owner_user.github_access_token:
+        _logger.warning("terraform PR: GitHub 토큰 없음 (workspace=%s)", ws.id)
+        return
+
+    # S3에서 terraform 파일 가져오기
+    tf_files = _s3_list_terraform_files(doc.terraform_key)
+    if not tf_files:
+        _logger.warning("terraform PR: S3에 terraform 파일 없음 (key=%s)", doc.terraform_key)
+        return
+
+    # 브랜치명·PR 제목·본문 구성
+    doc_num = doc.doc_num or doc.id[:8]
+    head_branch = f"dndn/{doc_num}"
+    pr_title = f"[DnDn] {doc.title}"
+    author_name = doc.author.name if doc.author else "DnDn"
+    pr_body = (
+        f"> **이 PR은 [DnDn](https://www.dndn.cloud) 결재 시스템에 의해 자동 생성되었습니다.**\n\n"
+        f"## 📋 문서 정보\n"
+        f"- **문서번호**: `{doc_num}`\n"
+        f"- **제목**: {doc.title}\n"
+        f"- **유형**: {doc.type}\n"
+        f"- **작성자**: {author_name}\n\n"
+        f"## 📂 Terraform 파일\n"
+        + "\n".join(f"- `{fn}`" for fn in tf_files.keys())
+        + "\n\n---\n🤖 *Generated by DnDn — Cloud Compliance & Automation Platform*"
+    )
+
+    try:
+        result = create_terraform_pr(
+            token=owner_user.github_access_token,
+            owner=ws.github_org,
+            repo=ws.repo,
+            base_branch=ws.branch,
+            head_branch=head_branch,
+            files=tf_files,
+            title=pr_title,
+            body=pr_body,
+            path_prefix=ws.path or None,
+        )
+        _logger.info("terraform PR 생성 완료: %s", result["pr_url"])
+        # PR 정보 DB 저장 (caller가 commit)
+        doc.pr_number = result["pr_number"]
+        doc.pr_url = result["pr_url"]
+        doc.pr_status = "open"
+        # deploy_log에 PR 생성 기록
+        entry = {
+            "event": "pr_created",
+            "status": "info",
+            "description": f"PR #{result['pr_number']} 생성",
+            "url": result["pr_url"],
+            "context": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        doc.deploy_log = [entry]
+    except GitHubError as e:
+        _logger.error("terraform PR 생성 실패: %s", e.message)
+    except (requests_exc.RequestException, KeyError, ValueError) as e:
+        _logger.error("terraform PR 생성 예외 (%s): %s", type(e).__name__, e)
+
+
+def _has_document_access(db: "Session", doc: Document, current_user: User) -> bool:
+    """문서 접근 권한 확인: 작성자 / 결재선 / 같은 워크스페이스(회사·부서)."""
+    if doc.author_id is not None and doc.author_id == current_user.id:
+        return True
+    is_approver = (
+        db.query(Approval)
+        .filter(Approval.document_id == doc.id, Approval.user_id == current_user.id)
+        .first()
+        is not None
+    )
+    if is_approver:
+        return True
+    if doc.workspace_id:
+        ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+        if ws:
+            owner = db.query(User).filter(User.id == ws.owner_id).first()
+            if owner and owner.company_id == current_user.company_id and owner.department_id == current_user.department_id:
+                return True
+    return False
 
 
 @router.get("", response_model=SuccessResponse[DocumentArchiveResponse])
@@ -101,20 +271,39 @@ def get_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1. 기본 쿼리 시작
-    query = db.query(Document)
+    # 1. 내 워크스페이스(같은 회사·부서) 문서 쿼리
+    my_ws_ids = (
+        db.query(Workspace.id)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
+    )
 
     # 💡 [호환성 로직] 참조 문서 검색에서 archived=true로 찌른 경우
     if archived:
-        query = query.filter(Document.status == "done")
-
-    # 2. 탭(tab) 필터링
-    if tab == "action":
-        # 내가 결재할 차례(current)이거나 내가 반려했던(rejected) 문서만 가져옵니다.
+        query = db.query(Document).filter(
+            Document.workspace_id.in_(my_ws_ids), Document.status == "done"
+        )
+    elif tab == "action":
+        # 결재 대상 문서 + 내가 쓴 반려/배포실패 문서
         query = (
-            query.join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            db.query(Document)
+            .outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status == "current"),
+                    and_(Document.author_id == current_user.id, Document.status == "rejected"),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
+            .distinct()
+        )
+    else:
+        query = db.query(Document).filter(
+            Document.workspace_id.in_(my_ws_ids),
+            Document.status != "draft",
         )
 
     # 3. 검색어(keyword) 필터링
@@ -198,20 +387,22 @@ def get_documents(
                     action_val = "approve"
                 elif my_approval.status == "rejected":
                     action_val = "rejected"
+            # 내가 쓴 반려/배포실패 문서 → 수정 필요
+            if doc.author_id == current_user.id and doc.status in ("rejected", "deploy_failed"):
+                action_val = "edit"
 
         items.append(
             {
                 "id": str(doc.id),
-                "docNum": f"2026-DnDn-{str(doc.id)[:4].upper()}",  # 예: 2026-DnDn-A1B2
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "name": doc.title,
-                "author": doc.author.name if doc.author else "알수없음",
-                "date": (
-                    doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else ""
-                ),
+                "author": doc.author.name if doc.author else "DnDn Agent",
+                "date": _to_kst_str(doc.created_at),
                 "type": doc.type,
                 "status": doc.status,
                 "action": action_val,
                 "isRead": is_read_flag,
+                "prStatus": doc.pr_status,
             }
         )
 
@@ -244,8 +435,8 @@ def submit_document(
     # 2. 임시 문서 만료 검사 (400 DRAFT_EXPIRED)
     # 문서 생성일이 24시간을 넘었는지 체크합니다.
     if doc.created_at:
-        now_utc = datetime.now(timezone.utc)
-        time_diff = now_utc - doc.created_at
+        created = doc.created_at.replace(tzinfo=timezone.utc) if doc.created_at.tzinfo is None else doc.created_at
+        time_diff = datetime.now(timezone.utc) - created
         if time_diff > timedelta(hours=24):
             raise HTTPException(status_code=400, detail="DRAFT_EXPIRED")
 
@@ -264,9 +455,25 @@ def submit_document(
     doc.work_date = req.work_date
     doc.ref_doc_ids = req.refDocIds
     doc.is_draft = req.isDraft
+    if req.authorComment is not None:
+        doc.submit_comment = req.authorComment.strip()
 
     # 임시저장(isDraft=true)이면 draft, 상신(isDraft=false)이면 progress 상태로 변경
     doc.status = "draft" if req.isDraft else "progress"
+
+    # 재상신 시 이전 PR/배포 정보 초기화 (새 결재·배포 사이클)
+    if not req.isDraft:
+        doc.pr_number = None
+        doc.pr_url = None
+        doc.pr_status = None
+        doc.auto_merge = None
+        doc.deploy_log = None
+
+    # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
+    need_html_update = False
+    if not req.isDraft and not doc.doc_num:
+        doc.doc_num = _next_doc_num(db, doc.type or "계획서")
+        need_html_update = bool(doc.html_key)
 
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
     db.query(Approval).filter(Approval.document_id == doc.id).delete()
@@ -293,17 +500,43 @@ def submit_document(
     db.commit()
     db.refresh(doc)
 
+    # 7-1. S3 HTML 문서번호 갱신 (commit 성공 후 수행 — DB/S3 불일치 방지)
+    if need_html_update and doc.doc_num and doc.html_key:
+        try:
+            import re as _re
+            html = _s3_get_text(doc.html_key)
+            if html:
+                # 헤더: 문서번호: XXX → 문서번호: 실제번호
+                updated = _re.sub(
+                    r'(문서번호:\s*)(.*?)(<br|</div>)',
+                    rf'\g<1>{doc.doc_num}\3',
+                    html,
+                    flags=_re.DOTALL,
+                )
+                # 푸터: 기존 문서번호 텍스트 치환
+                updated = _re.sub(
+                    r'(<div\s+class="doc-footer"><span>).*?(\s*&nbsp;/&nbsp;)',
+                    rf'\g<1>{doc.doc_num}\2',
+                    updated,
+                    flags=_re.DOTALL,
+                )
+                if updated != html:
+                    _s3_put_text(doc.html_key, updated)
+        except (ClientError, ValueError, TypeError) as e:
+            _logger.warning("HTML 문서번호 갱신 실패: %s", e)
+
     # 8. 첫 번째 결재자에게 Slack 알림 (상신 시에만)
     if not req.isDraft:
         first_approver_id = next((a.userId for a in req.approvers if a.seq == 1), None)
         if first_approver_id:
             first_approver = db.query(User).filter(User.id == first_approver_id).first()
-            _notify(first_approver, f"📋 결재 요청: [{doc.type}] {doc.title}")
+            author_name = doc.author.name if doc.author and doc.author.name else "알 수 없음"
+            _notify(first_approver, f"📋 결재 요청: {doc.title} ({author_name})")
 
     # 9. 명세서에 맞는 응답 반환
     return SuccessResponse(
         data=DocumentSubmitResponse(
-            id=str(doc.id), docNum=str(doc.id)[:8], status=doc.status
+            id=str(doc.id), docNum=doc.doc_num or str(doc.id)[:8], status=doc.status
         )
     )
 
@@ -318,15 +551,7 @@ def get_document_detail(
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    # 접근 권한 확인: 작성자 또는 결재선 포함 여부
-    is_author = doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    if not (is_author or is_approver):
+    if not _has_document_access(db, doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # S3에서 HTML 본문 가져오기
@@ -339,7 +564,7 @@ def get_document_detail(
             db.query(Document).filter(Document.id.in_(doc.ref_doc_ids)).all()
         )
         ref_docs = [
-            {"id": r.id, "title": r.title, "type": r.type} for r in ref_doc_records
+            {"id": r.id, "docNum": r.doc_num or str(r.id)[:8], "title": r.title, "type": r.type} for r in ref_doc_records
         ]
 
     # 첨부파일 목록
@@ -357,7 +582,7 @@ def get_document_detail(
             "role": doc.author.position if doc.author else "",
             "status": "author",
             "date": doc.created_at.isoformat() if doc.created_at else None,
-            "comment": None,
+            "comment": doc.submit_comment,
         }
     ]
     for apv in sorted(doc.approvals, key=lambda a: a.seq):
@@ -365,6 +590,7 @@ def get_document_detail(
             {
                 "seq": apv.seq,
                 "type": apv.type or "결재",
+                "userId": apv.user_id,
                 "name": apv.user.name if apv.user else "알수없음",
                 "role": apv.user.position if apv.user else "",
                 "status": apv.status,
@@ -374,7 +600,7 @@ def get_document_detail(
         )
 
     # Terraform 코드 (S3에서 조회)
-    terraform_data = _s3_get_json(doc.terraform_key) if doc.terraform_key else None
+    terraform_data = _s3_list_terraform_files(doc.terraform_key) if doc.terraform_key else None
 
     # 현재 사용자의 결재 액션 (approve/rejected 가능 여부)
     my_approval = (
@@ -391,18 +617,24 @@ def get_document_detail(
     return SuccessResponse(
         data=DocumentDetailResponse(
             id=str(doc.id),
-            docNum=f"2026-DnDn-{str(doc.id)[:4].upper()}",
+            docNum=doc.doc_num or str(doc.id)[:8],
             title=doc.title,
             type=doc.type,
             status=doc.status,
             action=action,
-            author={"name": doc.author.name if doc.author else "알수없음", "role": doc.author.position if doc.author else ""},
+            authorId=str(doc.author_id) if doc.author_id else None,
+            author={"name": doc.author.name if doc.author else "DnDn Agent", "role": doc.author.position if doc.author else ""},
             createdAt=doc.created_at.isoformat() if doc.created_at else None,
             content=content,
             terraform=terraform_data,
             refDocs=ref_docs,
             attachments=attachments_list,
             approvalLine=approval_line,
+            prNumber=doc.pr_number,
+            prUrl=doc.pr_url,
+            prStatus=doc.pr_status,
+            autoMerge=doc.auto_merge,
+            deployLog=doc.deploy_log or [],
         )
     )
 
@@ -463,9 +695,14 @@ def approve_document(
         doc.status = "done"
         new_status = "done"
 
-        # 🚀 [TODO] 명세서 요구사항: "최종 결재자 승인 시 terraform apply 자동 반영"
-        # 여기에 Terraform을 실행하는 워커(Worker)나 백그라운드 태스크를 호출하는 로직이 들어갈 자리입니다.
-        # 예: background_tasks.add_task(run_terraform_apply, doc.terraform)
+        # 🚀 최종 결재 시 Terraform PR 생성
+        doc.auto_merge = req.autoMerge
+        _create_terraform_pr_if_needed(doc, db)
+
+        # PR이 생성됐으면 배포 중으로 전환
+        if doc.pr_number:
+            doc.status = "deploying"
+            new_status = "deploying"
 
     # 6. DB 최종 반영
     db.commit()
@@ -473,9 +710,10 @@ def approve_document(
     # 7. Slack 알림
     if next_approval:
         next_user = db.query(User).filter(User.id == next_approval.user_id).first()
-        _notify(next_user, f"📋 결재 요청: [{doc.type}] {doc.title}")
+        author_name = doc.author.name if doc.author and doc.author.name else "알 수 없음"
+        _notify(next_user, f"📋 결재 요청: {doc.title} ({author_name})")
     else:
-        _notify(doc.author, f"✅ 결재 완료: [{doc.type}] {doc.title}")
+        _notify(doc.author, f"✅ 결재 완료: {doc.title}")
 
     # 8. 공통 응답 규격으로 리턴
     return SuccessResponse(data=DocumentStatusResponse(newStatus=new_status))
@@ -523,7 +761,7 @@ def reject_document(
     db.commit()
 
     # 7. 작성자에게 Slack 알림
-    _notify(doc.author, f"❌ 반려: [{doc.type}] {doc.title} — {req.comment}")
+    _notify(doc.author, f"❌ 반려: {doc.title} — {req.comment}")
 
     # 8. 공통 응답 규격으로 리턴 (상태는 무조건 rejected)
     return SuccessResponse(data=DocumentStatusResponse(newStatus="rejected"))
@@ -586,11 +824,17 @@ def mark_all_documents_as_read(
     query = db.query(Document.id)
 
     if req.tab == "action":
-        # action 탭: 내가 결재할 차례거나 내가 반려한 문서들만 타겟팅
+        # action 탭: 내가 결재할 차례거나 내가 쓴 반려/배포실패 문서
         query = (
-            query.join(Approval, Approval.document_id == Document.id)
-            .filter(Approval.user_id == current_user.id)
-            .filter(Approval.status.in_(["current", "rejected"]))
+            query.outerjoin(Approval, Approval.document_id == Document.id)
+            .filter(
+                or_(
+                    and_(Approval.user_id == current_user.id, Approval.status == "current"),
+                    and_(Document.author_id == current_user.id, Document.status == "rejected"),
+                    and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                )
+            )
+            .distinct()
         )
     elif req.tab == "all":
         # all 탭: 전체 문서 대상 (별도 필터 없음)
@@ -649,14 +893,7 @@ def get_ref_document_detail(
     if not parent_doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    is_author = parent_doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    if not (is_author or is_approver):
+    if not _has_document_access(db, parent_doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     # 2. 참조 문서(타겟) 상세 정보 조회 (404 REF_DOC_NOT_FOUND)
@@ -682,11 +919,7 @@ def get_ref_document_detail(
         ),
         RefDocMetaItem(
             label="등록일",
-            value=(
-                ref_doc.created_at.strftime("%Y-%m-%d %H:%M")
-                if ref_doc.created_at
-                else ""
-            ),
+            value=_to_kst_str(ref_doc.created_at),
         ),
         RefDocMetaItem(label="결재 상태", value=ref_doc.status),
     ]
@@ -773,14 +1006,7 @@ def download_attachment(
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
 
-    is_author = doc.author_id == current_user.id
-    is_approver = (
-        db.query(Approval)
-        .filter(Approval.document_id == documentId, Approval.user_id == current_user.id)
-        .first()
-        is not None
-    )
-    if not (is_author or is_approver):
+    if not _has_document_access(db, doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
 
     attachment = (
@@ -839,5 +1065,62 @@ def delete_attachment(
 
     db.delete(attachment)
     db.commit()
+
+    return SuccessResponse(data={"deleted": True})
+
+
+# ── 문서 삭제 ─────────────────────────────────────────────
+
+@router.delete("/{documentId}", summary="문서 삭제")
+def delete_document(
+    documentId: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = db.query(Document).filter(Document.id == documentId).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
+    if doc.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 결재 진행 중(progress)이면 삭제 불가 — draft / rejected / failed 만 허용
+    if doc.status == "progress":
+        raise HTTPException(status_code=400, detail="CANNOT_DELETE_IN_PROGRESS")
+
+    # S3 키를 먼저 수집 (DB 삭제 후 S3 정리 — DB commit 실패 시 파일이 사라지지 않도록)
+    s3_keys_to_delete: list[str] = []
+    tf_prefix: str | None = None
+
+    if doc.html_key:
+        s3_keys_to_delete.append(doc.html_key)
+    if doc.terraform_key:
+        tf_prefix = doc.terraform_key + "/"
+
+    attachments = db.query(Attachment).filter(Attachment.document_id == documentId).all()
+    for att in attachments:
+        s3_keys_to_delete.append(att.file_path)
+
+    # DB: FK cascade가 DB 레벨에서 미적용될 수 있으므로 수동 삭제
+    db.query(Attachment).filter(Attachment.document_id == documentId).delete()
+    db.query(DocumentRead).filter(DocumentRead.document_id == documentId).delete()
+    db.delete(doc)
+    db.commit()
+
+    # S3: best-effort 정리
+    s3 = _get_s3_client() if _S3_BUCKET else None
+    if s3:
+        for key in s3_keys_to_delete:
+            try:
+                s3.delete_object(Bucket=_S3_BUCKET, Key=key)
+            except ClientError:
+                pass
+        if tf_prefix:
+            try:
+                paginator = s3.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=_S3_BUCKET, Prefix=tf_prefix):
+                    for obj in page.get("Contents", []):
+                        s3.delete_object(Bucket=_S3_BUCKET, Key=obj["Key"])
+            except ClientError:
+                pass
 
     return SuccessResponse(data={"deleted": True})

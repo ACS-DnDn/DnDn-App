@@ -8,10 +8,12 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Date,
+    Enum,
 )
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 import uuid
+import enum
 
 # app/database.py 에서 만들어둔 Base 객체를 가져옵니다.
 from apps.api.src.database import Base
@@ -45,6 +47,7 @@ class Company(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     logo_url = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # 역참조: 이 회사에 소속된 유저들
     users = relationship("User", back_populates="company")
@@ -76,7 +79,8 @@ class User(Base):
     slack_user_id = Column(String(50), nullable=True)
     slack_access_token = Column(Text, nullable=True)
     slack_workspace = Column(String(100), nullable=True)
-    slack_channel = Column(String(100), nullable=True)
+    slack_channel = Column(String(100), nullable=True)  # 채널 ID (C0xxxxx)
+    slack_channel_name = Column(String(100), nullable=True)  # 채널 표시명
     slack_notify = Column(Boolean, nullable=True)
 
     # GitHub 연동
@@ -95,6 +99,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(String(50), primary_key=True, default=generate_uuid)
+    doc_num = Column(String(20), nullable=True, unique=True)  # 2026-PLN-0001
     title = Column(String(200), nullable=False)
 
     # "계획서", "이벤트보고서", "헬스이벤트보고서", "주간보고서"
@@ -115,6 +120,14 @@ class Document(Base):
         String(50), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
     )
     author_id = Column(String(50), ForeignKey("users.id"), nullable=True)
+    submit_comment = Column(Text, nullable=True)  # 기안자 상신 의견
+
+    # GitHub PR 연동
+    pr_number = Column(Integer, nullable=True)      # GitHub PR 번호
+    pr_url = Column(String(500), nullable=True)      # GitHub PR URL
+    pr_status = Column(String(20), nullable=True)    # open / merged / checks_failed / applied / apply_failed
+    auto_merge = Column(Boolean, nullable=True, default=True)  # PR 검증 통과 시 자동 Merge 여부
+    deploy_log = Column(JSON, nullable=True)  # 배포 이벤트 타임라인 [{event, status, description, url, context, timestamp}]
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -203,6 +216,9 @@ class Workspace(Base):
     # OPA 인프라 정책 — PUT으로 전체 교체하므로 JSON 컬럼이 적합
     opa_settings = Column(JSON, nullable=True)
 
+    # GitHub Webhook
+    github_webhook_id = Column(Integer, nullable=True)  # 등록된 webhook ID
+
     # 워크스페이스 생성자 (부서장)
     owner_id = Column(String(50), ForeignKey("users.id"), nullable=False)
     owner = relationship("User")
@@ -237,3 +253,32 @@ class ReportSettings(Base):
     event_settings = Column(JSON, nullable=True)
 
     workspace = relationship("Workspace", back_populates="report_settings")
+
+
+class JobType(str, enum.Enum):
+    plan = "plan"
+    terraform = "terraform"
+
+
+# Report-api 서버에서 사용하는 테이블
+class ReportJob(Base):
+    __tablename__ = "report_jobs"
+
+    job_id = Column(String(36), primary_key=True, index=True)
+    workspace_id = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(20), nullable=False)
+
+    job_type = Column(Enum(JobType), nullable=False)
+    document_id = Column(String(36), nullable=True)
+    content_url = Column(Text, nullable=True)
+    title = Column(String(255), nullable=True)
+    work_date = Column(String(50), nullable=True)
+
+    files = Column(JSON, nullable=True)
+
+    error_code = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

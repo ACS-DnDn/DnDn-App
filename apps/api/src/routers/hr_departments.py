@@ -111,7 +111,7 @@ def set_leader(
     if not dept:
         raise HTTPException(status_code=404, detail="DEPT_NOT_FOUND")
 
-    # 기존 부서장 → member로 강등
+    # 기존 부서장 → member로 강등 (hr 역할은 유지)
     if dept.leader_id and dept.leader_id != req.leaderId:
         old_leader = db.query(User).filter(
             User.id == dept.leader_id,
@@ -124,7 +124,7 @@ def set_leader(
                 raise HTTPException(status_code=e.status, detail=e.code) from e
             old_leader.role = "member"
 
-    # 신규 부서장 → leader로 승격
+    # 신규 부서장 → leader로 승격 (hr 역할은 변경하지 않음)
     if req.leaderId:
         new_leader = db.query(User).filter(
             User.id == req.leaderId,
@@ -132,7 +132,7 @@ def set_leader(
         ).first()
         if not new_leader:
             raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
-        if new_leader.role != "leader":
+        if new_leader.role not in ("leader", "hr"):
             try:
                 admin_set_group(new_leader.email, "leader", old_group=new_leader.role)
             except CognitoError as e:

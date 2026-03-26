@@ -1,17 +1,27 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDocuments } from '@/services/document.service';
+import { getDocuments, markDocumentsAsRead } from '@/services/document.service';
 import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
-const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', failed: '실패' };
-const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '현황보고서', '이벤트보고서': '이벤트보고서' };
+const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', deploying: '배포 중', deploy_failed: '배포 실패' };
+const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
-  const parts = d.split(' ');
-  const dateParts = (parts[0] ?? '').split('-');
-  return `${dateParts[0] ?? ''}.${dateParts[1] ?? ''}.${dateParts[2] ?? ''} ${parts[1] ?? ''}`.trim();
+  const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
+  if (isNaN(utc.getTime())) {
+    const parts = d.split(' ');
+    const dp = (parts[0] ?? '').split('-');
+    return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
+  }
+  const ko = new Date(utc.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const y = ko.getFullYear();
+  const m = String(ko.getMonth() + 1).padStart(2, '0');
+  const day = String(ko.getDate()).padStart(2, '0');
+  const hh = String(ko.getHours()).padStart(2, '0');
+  const mi = String(ko.getMinutes()).padStart(2, '0');
+  return `${y}.${m}.${day} ${hh}:${mi}`;
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -47,7 +57,10 @@ export function DocumentsPage() {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getDocuments({ pageSize: 100 }).then(({ items }) => setAllDocs(items)).catch(console.error);
+    getDocuments({ pageSize: 100 }).then(({ items }) => {
+      setAllDocs(items);
+      setReadIds(new Set(items.filter(d => d.isRead).map(d => d.id)));
+    }).catch(console.error);
   }, []);
 
   // 달력 팝업 외부 클릭 닫기
@@ -78,8 +91,13 @@ export function DocumentsPage() {
       if (pickEnd) docs = docs.filter(d => d.date <= pickEnd + ' 23:59');
     }
 
-    return [...docs].sort((a, b) => b.date.localeCompare(a.date));
-  }, [allDocs, searchQuery, searchField, typeFilter, statusFilter, pickStep, pickStart, pickEnd]);
+    return [...docs].sort((a, b) => {
+      const aRead = readIds.has(a.id) ? 1 : 0;
+      const bRead = readIds.has(b.id) ? 1 : 0;
+      if (aRead !== bRead) return aRead - bRead;
+      return b.date.localeCompare(a.date);
+    });
+  }, [allDocs, readIds, searchQuery, searchField, typeFilter, statusFilter, pickStep, pickStart, pickEnd]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageDocs = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -109,26 +127,33 @@ export function DocumentsPage() {
 
   // 읽음 처리
   const markRead = () => {
+    const ids = [...selectedIds].filter(id => !readIds.has(id));
     setReadIds(prev => {
       const next = new Set(prev);
-      selectedIds.forEach(id => next.add(id));
+      ids.forEach(id => next.add(id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   const markAllRead = () => {
+    const ids = filtered.filter((d: Document) => !readIds.has(d.id)).map((d: Document) => d.id);
     setReadIds(prev => {
       const next = new Set(prev);
       filtered.forEach(d => next.add(d.id));
       return next;
     });
     setSelectedIds(new Set());
+    if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
   // 행 클릭 → 뷰어로 이동
   const handleRowClick = (doc: Document) => {
-    setReadIds(prev => new Set(prev).add(doc.id));
+    if (!readIds.has(doc.id)) {
+      setReadIds((prev: Set<string>) => new Set(prev).add(doc.id));
+      markDocumentsAsRead([doc.id]).catch(console.error);
+    }
     navigate(`/viewer/${doc.id}?from=documents`);
   };
 
@@ -208,29 +233,27 @@ export function DocumentsPage() {
     return cls;
   }
 
-  // 페이지네이션
+  // 페이지네이션 (10개 블록 고정)
   const renderPagination = () => {
-    const pages = totalPages;
+    const BLOCK = 10;
+    const blockStart = Math.floor((currentPage - 1) / BLOCK) * BLOCK + 1;
+    const blockEnd = Math.min(blockStart + BLOCK - 1, totalPages);
     const btns: React.ReactNode[] = [];
 
     btns.push(
-      <button key="pp" className="page-btn page-nav" onClick={() => setCurrentPage(p => Math.max(1, p - 5))} disabled={currentPage <= 5} title="5페이지 이전">&laquo;</button>,
-      <button key="p" className="page-btn page-nav" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} title="이전">&lsaquo;</button>,
+      <button key="pp" className="page-btn page-nav" disabled={blockStart === 1} onClick={() => setCurrentPage(blockStart - 1)} title="이전 블록">&laquo;</button>,
+      <button key="p" className="page-btn page-nav" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} title="이전">&lsaquo;</button>,
     );
 
-    for (let i = 1; i <= pages; i++) {
-      if (i === 1 || i === pages || Math.abs(i - currentPage) <= 1) {
-        btns.push(
-          <button key={i} className={`page-btn${i === currentPage ? ' active' : ''}`} onClick={() => setCurrentPage(i)}>{i}</button>
-        );
-      } else if (Math.abs(i - currentPage) === 2) {
-        btns.push(<span key={`e${i}`} style={{ padding: '0 2px', color: 'var(--text-muted)', fontSize: 12 }}>…</span>);
-      }
+    for (let i = blockStart; i <= blockEnd; i++) {
+      btns.push(
+        <button key={i} className={`page-btn${i === currentPage ? ' active' : ''}`} onClick={() => setCurrentPage(i)}>{i}</button>
+      );
     }
 
     btns.push(
-      <button key="n" className="page-btn page-nav" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === pages} title="다음">&rsaquo;</button>,
-      <button key="nn" className="page-btn page-nav" onClick={() => setCurrentPage(p => Math.min(pages, p + 5))} disabled={currentPage + 5 > pages} title="5페이지 이후">&raquo;</button>,
+      <button key="n" className="page-btn page-nav" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} title="다음">&rsaquo;</button>,
+      <button key="nn" className="page-btn page-nav" disabled={blockEnd === totalPages} onClick={() => setCurrentPage(blockEnd + 1)} title="다음 블록">&raquo;</button>,
     );
 
     return btns;
@@ -338,8 +361,7 @@ export function DocumentsPage() {
 
       {/* 테이블 */}
       <div className="table-wrap">
-        {pageDocs.length > 0 ? (
-          <table className="doc-table">
+        <table className="doc-table">
             <colgroup>
               <col style={{ width: 44 }} />
               <col style={{ width: '15%' }} />
@@ -363,12 +385,12 @@ export function DocumentsPage() {
                 </th>
                 <th>문서번호</th>
                 <th>제목</th>
-                <th>
+                <th className="th-type">
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); resetPage(); }}>
                       <option value="">유형</option>
                       <option value="계획서">작업계획서</option>
-                      <option value="주간보고서">현황보고서</option>
+                      <option value="주간보고서">인프라 활동 보고서</option>
                       <option value="이벤트보고서">이벤트보고서</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
@@ -376,13 +398,14 @@ export function DocumentsPage() {
                 </th>
                 <th>작성자</th>
                 <th>등록일</th>
-                <th>
+                <th className="th-status">
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}>
                       <option value="">상태</option>
                       <option value="done">완료</option>
+                      <option value="deploying">배포 중</option>
+                      <option value="deploy_failed">배포 실패</option>
                       <option value="rejected">반려</option>
-                      <option value="failed">실패</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
@@ -390,7 +413,7 @@ export function DocumentsPage() {
               </tr>
             </thead>
             <tbody>
-              {pageDocs.map(doc => {
+              {pageDocs.length > 0 ? pageDocs.map(doc => {
                 const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
                 return (
                   <tr
@@ -414,15 +437,18 @@ export function DocumentsPage() {
                     <td>{STATUS_LABELS[doc.status] || doc.status}</td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan={7} className="empty-state-cell">
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🗂️</div>
+                      <div className="empty-state-title">해당하는 문서가 없습니다</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon">🗂️</div>
-            <div className="empty-state-title">해당하는 문서가 없습니다</div>
-          </div>
-        )}
 
         {pageDocs.length > 0 && (
           <div className="pagination">{renderPagination()}</div>

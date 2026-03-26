@@ -14,6 +14,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "pymysql>=1.1.0",
     "prometheus-client>=0.20.0",
+    "python-hcl2>=4.0.0",
 ]
 
 [project.optional-dependencies]

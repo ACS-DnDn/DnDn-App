@@ -17,11 +17,13 @@ S3 canonical 경로 규칙:
 
 import json
 import os
+import re
 import time
 import logging
 import urllib.parse
 
 import boto3
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,9 +33,15 @@ from .ai_generator import (
     generate_weekly_report,
     generate_health_event_report,
 )
+from datetime import datetime, timezone
+from sqlalchemy import func as sa_func
+
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
-from .database import SessionLocal
-from .models import Document
+from .database import SessionLocal, Base, engine
+from .models import Document, Attachment
+
+# 테이블 자동 생성 (독립 실행 시에도 Attachment 테이블 보장)
+Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -41,10 +49,120 @@ logger = logging.getLogger(__name__)
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL", "")
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
+DNDN_API_URL = os.getenv("DNDN_API_URL", "http://dndn-api.dndn-api.svc.cluster.local:8000")
+
+
+DOC_TYPE_CODE = {
+    "계획서": "PLN",
+    "이벤트보고서": "EVT",
+    "헬스이벤트보고서": "RPT",
+    "주간보고서": "RPT",
+}
+
+_TITLE_RE = re.compile(r'<div\s+class="doc-header-title">\s*(.+?)\s*</div>', re.DOTALL)
+
+
+def _extract_title_from_html(html: str, fallback: str) -> str:
+    """생성된 HTML에서 doc-header-title 텍스트를 추출."""
+    m = _TITLE_RE.search(html)
+    if m:
+        title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        if title:
+            return title
+    return fallback
+
+
+def _next_doc_num(db, doc_type: str) -> str:
+    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-EVT-0001)."""
+    from sqlalchemy import cast, Integer
+
+    code = DOC_TYPE_CODE.get(doc_type, "DOC")
+    year = datetime.now(timezone.utc).year
+    prefix = f"{year}-{code}-"
+
+    suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
+    max_seq = (
+        db.query(sa_func.max(cast(suffix_expr, Integer)))
+        .filter(Document.doc_num.like(f"{prefix}%"))
+        .scalar()
+    )
+    seq = (max_seq or 0) + 1
+    return f"{prefix}{seq:04d}"
 
 
 def _sqs_client():
     return boto3.client("sqs", region_name=REGION)
+
+
+# raw 디렉토리 → 첨부파일 표시명 매핑
+_EVIDENCE_DIR_LABELS = {
+    "cloudtrail": "CloudTrail_이벤트로그",
+    "advisor": "TrustedAdvisor_점검결과",
+    "access-analyzer": "AccessAnalyzer_분석결과",
+    "cost-explorer": "CostExplorer_비용데이터",
+    "cloudwatch": "CloudWatch_메트릭",
+    "config": "Config_리소스데이터",
+}
+
+
+def _register_weekly_evidence(db, doc_id: str, canonical: dict, json_key: str, canonical_size_kb: int):
+    """활동보고서의 Worker raw evidence 파일들을 첨부파일로 등록."""
+    # 1) 정제된 canonical 데이터
+    db.add(Attachment(
+        id=f"{doc_id}-canonical",
+        document_id=doc_id,
+        original_name="활동보고_정제데이터.json",
+        file_path=json_key,
+        size_kb=canonical_size_kb,
+    ))
+
+    # 2) raw evidence 파일들 (Worker가 S3에 업로드한 수집 데이터)
+    raw_prefix_uri = (
+        canonical.get("meta", {}).get("evidence", {}).get("raw_prefix_s3_uri", "")
+    )
+    if not raw_prefix_uri:
+        return
+
+    # s3://bucket/prefix/raw/ → bucket, key_prefix
+    stripped = raw_prefix_uri.replace("s3://", "")
+    slash_idx = stripped.find("/")
+    if slash_idx < 0:
+        return
+    bucket = stripped[:slash_idx]
+    key_prefix = stripped[slash_idx + 1:]
+
+    try:
+        attachments = []
+        paginator = _s3_client().get_paginator("list_objects_v2")
+        idx = 0
+        for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                size_kb = max(1, (obj["Size"] + 1023) // 1024)
+                filename = key.split("/")[-1]
+
+                # raw/ 이후 첫 디렉토리로 카테고리 판별
+                relative = key[len(key_prefix):]
+                category = relative.split("/")[0] if "/" in relative else ""
+
+                if category == "meta":
+                    continue  # job_payload 등 메타데이터는 스킵
+
+                label = _EVIDENCE_DIR_LABELS.get(category, category)
+                display_name = f"{label}_{filename}" if label else filename
+
+                attachments.append(Attachment(
+                    id=f"{doc_id}-evidence-{idx}",
+                    document_id=doc_id,
+                    original_name=display_name,
+                    file_path=key,
+                    size_kb=size_kb,
+                ))
+                idx += 1
+        db.add_all(attachments)
+    except Exception as e:
+        logger.warning("활동보고서 evidence 파일 목록 조회 실패: %s", e)
+        raise
 
 
 def _html_exists(doc_id: str, workspace_id: str) -> bool:
@@ -107,6 +225,24 @@ def _doc_id_from_key(s3_key: str) -> str:
     return filename[:-5] if filename.endswith(".json") else filename
 
 
+def _get_company_logo(db, workspace_id: str) -> str:
+    """workspace → owner → company → logo_url 조회"""
+    try:
+        from sqlalchemy import text
+        row = db.execute(
+            text(
+                "SELECT c.logo_url FROM workspaces w "
+                "JOIN users u ON w.owner_id = u.id "
+                "JOIN companies c ON u.company_id = c.id "
+                "WHERE w.id = :ws_id LIMIT 1"
+            ),
+            {"ws_id": workspace_id},
+        ).fetchone()
+        return (row[0] or "") if row else ""
+    except Exception:
+        return ""
+
+
 def _process(workspace_id: str, event_type: str, s3_key: str):
     doc_id = _doc_id_from_key(s3_key)
 
@@ -120,21 +256,9 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     canonical = _read_canonical_from_s3(s3_key)
 
     # canonical JSON을 reports/ 경로에도 저장 (API에서 조회용)
-    save_report(doc_id, canonical, workspace_id)
+    json_key = save_report(doc_id, canonical, workspace_id)
 
-    # meta.type 기반으로 HTML 생성
-    meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
-    if meta_type == "WEEKLY":
-        html = generate_weekly_report(canonical)
-    elif meta_type == "HEALTH":
-        html = generate_health_event_report(canonical)
-    else:
-        html = generate_event_report(canonical)
-
-    # HTML 저장 → {workspace_id}/reports/{doc_id}.html
-    html_key = save_report_html(doc_id, html, workspace_id)
-
-    # DB에 Document 레코드 생성
+    # DB에 Document 레코드 생성 전 문서번호 채번 (HTML 생성에 필요)
     doc_type = {
         "findings": "이벤트보고서",
         "health": "헬스이벤트보고서",
@@ -144,24 +268,116 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     db = SessionLocal()
     try:
         existing = db.query(Document).filter(Document.id == doc_id).first()
-        if not existing:
-            title = canonical.get("meta", {}).get("title", doc_id)
-            doc = Document(
-                id=doc_id,
-                title=title,
-                type=doc_type,
-                html_key=html_key,
-                json_key=f"{workspace_id}/reports/{doc_id}.json",
-                workspace_id=workspace_id,
-                status="done",
-            )
-            db.add(doc)
-            db.commit()
+        if existing:
+            logger.info("스킵 (Document 이미 존재): %s", doc_id)
+            db.close()
+            return
+        doc_num = _next_doc_num(db, doc_type)
+        logo_url = _get_company_logo(db, workspace_id)
+    finally:
+        db.close()
+
+    doc_meta = {
+        "doc_num": doc_num,
+        "author_label": "DnDn Agent",
+        "company_logo_url": logo_url,
+    }
+
+    # meta.type 기반으로 HTML 생성
+    meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
+    if meta_type == "WEEKLY":
+        html = generate_weekly_report(canonical, doc_meta=doc_meta)
+    elif meta_type == "HEALTH":
+        html = generate_health_event_report(canonical, doc_meta=doc_meta)
+    else:
+        html = generate_event_report(canonical, doc_meta=doc_meta)
+
+    # HTML 저장 → {workspace_id}/reports/{doc_id}.html
+    html_key = save_report_html(doc_id, html, workspace_id)
+
+    # HTML에서 제목 추출 (사용자 입력 제목을 fallback으로 사용)
+    raw_meta_title = (canonical.get("meta", {}).get("title") or "").strip()
+    meta_title = raw_meta_title or doc_id
+    title = _extract_title_from_html(html, meta_title).strip() or doc_id
+    title = title[:200]
+
+    created = False
+    db = SessionLocal()
+    try:
+        doc = Document(
+            id=doc_id,
+            doc_num=doc_num,
+            title=title,
+            type=doc_type,
+            html_key=html_key,
+            json_key=json_key,
+            workspace_id=workspace_id,
+            status="done",
+        )
+        db.add(doc)
+        db.flush()  # FK 제약 충족을 위해 Document 먼저 flush
+
+        # 근거자료 첨부 (indent=2로 저장되므로 동일 옵션으로 크기 계산)
+        canonical_json_bytes = json.dumps(canonical, ensure_ascii=False, indent=2).encode("utf-8")
+        canonical_size_kb = max(1, (len(canonical_json_bytes) + 1023) // 1024)
+
+        if event_type == "weekly":
+            # 활동보고서: Worker가 수집한 raw evidence 파일들 등록
+            _register_weekly_evidence(db, doc_id, canonical, json_key, canonical_size_kb)
+        else:
+            # 이벤트/헬스 보고서: 원본 + 정제 데이터
+            raw_name_map = {
+                "findings": "SecurityHub_Finding_원본.json",
+                "health": "AWS_Health_Event_원본.json",
+            }
+            raw_name = raw_name_map.get(event_type, "원본_이벤트데이터.json")
+            try:
+                raw_size_bytes = _s3_client().head_object(Bucket=S3_BUCKET, Key=s3_key)["ContentLength"]
+                raw_size_kb = max(1, (raw_size_bytes + 1023) // 1024)
+            except Exception:
+                raw_size_kb = canonical_size_kb
+            db.add(Attachment(
+                id=f"{doc_id}-raw",
+                document_id=doc_id,
+                original_name=raw_name,
+                file_path=s3_key,
+                size_kb=raw_size_kb,
+            ))
+            db.add(Attachment(
+                id=f"{doc_id}-canonical",
+                document_id=doc_id,
+                original_name="보고서_정제데이터.json",
+                file_path=json_key,
+                size_kb=canonical_size_kb,
+            ))
+
+        db.commit()
+        created = True
     except Exception as e:
         logger.error("Document DB 저장 실패 (%s): %s", doc_id, e, exc_info=True)
         db.rollback()
     finally:
         db.close()
+
+    # dndn-api에 새 문서 알림 요청 (Slack) — 새 Document 생성 시에만
+    if created:
+        try:
+            notify_resp = requests.post(
+                f"{DNDN_API_URL}/internal/notify-new-document",
+                json={
+                    "documentId": doc_id,
+                    "workspaceId": workspace_id,
+                    "title": title,
+                    "docType": doc_type,
+                },
+                headers={"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")},
+                timeout=5,
+            )
+            payload = notify_resp.json()
+            if not notify_resp.ok or not payload.get("ok"):
+                logger.warning("Slack 알림 요청 실패 (HTTP %s): %s", notify_resp.status_code, payload)
+        except (requests.RequestException, ValueError) as e:
+            logger.warning("Slack 알림 요청 실패: %s", e)
 
     logger.info("HTML 저장 완료: %s → %s", doc_id, html_key)
 

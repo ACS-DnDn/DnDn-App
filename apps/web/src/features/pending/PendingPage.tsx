@@ -7,9 +7,19 @@ import './PendingPage.css';
 const PAGE_SIZE = 10;
 
 function formatDate(d: string) {
-  const parts = d.split(' ');
-  const dateParts = (parts[0] ?? '').split('-');
-  return `${dateParts[0] ?? ''}.${dateParts[1] ?? ''}.${dateParts[2] ?? ''} ${parts[1] ?? ''}`.trim();
+  const utc = new Date(d.includes('T') ? d : d.replace(' ', 'T'));
+  if (isNaN(utc.getTime())) {
+    const parts = d.split(' ');
+    const dp = (parts[0] ?? '').split('-');
+    return `${dp[0] ?? ''}.${dp[1] ?? ''}.${dp[2] ?? ''} ${parts[1]?.slice(0, 5) ?? ''}`.trim();
+  }
+  const ko = new Date(utc.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const y = ko.getFullYear();
+  const m = String(ko.getMonth() + 1).padStart(2, '0');
+  const day = String(ko.getDate()).padStart(2, '0');
+  const hh = String(ko.getHours()).padStart(2, '0');
+  const mi = String(ko.getMinutes()).padStart(2, '0');
+  return `${y}.${m}.${day} ${hh}:${mi}`;
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -228,8 +238,7 @@ export function PendingPage() {
 
       {/* 테이블 */}
       <div className="table-wrap">
-        {pageDocs.length > 0 ? (
-          <table className="doc-table">
+        <table className="doc-table">
             <colgroup>
               <col style={{ width: 44 }} />
               <col style={{ width: '16%' }} />
@@ -255,6 +264,7 @@ export function PendingPage() {
                       <option value="">상태</option>
                       <option value="progress">결재 대기</option>
                       <option value="rejected">반려</option>
+                      <option value="deploy_failed">배포 실패</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
@@ -262,10 +272,10 @@ export function PendingPage() {
               </tr>
             </thead>
             <tbody>
-              {pageDocs.map(doc => {
+              {pageDocs.length > 0 ? pageDocs.map(doc => {
                 const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
-                const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : 'badge badge-progress';
-                const badgeLabel = doc.status === 'rejected' ? '반려' : '결재 대기';
+                const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : doc.status === 'deploy_failed' ? 'badge badge-rejected' : 'badge badge-progress';
+                const badgeLabel = doc.status === 'rejected' ? '반려' : doc.status === 'deploy_failed' ? '배포 실패' : '결재 대기';
                 return (
                   <tr key={doc.id} onClick={() => handleRowClick(doc)}>
                     <td className="td-check" onClick={(e) => e.stopPropagation()}>
@@ -278,15 +288,18 @@ export function PendingPage() {
                     <td style={{ textAlign: 'center' }}><span className={badgeCls}>{badgeLabel}</span></td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan={6} className="empty-state-cell">
+                    <div className="empty-state">
+                      <div className="empty-state-icon">🗂️</div>
+                      <div className="empty-state-title">처리할 문서가 없습니다</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon">🗂️</div>
-            <div className="empty-state-title">처리할 문서가 없습니다</div>
-          </div>
-        )}
         {pageDocs.length > 0 && <div className="pagination">{renderPagination()}</div>}
       </div>
     </div>

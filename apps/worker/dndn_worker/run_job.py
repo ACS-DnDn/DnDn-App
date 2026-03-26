@@ -1909,6 +1909,9 @@ def group_resources(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def build_meta(payload: Dict[str, Any], time_range: Dict[str, Any]) -> Dict[str, Any]:
     run_id = payload.get("run_id") or ("run-" + _sha256_bytes(os.urandom(16))[:12])
     evidence = _evidence_uris(payload)
+    # trigger.title이 있으면 meta.title에 반영 (사용자 입력 보고서 제목)
+    user_title = (payload.get("trigger") or {}).get("title")
+
     meta = {
         "schema_version": "0.2.0",
         "type": payload["type"],
@@ -1926,6 +1929,9 @@ def build_meta(payload: Dict[str, Any], time_range: Dict[str, Any]) -> Dict[str,
         "evidence": evidence,
         "partition": build_partition(payload, time_range),
     }
+
+    if user_title:
+        meta["title"] = user_title
 
     # EVENT requires trigger
     if payload["type"] == "EVENT":

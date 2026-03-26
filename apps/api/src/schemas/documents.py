@@ -23,6 +23,7 @@ class DocumentSubmitRequest(BaseModel):
     refDocIds: List[str] = Field(default_factory=list)
     approvers: List[ApproverItem]
     isDraft: bool
+    authorComment: Optional[str] = None
 
 
 # --- 문서 저장/상신 응답 ---
@@ -43,6 +44,7 @@ class DocumentArchiveItem(BaseModel):
     status: str
     action: Optional[str] = None
     isRead: bool  # TODO: 향후 읽음 테이블 연동 필요
+    prStatus: Optional[str] = None
 
 
 class DocumentArchiveResponse(BaseModel):
@@ -54,6 +56,7 @@ class DocumentArchiveResponse(BaseModel):
 
 class DocumentApproveRequest(BaseModel):
     comment: Optional[str] = None
+    autoMerge: bool = False  # PR 검증 통과 시 자동 Merge (기본 False — 명시적 opt-in)
 
 
 class DocumentStatusResponse(BaseModel):
@@ -96,6 +99,7 @@ class DocumentAuthor(BaseModel):
 
 class DocumentRefDoc(BaseModel):
     id: str
+    docNum: str
     title: str
     type: str
 
@@ -109,11 +113,21 @@ class DocumentAttachment(BaseModel):
 class DocumentApprovalLine(BaseModel):
     seq: int
     type: str
+    userId: Optional[str] = None
     name: str
     role: str
     status: str
     date: Optional[str] = None
     comment: Optional[str] = None
+
+
+class DeployLogEntry(BaseModel):
+    event: str          # pr_created / checks_passed / checks_failed / merged / applied / apply_failed
+    status: str         # success / failure / info
+    description: Optional[str] = None  # GitHub/TFC 결과 문구
+    url: Optional[str] = None          # GitHub/TFC 링크
+    context: Optional[str] = None      # check name 또는 TFC workspace
+    timestamp: str
 
 
 class DocumentDetailResponse(BaseModel):
@@ -123,6 +137,7 @@ class DocumentDetailResponse(BaseModel):
     type: str
     status: str
     action: Optional[str] = None
+    authorId: Optional[str] = None
     author: DocumentAuthor
     createdAt: Optional[str] = None
     content: Optional[str] = None
@@ -130,3 +145,8 @@ class DocumentDetailResponse(BaseModel):
     refDocs: List[DocumentRefDoc]
     attachments: List[DocumentAttachment]
     approvalLine: List[DocumentApprovalLine]
+    prNumber: Optional[int] = None
+    prUrl: Optional[str] = None
+    prStatus: Optional[str] = None
+    autoMerge: Optional[bool] = None
+    deployLog: List[DeployLogEntry] = []

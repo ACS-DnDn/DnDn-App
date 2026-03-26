@@ -20,6 +20,10 @@ GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv(
     "GITHUB_REDIRECT_URI", "http://localhost:5173/auth/github/callback"
 )
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+GITHUB_WEBHOOK_URL = os.getenv(
+    "GITHUB_WEBHOOK_URL", "https://www.dndn.cloud/api/github/webhook"
+)
 
 _GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 _GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -232,3 +236,293 @@ def get_branches(token: str, owner: str, repo: str) -> list[BranchItem]:
         BranchItem(name=b["name"], is_default=(b["name"] == default_branch))
         for b in resp.json()
     ]
+
+
+# ── 6. Terraform PR 생성 ────────────────────────────────
+def create_terraform_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    base_branch: str,
+    head_branch: str,
+    files: dict[str, str],
+    title: str,
+    body: str,
+    path_prefix: str | None = None,
+) -> dict:
+    """GitHub API로 새 브랜치에 terraform 파일을 커밋하고 PR을 생성한다.
+
+    Args:
+        token: GitHub access token
+        owner: GitHub org/user
+        repo: 레포지토리명
+        base_branch: 베이스 브랜치 (e.g. main)
+        head_branch: 생성할 브랜치명 (e.g. dndn/2026-PLN-0004)
+        files: {filename: content} 딕셔너리
+        title: PR 제목
+        body: PR 본문
+        path_prefix: 레포 내 경로 접두사 (e.g. terraform/)
+
+    Returns:
+        {"pr_url": "...", "pr_number": 123}
+    """
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    # 1) base branch의 최신 커밋 SHA 가져오기
+    ref_resp = requests.get(f"{api}/git/ref/heads/{base_branch}", headers=headers, timeout=10)
+    _check_response(ref_resp)
+    base_sha = ref_resp.json()["object"]["sha"]
+
+    # 2) base 커밋의 tree SHA 가져오기
+    commit_resp = requests.get(f"{api}/git/commits/{base_sha}", headers=headers, timeout=10)
+    _check_response(commit_resp)
+    base_tree_sha = commit_resp.json()["tree"]["sha"]
+
+    # 3) blob 생성 + tree 구성
+    tree_items = []
+    for filename, content in files.items():
+        file_path = f"{path_prefix}/{filename}" if path_prefix else filename
+        blob_resp = requests.post(
+            f"{api}/git/blobs",
+            headers=headers,
+            json={"content": content, "encoding": "utf-8"},
+            timeout=10,
+        )
+        _check_response(blob_resp)
+        tree_items.append({
+            "path": file_path,
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob_resp.json()["sha"],
+        })
+
+    # 4) tree 생성
+    tree_resp = requests.post(
+        f"{api}/git/trees",
+        headers=headers,
+        json={"base_tree": base_tree_sha, "tree": tree_items},
+        timeout=10,
+    )
+    _check_response(tree_resp)
+    new_tree_sha = tree_resp.json()["sha"]
+
+    # 5) 커밋 생성
+    commit_create_resp = requests.post(
+        f"{api}/git/commits",
+        headers=headers,
+        json={
+            "message": title,
+            "tree": new_tree_sha,
+            "parents": [base_sha],
+        },
+        timeout=10,
+    )
+    _check_response(commit_create_resp)
+    new_commit_sha = commit_create_resp.json()["sha"]
+
+    # 6) 새 브랜치 생성 (이미 존재하면 업데이트)
+    ref_create_resp = requests.post(
+        f"{api}/git/refs",
+        headers=headers,
+        json={"ref": f"refs/heads/{head_branch}", "sha": new_commit_sha},
+        timeout=10,
+    )
+    if ref_create_resp.status_code == 422:
+        # 브랜치가 이미 존재 → ref 업데이트
+        ref_update_resp = requests.patch(
+            f"{api}/git/refs/heads/{head_branch}",
+            headers=headers,
+            json={"sha": new_commit_sha, "force": True},
+            timeout=10,
+        )
+        _check_response(ref_update_resp)
+    else:
+        _check_response(ref_create_resp)
+
+    # 7) PR 생성 (이미 열린 PR이 있으면 재활용)
+    pr_resp = requests.post(
+        f"{api}/pulls",
+        headers=headers,
+        json={
+            "title": title,
+            "body": body,
+            "head": head_branch,
+            "base": base_branch,
+        },
+        timeout=10,
+    )
+    if pr_resp.status_code == 422:
+        # 이미 같은 head→base PR이 열려 있음 → 기존 PR 조회
+        existing_resp = requests.get(
+            f"{api}/pulls",
+            headers=headers,
+            params={"head": f"{owner}:{head_branch}", "base": base_branch, "state": "open"},
+            timeout=10,
+        )
+        _check_response(existing_resp)
+        existing_prs = existing_resp.json()
+        if existing_prs:
+            pr_data = existing_prs[0]
+            # PR 제목/본문 업데이트
+            requests.patch(
+                f"{api}/pulls/{pr_data['number']}",
+                headers=headers,
+                json={"title": title, "body": body},
+                timeout=10,
+            )
+            return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
+        _check_response(pr_resp)  # 다른 이유의 422면 에러
+    else:
+        _check_response(pr_resp)
+    pr_data = pr_resp.json()
+
+    return {"pr_url": pr_data["html_url"], "pr_number": pr_data["number"]}
+
+
+# ── 7. Webhook 등록 ──────────────────────────────────────
+def register_webhook(
+    token: str,
+    owner: str,
+    repo: str,
+    callback_url: str | None = None,
+    secret: str | None = None,
+) -> int:
+    """고객 repo에 GitHub webhook을 등록하고 hook_id를 반환한다.
+
+    이미 동일 URL의 webhook이 있으면 기존 ID를 반환한다.
+    """
+    url = callback_url or GITHUB_WEBHOOK_URL
+    webhook_secret = secret or GITHUB_WEBHOOK_SECRET
+    if not url:
+        raise GitHubError(500, "MISSING_WEBHOOK_URL", "GITHUB_WEBHOOK_URL이 설정되지 않았습니다.")
+    if not webhook_secret:
+        raise GitHubError(500, "MISSING_WEBHOOK_SECRET", "GITHUB_WEBHOOK_SECRET이 설정되지 않았습니다.")
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    resp = requests.post(
+        f"{api}/hooks",
+        headers=headers,
+        json={
+            "name": "web",
+            "active": True,
+            "events": ["check_run", "pull_request", "status"],
+            "config": {
+                "url": url,
+                "content_type": "json",
+                "secret": webhook_secret,
+                "insecure_ssl": "0",
+            },
+        },
+        timeout=10,
+    )
+
+    if resp.status_code == 422:
+        # webhook 이미 존재 — 기존 hook 찾아서 ID 반환
+        list_resp = requests.get(
+            f"{api}/hooks", headers=headers, timeout=10,
+        )
+        _check_response(list_resp)
+        for hook in list_resp.json():
+            if hook.get("config", {}).get("url") == url:
+                return hook["id"]
+        raise GitHubError(422, "HOOK_EXISTS", "Webhook이 이미 존재하지만 찾을 수 없습니다.")
+
+    _check_response(resp)
+    return resp.json()["id"]
+
+
+def unregister_webhook(
+    token: str,
+    owner: str,
+    repo: str,
+    hook_id: int,
+) -> None:
+    """고객 repo에서 webhook을 삭제한다. 이미 없으면 무시."""
+    headers = _gh_headers(token)
+    resp = requests.delete(
+        f"{_GITHUB_API}/repos/{owner}/{repo}/hooks/{hook_id}",
+        headers=headers,
+        timeout=10,
+    )
+    if resp.status_code == 404:
+        return  # 이미 삭제됨
+    _check_response(resp)
+
+
+# ── 8. PR 머지 ───────────────────────────────────────────
+def merge_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    merge_method: str = "squash",
+) -> bool:
+    """GitHub PR을 머지한다. 성공 시 True, 실패 시 False."""
+    headers = _gh_headers(token)
+    resp = requests.put(
+        f"{_GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+        headers=headers,
+        json={"merge_method": merge_method},
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
+# ── 9. PR의 모든 체크 상태 확인 ──────────────────────────
+def get_pr_checks_passed(token: str, owner: str, repo: str, pr_number: int) -> bool:
+    """PR의 head commit에 대해 check_runs + commit statuses가 모두 통과했는지 확인."""
+    import logging
+    _log = logging.getLogger(__name__)
+
+    headers = _gh_headers(token)
+    api = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    # PR head SHA 가져오기
+    pr_resp = requests.get(f"{api}/pulls/{pr_number}", headers=headers, timeout=10)
+    if not pr_resp.ok:
+        _log.warning("[checks] PR 조회 실패: %s/%s #%s → %s", owner, repo, pr_number, pr_resp.status_code)
+        return False
+    head_sha = pr_resp.json().get("head", {}).get("sha", "")
+    if not head_sha:
+        _log.warning("[checks] head SHA 없음: #%s", pr_number)
+        return False
+
+    # check_runs 확인 (API 실패 시 fail-closed)
+    cr_resp = requests.get(
+        f"{api}/commits/{head_sha}/check-runs", headers=headers, timeout=10,
+    )
+    if not cr_resp.ok:
+        _log.warning("[checks] check-runs API 실패: %s", cr_resp.status_code)
+        return False
+    check_runs = cr_resp.json().get("check_runs", [])
+    _log.info("[checks] check_runs 총 %d개 (sha=%s)", len(check_runs), head_sha[:8])
+    for cr in check_runs:
+        name = cr.get("name", "?")
+        st = cr.get("status", "?")
+        concl = cr.get("conclusion")
+        _log.info("[checks]   %s: status=%s conclusion=%s", name, st, concl)
+        if st != "completed" or concl not in ("success", "skipped", "neutral"):
+            _log.info("[checks]   → 미통과: %s", name)
+            return False
+
+    # commit statuses 확인 (Terraform Cloud 등)
+    status_resp = requests.get(
+        f"{api}/commits/{head_sha}/status", headers=headers, timeout=10,
+    )
+    if not status_resp.ok:
+        _log.warning("[checks] commit status API 실패: %s", status_resp.status_code)
+        return False
+    status_data = status_resp.json()
+    state = status_data.get("state", "")
+    statuses = status_data.get("statuses", [])
+    _log.info("[checks] combined state=%s, statuses=%d개", state, len(statuses))
+    for s in statuses:
+        _log.info("[checks]   %s: state=%s", s.get("context", "?"), s.get("state", "?"))
+    if state not in ("success", ""):
+        _log.info("[checks]   → combined state 미통과: %s", state)
+        return False
+
+    _log.info("[checks] 전체 통과! #%s", pr_number)
+    return True

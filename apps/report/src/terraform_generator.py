@@ -13,10 +13,11 @@ from .database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")  # Legacy
-# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")  # us-east-1
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")
+# MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")  # 이전 모델
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0")
+HAIKU_MODEL_ID = os.getenv(
+    "BEDROCK_HAIKU_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
+)
 REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 
 def _find_uvx() -> str:
@@ -115,6 +116,52 @@ class TerraformMCPClient:
 # GitHub .tf 수집
 # ─────────────────────────────────────────────────
 
+_MAX_EXISTING_TF_CHARS = 40_000  # 이 크기 이상이면 Haiku 요약 적용
+
+
+def _summarize_tf_code(tf_text: str) -> str:
+    """기존 .tf 코드가 클 때 Haiku로 구조 요약. 리소스명/변수명/모듈 구조 보존."""
+    if len(tf_text) <= _MAX_EXISTING_TF_CHARS:
+        return tf_text
+    logger.info("[Haiku] 기존 .tf 코드 요약 시작 (%d자)", len(tf_text))
+    try:
+        client = boto3.client("bedrock-runtime", region_name=REGION)
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 8192,
+            "system": (
+                "당신은 Terraform 코드 분석 전문가입니다. "
+                "다음 기존 Terraform 코드를 분석하여 새 코드 생성 시 terraform plan 충돌을 방지할 수 있도록 요약하세요.\n\n"
+                "반드시 포함할 항목 (하나도 빠짐없이):\n"
+                "- 모든 resource 블록: 정확한 타입과 이름 (예: resource \"aws_instance\" \"web\") — 누락 시 이름 충돌 발생\n"
+                "- 모든 data 블록: 정확한 타입과 이름\n"
+                "- 모든 module 블록: 이름과 source 경로\n"
+                "- 모든 variable: 이름, 타입, default 값 (있는 경우)\n"
+                "- 모든 output: 이름과 value 표현식\n"
+                "- 모든 locals: 이름과 값\n"
+                "- provider 설정: 버전 제약, region, 별칭\n"
+                "- backend 설정: 타입과 주요 설정\n"
+                "- 네이밍 컨벤션 패턴 (접두사, 태그 구조 등)\n"
+                "- 리소스 간 참조 관계 (depends_on, 변수 참조)\n\n"
+                "resource/data/variable/output 목록은 빠짐없이 나열하세요. 이 목록이 불완전하면 이름 충돌로 plan이 실패합니다."
+            ),
+            "messages": [{"role": "user", "content": tf_text}],
+        }
+        response = client.invoke_model(
+            modelId=HAIKU_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        result = json.loads(response["body"].read())
+        summary = result["content"][0]["text"]
+        logger.info("[Haiku] 기존 .tf 코드 요약 완료 (%d자 → %d자)", len(tf_text), len(summary))
+        return summary
+    except Exception as e:
+        logger.warning("[Haiku] .tf 요약 실패, truncate 폴백: %s", e)
+        return tf_text[:_MAX_EXISTING_TF_CHARS] + "\n... (truncated)"
+
+
 def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
     g = Github(token) if token else Github()
     repo = g.get_repo(repo_name)
@@ -126,15 +173,16 @@ def load_tf_from_github(repo_name: str, token: str | None = None) -> str:
             contents.extend(repo.get_contents(f.path))
         elif f.name.endswith(".tf"):
             tf_files.append(f"# === {f.path} ===\n{f.decoded_content.decode()}")
-    return "\n\n".join(tf_files)
+    raw = "\n\n".join(tf_files)
+    return _summarize_tf_code(raw)
 
 
 # ─────────────────────────────────────────────────
 # MCP 컨텍스트 조회
 # ─────────────────────────────────────────────────
 
-def _extract_resource_hint(workplan: dict) -> str:
-    """작업계획서에서 AWS 리소스 타입 추출"""
+def _extract_resource_hints(workplan: dict) -> list[str]:
+    """작업계획서에서 관련 AWS 리소스 타입을 모두 추출 (복수)"""
     title = workplan.get("title", "").lower()
     steps_text = " ".join(
         s.get("description", "") for s in workplan.get("steps", [])
@@ -150,40 +198,63 @@ def _extract_resource_hint(workplan: dict) -> str:
         "waf": "aws_wafv2_web_acl",
         "alb": "aws_lb",
         "vpc": "aws_vpc",
+        "subnet": "aws_subnet",
+        "security group": "aws_security_group",
+        "보안 그룹": "aws_security_group",
+        "보안그룹": "aws_security_group",
         "iam": "aws_iam_role",
+        "mfa": "aws_iam_virtual_mfa_device",
         "cloudwatch": "aws_cloudwatch_metric_alarm",
+        "cloudtrail": "aws_cloudtrail",
+        "kms": "aws_kms_key",
         "certificate": "aws_acm_certificate",
         "인증서": "aws_acm_certificate",
         "인스턴스": "aws_instance",
         "클러스터": "aws_eks_cluster",
         "런타임": "aws_lambda_function",
+        "nat": "aws_nat_gateway",
+        "route": "aws_route_table",
+        "eip": "aws_eip",
+        "sns": "aws_sns_topic",
+        "sqs": "aws_sqs_queue",
+        "dynamodb": "aws_dynamodb_table",
+        "elasticache": "aws_elasticache_cluster",
     }
+    matched = []
+    seen = set()
     for keyword, resource in resource_map.items():
-        if keyword in combined:
-            return resource
-    return ""
+        if keyword in combined and resource not in seen:
+            matched.append(resource)
+            seen.add(resource)
+    return matched[:5]  # 최대 5개
+
+
+_MAX_MCP_DOC_CHARS = 8000  # Provider 문서 제한 (기존 3000 → 8000)
 
 
 def _fetch_mcp_context(workplan: dict) -> dict:
-    """MCP 서버에서 AWS Provider 문서 + Best Practices 조회"""
+    """MCP 서버에서 AWS Provider 문서 + Best Practices 조회 (복수 리소스)"""
     context = {"aws_docs": "", "best_practices": ""}
 
     mcp = TerraformMCPClient()
     try:
         mcp.start()
-        resource_hint = _extract_resource_hint(workplan)
+        resource_hints = _extract_resource_hints(workplan)
 
-        # AWS Provider 문서 조회
-        if resource_hint:
-            docs = mcp.call_tool("SearchAwsProviderDocs", {"asset": resource_hint})
-            context["aws_docs"] = docs[:3000] if docs else ""
-            print(f"[MCP] AWS 문서 조회 완료: {resource_hint} ({len(context['aws_docs'])}자)")
+        # 복수 리소스 문서 조회
+        all_docs = []
+        for hint in resource_hints:
+            docs = mcp.call_tool("SearchAwsProviderDocs", {"asset": hint})
+            if docs:
+                all_docs.append(f"### {hint}\n{docs[:_MAX_MCP_DOC_CHARS]}")
+                print(f"[MCP] AWS 문서 조회: {hint} ({min(len(docs), _MAX_MCP_DOC_CHARS)}자)")
+        context["aws_docs"] = "\n\n".join(all_docs)
 
-        # AWS AWSCC Provider 문서도 조회 (best practices 대체)
-        if resource_hint:
-            awscc_hint = resource_hint.replace("aws_", "awscc_", 1)
+        # AWSCC 문서 (첫 번째 리소스만)
+        if resource_hints:
+            awscc_hint = resource_hints[0].replace("aws_", "awscc_", 1)
             awscc = mcp.call_tool("SearchAwsccProviderDocs", {"asset": awscc_hint})
-            context["best_practices"] = awscc[:2000] if awscc else ""
+            context["best_practices"] = awscc[:4000] if awscc else ""
             print(f"[MCP] AWSCC Provider 문서 조회 완료 ({len(context['best_practices'])}자)")
 
     except Exception as e:
@@ -319,7 +390,64 @@ def _format_opa_for_prompt(policies: list[dict]) -> str:
 # Bedrock 호출
 # ─────────────────────────────────────────────────
 
-def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "") -> dict:
+_MAX_PROMPT_CHARS = 150_000  # Bedrock 프롬프트 전체 최대 크기
+
+
+def _build_deploy_log_section(deploy_log: list[dict] | None) -> str:
+    """이전 배포 실패 이력을 프롬프트 섹션으로 변환"""
+    if not deploy_log:
+        return ""
+    failures = [e for e in deploy_log if e.get("status") == "failure"]
+    if not failures:
+        return ""
+    lines = []
+    for e in failures:
+        event_labels = {
+            "checks_failed": "PR 검증 실패",
+            "apply_failed": "Terraform Apply 실패",
+        }
+        label = event_labels.get(e.get("event", ""), e.get("event", ""))
+        desc = e.get("description", "")
+        ctx_name = e.get("context", "")
+        line = f"- [{label}]"
+        if ctx_name:
+            line += f" ({ctx_name})"
+        if desc:
+            line += f": {desc}"
+        lines.append(line)
+    return "\n## 이전 배포 실패 이력 (반드시 참고하여 동일 원인이 재발하지 않도록 수정하세요)\n" + "\n".join(lines) + "\n"
+
+
+def _build_user_prompt(workplan_json: str, existing_tf: str, aws_docs_section: str,
+                       best_practices_section: str, opa_section: str,
+                       deploy_log_section: str = "") -> str:
+    return f"""
+## 작업계획서
+{workplan_json}
+
+## 기존 테라폼 코드 (스타일/컨벤션 참고)
+{existing_tf}
+{aws_docs_section}
+{best_practices_section}
+{opa_section}
+{deploy_log_section}
+
+위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
+
+다음 JSON 형식으로 반환하세요:
+{{
+  "files": [
+    {{
+      "filename": "파일명.tf",
+      "content": "테라폼 코드 전체 내용"
+    }}
+  ],
+  "summary": "생성된 코드 설명 (한국어, 2~3문장)"
+}}
+""".strip()
+
+
+def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text: str = "", deploy_log: list[dict] | None = None) -> dict:
     client = boto3.client("bedrock-runtime", region_name=REGION)
 
     aws_docs_section = (
@@ -339,39 +467,55 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
 
     system = f"""
 당신은 AWS 인프라 테라폼 코드 전문가입니다.
-작업계획서, 기존 테라폼 코드, AWS 공식 문서를 분석하여 바로 apply 가능한 테라폼 코드를 생성하세요.
+작업계획서, 기존 테라폼 코드, AWS 공식 문서를 분석하여 바로 terraform plan/apply가 통과하는 테라폼 코드를 생성하세요.
 
 규칙:
 1. 기존 코드의 네이밍 컨벤션, 변수 스타일, 태그 구조를 반드시 따르세요
 2. AWS Provider 공식 문서의 최신 argument를 사용하세요
 3. AWS Best Practices를 반드시 준수하세요
 4. Checkov 보안 스캔을 통과할 수 있도록 보안 설정을 포함하세요{opa_rule}
-6. 반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요
+
+terraform plan 통과를 위한 필수 규칙:
+- provider, terraform, backend 블록은 절대 생성하지 마세요. 기존 코드에 이미 있습니다.
+- 기존 코드에 이미 존재하는 resource/data/module과 동일한 타입+이름 조합을 절대 사용하지 마세요 (충돌 방지)
+- variable은 기존 variables.tf에 정의된 것만 참조하거나, 새 variable을 선언하세요. 미정의 variable 참조는 plan 실패 원인입니다.
+- data source로 기존 리소스를 참조할 때 AWS 콘솔 이름이 아닌 Terraform에서 사용하는 정확한 식별자를 사용하세요
+- 모든 required argument를 빠짐없이 포함하세요. optional이라도 AWS 리소스 생성에 필수적인 인자는 포함하세요.
+- deprecated된 argument는 사용하지 마세요. 공식 문서의 최신 대체 argument를 사용하세요.
+- 리소스 간 참조는 resource_type.resource_name.attribute 형식을 정확히 사용하세요
+- 생성하는 파일은 작업계획서의 변경사항만 담아야 합니다. 기존 코드를 복사하여 포함하지 마세요.
+
+반드시 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요.
 """.strip()
 
-    user = f"""
-## 작업계획서
-{json.dumps(workplan, ensure_ascii=False, indent=2)}
+    # workplan에서 Terraform 생성에 불필요한 대용량 필드 제거
+    _STRIP_KEYS = {"aws_docs", "ref_docs", "ref_doc_contents"}
+    workplan_slim = {k: v for k, v in workplan.items() if k not in _STRIP_KEYS}
+    workplan_json = json.dumps(workplan_slim, ensure_ascii=False, indent=2)
+    # workplan_json도 너무 크면 truncate
+    _MAX_WORKPLAN_CHARS = 30_000
+    if len(workplan_json) > _MAX_WORKPLAN_CHARS:
+        logger.warning("workplan_json 축소: %d → %d자", len(workplan_json), _MAX_WORKPLAN_CHARS)
+        workplan_json = workplan_json[:_MAX_WORKPLAN_CHARS] + "\n... (truncated)"
 
-## 기존 테라폼 코드 (스타일/컨벤션 참고)
-{existing_tf}
-{aws_docs_section}
-{best_practices_section}
-{opa_section}
+    deploy_log_section = _build_deploy_log_section(deploy_log)
 
-위 내용을 모두 반영하여 바로 apply 가능한 테라폼 코드를 생성해주세요.
-
-다음 JSON 형식으로 반환하세요:
-{{
-  "files": [
-    {{
-      "filename": "파일명.tf",
-      "content": "테라폼 코드 전체 내용"
-    }}
-  ],
-  "summary": "생성된 코드 설명 (한국어, 2~3문장)"
-}}
-""".strip()
+    # 프롬프트 크기 안전장치: existing_tf → deploy_log 순으로 축소
+    user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
+    total = len(system) + len(user)
+    if total > _MAX_PROMPT_CHARS:
+        over = total - _MAX_PROMPT_CHARS
+        # 1차: existing_tf 축소
+        if existing_tf and over > 0:
+            trim = min(len(existing_tf), over)
+            existing_tf = existing_tf[: len(existing_tf) - trim]
+            over -= trim
+        # 2차: deploy_log_section 축소
+        if deploy_log_section and over > 0:
+            trim = min(len(deploy_log_section), over)
+            deploy_log_section = deploy_log_section[: len(deploy_log_section) - trim]
+        user = _build_user_prompt(workplan_json, existing_tf, aws_docs_section, best_practices_section, opa_section, deploy_log_section)
+        logger.warning("프롬프트 축소: %d → %d자", total, len(system) + len(user))
 
     body = {
         "anthropic_version": "bedrock-2023-05-31",
@@ -405,6 +549,7 @@ def generate_terraform_code(
     repo_name: str,
     github_token: str = None,
     workspace_id: str | None = None,
+    deploy_log: list[dict] | None = None,
 ) -> dict:
     """
     작업계획서 + OPA 정책 + MCP(AWS Provider 문서 + Checkov) → 테라폼 코드 생성
@@ -435,7 +580,7 @@ def generate_terraform_code(
     mcp_context = _fetch_mcp_context(workplan)
 
     print("[4/5] Bedrock으로 코드 생성 중...")
-    generated = _call_bedrock(workplan, existing_tf, mcp_context, opa_text)
+    generated = _call_bedrock(workplan, existing_tf, mcp_context, opa_text, deploy_log=deploy_log)
 
     print("[5/5] MCP Checkov 보안 스캔 중...")
     checkov_result = _run_checkov_scan(generated.get("files", []))

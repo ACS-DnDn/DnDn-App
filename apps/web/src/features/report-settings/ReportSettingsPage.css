@@ -1,13 +1,13 @@
 /* ── ReportSettingsPage ── */
 .rpt-page { padding: 28px 32px 40px; animation: fade-up .3s ease both; }
-.rpt-page .page-inner { width: 860px; max-width: 100%; margin: 0 auto; }
+.rpt-page .page-inner { width: 640px; max-width: 100%; margin: 0 auto; }
 
 /* ── 섹션 전환 ── */
 .rpt-section { display: none; }
 .rpt-section.active { display: block; }
 
 /* ── 카드 ── */
-.rpt-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; animation: fade-up .3s ease both; max-width: 100%; }
+.rpt-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; animation: fade-up .3s ease both; max-width: 100%; }
 .rpt-card-header { padding: 20px 26px; border-bottom: 1px solid var(--border); }
 .rpt-card-title { font-size: 17px; font-weight: 700; color: var(--text); }
 .rpt-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
@@ -23,7 +23,7 @@
 .fg-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
 .fg-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
 .fg-row-grid .fg { margin-bottom: 0; }
-.fi-title { width: 100%; box-sizing: border-box; padding: 6px 0; border: none; border-bottom: 2px solid var(--border-med); border-radius: 0; background: transparent; color: var(--text); font-size: 18px; font-weight: 500; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
+.fi-title { width: 100%; box-sizing: border-box; padding: 6px 0; border: none; border-bottom: 2px solid var(--border-med); border-radius: 0; background: transparent; color: var(--text); font-size: 14px; font-weight: 500; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
 .fi-title::placeholder { color: var(--text-muted); font-weight: 400; opacity: .65; }
 .fi-title:focus { border-bottom-color: var(--mint); }
 .fi-dt { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border-med); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: Pretendard, sans-serif; outline: none; transition: border-color .15s; }
@@ -145,5 +145,58 @@
   outline: 2px solid var(--mint);
   outline-offset: 2px;
 }
+
+/* ── 수집 기간 입력 ── */
+.cal-row { display: flex; align-items: center; gap: 10px; }
+.cal-input-box { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border: 1.5px solid var(--border-med); border-radius: 8px; background: var(--bg); cursor: pointer; transition: border-color .15s; user-select: none; }
+.cal-input-box:hover { border-color: var(--mint); }
+.cal-input-box.active { border-color: var(--mint); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mint) 18%, transparent); }
+.cal-input-ico { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-muted); }
+.cal-input-date { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.cal-input-time-text { font-size: 12px; font-weight: 500; color: var(--mint); background: color-mix(in srgb, var(--mint) 10%, transparent); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.cal-sep { font-size: 14px; color: var(--text-muted); flex-shrink: 0; }
+.cal-presets { display: flex; gap: 6px; flex-shrink: 0; }
+.cal-preset-chip { padding: 5px 12px; border: 1.5px solid var(--border-med); border-radius: 20px; background: var(--bg); color: var(--text-sub); font-size: 12px; font-weight: 600; cursor: pointer; font-family: Pretendard, sans-serif; transition: all .15s; white-space: nowrap; }
+.cal-preset-chip:hover { border-color: var(--mint); color: var(--mint); }
+
+/* ── 캘린더 드롭다운 (Portal → body) ── */
+.cal-dropdown { position: fixed; z-index: 9999; width: 360px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); box-shadow: 0 16px 48px rgba(0,0,0,.14); overflow: hidden; }
+:root.dark .cal-dropdown { box-shadow: 0 16px 48px rgba(0,0,0,.4); }
+
+/* 캘린더 본체 */
+.cal-body { padding: 16px 20px; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cal-nav-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.cal-nav-btn { width: 30px; height: 30px; border: none; border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .12s; }
+.cal-nav-btn:hover { background: var(--bg-alt); color: var(--text); }
+.cal-nav-btn svg { width: 14px; height: 14px; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal-dow { font-size: 11px; font-weight: 600; color: var(--text-muted); padding: 4px 0 8px; }
+.cal-cell { position: relative; padding: 8px 0; font-size: 13px; font-weight: 500; color: var(--text); border-radius: 8px; cursor: pointer; transition: all .1s; user-select: none; }
+.cal-cell.empty { cursor: default; }
+.cal-cell:not(.empty):not(.future):hover { background: var(--bg-alt); }
+.cal-cell.today { color: var(--mint); font-weight: 700; }
+.cal-cell.future { color: var(--text-muted); opacity: .4; cursor: default; }
+.cal-cell.start, .cal-cell.end { background: var(--mint); color: #fff; font-weight: 700; }
+.cal-cell.start { border-radius: 8px 4px 4px 8px; }
+.cal-cell.end { border-radius: 4px 8px 8px 4px; }
+.cal-cell.start.end { border-radius: 8px; }
+.cal-cell.in-range { background: var(--mint-soft, rgba(74,222,170,.12)); color: var(--mint); border-radius: 2px; }
+
+/* 하단 시간 — 목록 드롭다운 */
+.cal-time-row { display: flex; gap: 20px; padding: 12px 20px; border-top: 1px solid var(--border); justify-content: center; }
+.cal-time-group { position: relative; display: flex; align-items: center; gap: 8px; }
+.cal-time-label { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .3px; }
+.time-trigger { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; font-weight: 600; font-family: 'SF Mono', 'Cascadia Code', monospace; cursor: pointer; transition: all .12s; }
+.time-trigger:hover { border-color: var(--mint); color: var(--mint); }
+.time-trigger-ico { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-muted); }
+.time-dropdown { position: absolute; bottom: calc(100% + 4px); left: 0; width: 90px; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 10; padding: 4px; }
+:root.dark .time-dropdown { box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.time-dropdown::-webkit-scrollbar { width: 4px; }
+.time-dropdown::-webkit-scrollbar-thumb { background: var(--border-med); border-radius: 4px; }
+.time-option { padding: 7px 10px; font-size: 13px; font-weight: 500; color: var(--text); font-family: 'SF Mono', 'Cascadia Code', monospace; border-radius: 6px; cursor: pointer; transition: background .1s; text-align: center; }
+.time-option:hover { background: var(--bg-alt); }
+.time-option.selected { background: color-mix(in srgb, var(--mint) 14%, transparent); color: var(--mint); font-weight: 700; }
 
 @keyframes fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }

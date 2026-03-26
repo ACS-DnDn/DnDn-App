@@ -36,6 +36,8 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   challenge: (email: string, newPassword: string, session: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<string>;
+  confirmResetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -44,6 +46,8 @@ export const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   login: async () => ({ type: 'success' }),
   challenge: async () => {},
+  forgotPassword: async () => '',
+  confirmResetPassword: async () => {},
   logout: async () => {},
 });
 
@@ -128,6 +132,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(me);
   }, []);
 
+  const forgotPassword = useCallback(async (email: string): Promise<string> => {
+    const res = await apiFetch<{ success: boolean; data: { destination: string } }>(
+      '/auth/forgot-password',
+      { method: 'POST', body: JSON.stringify({ email }) },
+    );
+    return res.data.destination;
+  }, []);
+
+  const confirmResetPassword = useCallback(async (email: string, code: string, newPassword: string) => {
+    await apiFetch(
+      '/auth/confirm-reset',
+      { method: 'POST', body: JSON.stringify({ email, code, newPassword }) },
+    );
+  }, []);
+
   const logout = useCallback(async () => {
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     clearTokens();
@@ -135,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, isLoading, login, challenge, logout }}>
+    <AuthContext.Provider value={{ session, isLoading, login, challenge, forgotPassword, confirmResetPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -12,6 +12,7 @@ interface ApiDocItem {
   action: string | null;
   isRead: boolean;
   workspace?: string;
+  prStatus?: string;
 }
 
 function mapDoc(item: ApiDocItem): Document {
@@ -24,8 +25,10 @@ function mapDoc(item: ApiDocItem): Document {
     type: item.type as Document['type'],
     status: item.status as Document['status'],
     action: item.action as Document['action'],
+    isRead: item.isRead,
     icon: '📄',
     workspace: item.workspace ?? '',
+    prStatus: item.prStatus,
   };
 }
 
@@ -54,6 +57,30 @@ export async function getDocuments(params?: {
     `/documents${qs ? `?${qs}` : ''}`
   );
   return { total: res.data.total, items: res.data.items.map(mapDoc) };
+}
+
+export async function getAllDocuments(
+  params?: Omit<Parameters<typeof getDocuments>[0], 'page' | 'pageSize'>,
+): Promise<Document[]> {
+  const PAGE_SIZE = 100;
+  let page = 1;
+  const all: Document[] = [];
+  while (true) {
+    const res = await getDocuments({ ...params, page, pageSize: PAGE_SIZE });
+    all.push(...res.items);
+    if (all.length >= res.total || res.items.length < PAGE_SIZE) break;
+    page++;
+  }
+  return all;
+}
+
+export async function markDocumentsAsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await apiFetch<{ success: boolean }>('/documents/read', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
 }
 
 // ── 첨부파일 ──────────────────────────────────────────────
@@ -94,17 +121,28 @@ export async function deleteAttachment(documentId: string, fileId: string): Prom
   });
 }
 
+// ── 문서 삭제 ─────────────────────────────────────────────
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/documents/${documentId}`, {
+    method: 'DELETE',
+  });
+}
+
 // ── 문서 상세 ─────────────────────────────────────────────
 
 export async function getDocumentById(id: string): Promise<Document | undefined> {
   try {
     const raw = await apiFetch<{ success: boolean; data: {
       id: string; title: string; type: string; status: string; action?: string | null;
-      author?: { name: string }; createdAt?: string; workspace?: string;
+      authorId?: string | null; author?: { name: string }; createdAt?: string; workspace?: string;
       content?: string; terraform?: Record<string, string>;
       refDocs?: { id: string; title: string; type: string }[];
       attachments?: { id: string; name: string; sizeKb?: number }[];
       approvalLine?: import('@/mocks/types/document').ApprovalLineItem[];
+      prNumber?: number; prUrl?: string; prStatus?: string;
+      autoMerge?: boolean;
+      deployLog?: import('@/mocks/types/document').DeployLogEntry[];
     } }>(`/documents/${id}`);
     const res = raw.data;
     return {
@@ -115,6 +153,7 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       type: res.type as Document['type'],
       status: res.status as Document['status'],
       action: (res.action ?? null) as Document['action'],
+      authorId: res.authorId ?? undefined,
       icon: '📄',
       workspace: res.workspace ?? '',
       content: res.content,
@@ -123,6 +162,11 @@ export async function getDocumentById(id: string): Promise<Document | undefined>
       refDocIds: res.refDocs?.map(d => d.id),
       attachments: res.attachments,
       approvalLine: res.approvalLine,
+      prNumber: res.prNumber,
+      prUrl: res.prUrl,
+      prStatus: res.prStatus,
+      autoMerge: res.autoMerge,
+      deployLog: res.deployLog,
     };
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('API 404')) return undefined;

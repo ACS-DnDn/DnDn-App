@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User
+from apps.api.src.models import User, Document, Workspace, DocumentRead
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.github import (
@@ -27,8 +31,16 @@ from apps.api.src.security.github_oauth import (
     get_orgs,
     get_repos,
     get_branches,
+    register_webhook,
+    merge_pr,
+    get_pr_checks_passed,
     GitHubError,
+    GITHUB_WEBHOOK_SECRET,
 )
+from apps.api.src.models import Approval
+from apps.api.src.security.slack_oauth import send_message, SlackError
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/github", tags=["GitHub"])
 
@@ -210,3 +222,374 @@ def github_branches(
             ]
         )
     )
+
+
+# ---------------------------------------------------------
+# 6. GitHub Webhook 수신 (POST /github/webhook)
+# ---------------------------------------------------------
+
+def _verify_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """GitHub X-Hub-Signature-256 헤더 검증."""
+    if not signature.startswith("sha256="):
+        return False
+    expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature)
+
+
+def _mark_unread(db: Session, doc: Document) -> None:
+    """문서 상태 변경 시 기존 읽음 기록을 삭제하여 안읽음으로 전환."""
+    db.query(DocumentRead).filter(DocumentRead.document_id == doc.id).delete()
+
+
+def _append_deploy_log(
+    db: Session,
+    doc: Document,
+    event: str,
+    status: str,
+    description: str | None = None,
+    url: str | None = None,
+    context: str | None = None,
+) -> None:
+    """deploy_log JSON 배열에 이벤트를 추가한다."""
+    entry = {
+        "event": event,
+        "status": status,
+        "description": description,
+        "url": url,
+        "context": context,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    log = list(doc.deploy_log or [])
+    log.append(entry)
+    doc.deploy_log = log
+
+
+def _notify_pr_status(db: Session, doc: Document, new_status: str) -> None:
+    """PR 상태 변경 Slack 알림 — 문서 작성자 + 결재선 전원에게 DM.
+
+    알림 대상 상태: checks_passed, checks_failed, applied, apply_failed
+    """
+    status_labels = {
+        "checks_passed": "🟢 PR 검증 통과 — 자동 Merge 완료",
+        "checks_passed_manual": "🟢 PR 검증 통과 — 직접 Merge가 필요합니다",
+        "checks_failed": "⚠️ PR 검증 실패",
+        "applied": "✅ Terraform Apply 성공",
+        "apply_failed": "❌ Terraform Apply 실패",
+    }
+    label = status_labels.get(new_status, f"📋 PR 상태: {new_status}")
+    text = f"{label}\n📄 {doc.title}"
+    if doc.pr_url:
+        text += f"\n{doc.pr_url}"
+    if new_status == "checks_passed_manual" and doc.pr_url:
+        text += "\n👉 위 링크에서 직접 Merge 해주세요."
+
+    # 알림 대상: 작성자 + 결재선 사용자 (중복 제거)
+    user_ids: set[str] = set()
+    if doc.author_id:
+        user_ids.add(doc.author_id)
+    approvals = db.query(Approval).filter(Approval.document_id == doc.id).all()
+    for a in approvals:
+        user_ids.add(a.user_id)
+
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    for u in users:
+        if u.slack_access_token and u.slack_user_id and u.slack_notify is not False:
+            try:
+                send_message(u.slack_access_token, u.slack_user_id, text)
+            except SlackError:
+                pass
+
+
+def _find_doc_by_pr(db: Session, repo_full_name: str, pr_number: int) -> Document | None:
+    """repo full name (owner/repo)과 PR number로 문서를 찾는다."""
+    parts = repo_full_name.split("/", 1)
+    if len(parts) != 2:
+        return None
+    owner, repo_name = parts
+    return (
+        db.query(Document)
+        .join(Workspace, Document.workspace_id == Workspace.id)
+        .filter(
+            Document.pr_number == pr_number,
+            Workspace.github_org == owner,
+            Workspace.repo == repo_name,
+        )
+        .first()
+    )
+
+
+@router.post("/webhook")
+async def github_webhook(request: Request, db: Session = Depends(get_db)):
+    """GitHub webhook 이벤트 수신. JWT 인증 없이 HMAC 서명으로 검증."""
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    event = request.headers.get("X-GitHub-Event", "")
+
+    if not GITHUB_WEBHOOK_SECRET:
+        _logger.error("GITHUB_WEBHOOK_SECRET 미설정 — webhook 처리 불가")
+        return JSONResponse(status_code=503, content={"error": "WEBHOOK_SECRET_NOT_CONFIGURED"})
+
+    if not _verify_signature(body, signature, GITHUB_WEBHOOK_SECRET):
+        return JSONResponse(status_code=403, content={"error": "INVALID_SIGNATURE"})
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"received": True})
+
+    repo_full = payload.get("repository", {}).get("full_name", "")
+
+    # ── pull_request 이벤트 ──
+    if event == "pull_request":
+        action = payload.get("action", "")
+        pr = payload.get("pull_request", {})
+        pr_number = pr.get("number")
+        merged = pr.get("merged", False)
+
+        if not pr_number:
+            return JSONResponse({"received": True})
+
+        doc = _find_doc_by_pr(db, repo_full, pr_number)
+        if not doc:
+            return JSONResponse({"received": True})
+
+        # 머지 완료만 추적 (DnDn이 PR 라이프사이클 관리)
+        if action == "closed" and merged and doc.pr_status != "merged":
+            doc.pr_status = "merged"
+            _mark_unread(db, doc)
+            _append_deploy_log(db, doc, "merged", "success",
+                               description="PR이 Merge되었습니다.",
+                               url=pr.get("html_url"))
+            db.commit()
+
+    # ── check_run 이벤트 ──
+    elif event == "check_run":
+        check_run = payload.get("check_run", {})
+        conclusion = check_run.get("conclusion")
+        action = check_run.get("status")  # completed
+        pull_requests = check_run.get("pull_requests", [])
+
+        for pr_ref in pull_requests:
+            pr_number = pr_ref.get("number")
+            if not pr_number:
+                continue
+
+            doc = _find_doc_by_pr(db, repo_full, pr_number)
+            if not doc or doc.pr_status in ("merged", "closed"):
+                continue
+
+            if conclusion in ("failure", "timed_out", "action_required"):
+                cr_output = check_run.get("output", {})
+                cr_title = cr_output.get("title") or check_run.get("name", "")
+                cr_summary = cr_output.get("summary") or ""
+                cr_text = cr_output.get("text") or ""
+                # 상세 로그 조합: title + summary + text (최대 5000자)
+                cr_parts = [p for p in [cr_title, cr_summary, cr_text] if p]
+                cr_desc = "\n".join(cr_parts)[:5000] or check_run.get("name", "")
+                cr_url = check_run.get("html_url")
+                cr_ctx = check_run.get("name", "")
+                first_failure = doc.pr_status != "checks_failed"
+                if first_failure:
+                    doc.pr_status = "checks_failed"
+                    doc.status = "deploy_failed"
+                    _mark_unread(db, doc)
+                _append_deploy_log(db, doc, "checks_failed", "failure",
+                                   description=cr_desc, url=cr_url, context=cr_ctx)
+                db.commit()
+                if first_failure:
+                    _notify_pr_status(db, doc, "checks_failed")
+            elif conclusion == "success" and action == "completed":
+                cr_output = check_run.get("output", {})
+                cr_title = cr_output.get("title") or check_run.get("name", "")
+                cr_summary = cr_output.get("summary") or ""
+                cr_parts = [p for p in [cr_title, cr_summary] if p]
+                cr_desc = "\n".join(cr_parts)[:500] or check_run.get("name", "")
+                cr_url = check_run.get("html_url")
+                cr_ctx = check_run.get("name", "")
+                _append_deploy_log(db, doc, "checks_passed", "success",
+                                   description=cr_desc, url=cr_url, context=cr_ctx)
+                db.commit()
+                # 개별 check 성공 → 전체 통과 여부 확인 후 자동 머지
+                _try_auto_merge(db, doc, repo_full)
+
+    # ── status 이벤트 (Terraform Cloud 등 외부 CI) ──
+    elif event == "status":
+        state = payload.get("state", "")  # pending / success / failure / error
+        branches = payload.get("branches", [])
+        context = payload.get("context", "")
+        sha = payload.get("sha", "")
+
+        if "/" not in repo_full:
+            return JSONResponse({"received": True})
+        repo_owner, repo_name = repo_full.split("/", 1)
+
+        for branch_info in branches:
+            branch_name = branch_info.get("name", "")
+
+            # dndn/ prefix가 있는 브랜치의 status → PR 검증 결과
+            if branch_name.startswith("dndn/"):
+                # 브랜치명에서 doc_num 추출 (dndn/2026-PLN-0001 → 2026-PLN-0001)
+                doc_num = branch_name.split("/", 1)[1]
+                doc = (
+                    db.query(Document)
+                    .join(Workspace, Document.workspace_id == Workspace.id)
+                    .filter(
+                        Document.doc_num == doc_num,
+                        Document.pr_status.in_(["open", "checks_failed"]),
+                        Workspace.github_org == repo_owner,
+                        Workspace.repo == repo_name,
+                    )
+                    .first()
+                )
+                if doc:
+                    st_desc = payload.get("description", "")
+                    st_url = payload.get("target_url", "")
+                    st_ctx = context
+                    if state in ("failure", "error"):
+                        first_failure = doc.pr_status != "checks_failed"
+                        if first_failure:
+                            doc.pr_status = "checks_failed"
+                            doc.status = "deploy_failed"
+                            _mark_unread(db, doc)
+                        _append_deploy_log(db, doc, "checks_failed", "failure",
+                                           description=st_desc, url=st_url, context=st_ctx)
+                        db.commit()
+                        if first_failure:
+                            _notify_pr_status(db, doc, "checks_failed")
+                    elif state == "success":
+                        _append_deploy_log(db, doc, "checks_passed", "success",
+                                           description=st_desc, url=st_url, context=st_ctx)
+                        db.commit()
+                        _try_auto_merge(db, doc, repo_full)
+                break
+
+            # default branch의 status (머지 후) → Terraform Cloud apply 결과 추적
+            if "terraform" in context.lower():
+                # 가장 최근 머지된 문서 1건만 대상 (동일 repo에 여러 문서 시 오매칭 방지)
+                doc = (
+                    db.query(Document)
+                    .join(Workspace, Document.workspace_id == Workspace.id)
+                    .filter(
+                        Document.pr_status == "merged",
+                        Workspace.github_org == repo_owner,
+                        Workspace.repo == repo_name,
+                    )
+                    .order_by(Document.updated_at.desc())
+                    .first()
+                )
+                if doc:
+                    apply_desc = payload.get("description", "")
+                    apply_url = payload.get("target_url", "")
+                    apply_ctx = context
+                    new_pr_status = None
+                    new_doc_status = None
+                    if state == "success":
+                        new_pr_status = "applied"
+                        new_doc_status = "done"
+                    elif state in ("failure", "error"):
+                        new_pr_status = "apply_failed"
+                        new_doc_status = "deploy_failed"
+
+                    if new_pr_status and new_pr_status != doc.pr_status:
+                        doc.pr_status = new_pr_status
+                        doc.status = new_doc_status
+                        _mark_unread(db, doc)
+                        _append_deploy_log(db, doc, new_pr_status, "success" if new_pr_status == "applied" else "failure",
+                                           description=apply_desc, url=apply_url, context=apply_ctx)
+                        db.commit()
+                        _notify_pr_status(db, doc, new_pr_status)
+                break
+
+    return JSONResponse({"received": True})
+
+
+def _try_auto_merge(db: Session, doc: Document, repo_full: str) -> None:
+    """모든 체크 통과 시 auto_merge 설정에 따라 머지하거나 수동 안내."""
+    _logger.info("[auto_merge] 시작: doc=%s pr=#%s pr_status=%s auto_merge=%s",
+                 doc.id, doc.pr_number, doc.pr_status, doc.auto_merge)
+    if not doc.pr_number or doc.pr_status in ("merged",):
+        _logger.info("[auto_merge] 스킵: pr_number=%s pr_status=%s", doc.pr_number, doc.pr_status)
+        return
+
+    ws = db.query(Workspace).filter(Workspace.id == doc.workspace_id).first()
+    if not ws:
+        _logger.warning("[auto_merge] 워크스페이스 없음: doc=%s", doc.id)
+        return
+    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+    if not owner_user or not owner_user.github_access_token:
+        _logger.warning("[auto_merge] owner 또는 GitHub 토큰 없음: ws=%s owner=%s", ws.id, ws.owner_id)
+        return
+
+    # 전체 체크 통과 확인
+    checks_ok = get_pr_checks_passed(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
+    _logger.info("[auto_merge] checks_passed=%s for #%s", checks_ok, doc.pr_number)
+    if not checks_ok:
+        return
+
+    # 체크 통과 → deploy_failed 복구 (이전 실패에서 재통과한 경우)
+    if doc.status == "deploy_failed":
+        doc.status = "deploying"
+        doc.pr_status = "open"
+
+    # auto_merge 여부에 따라 분기
+    if doc.auto_merge:
+        # 자동 Merge
+        merged = merge_pr(owner_user.github_access_token, ws.github_org, ws.repo, doc.pr_number)
+        if merged:
+            doc.pr_status = "merged"
+            _mark_unread(db, doc)
+            _append_deploy_log(db, doc, "merged", "success",
+                               description="PR 검증 통과 — 자동 Merge 완료")
+            db.commit()
+            _logger.info("PR 자동 Merge 완료: %s #%s", repo_full, doc.pr_number)
+            _notify_pr_status(db, doc, "checks_passed")
+        else:
+            _logger.warning("PR 자동 Merge 실패: %s #%s", repo_full, doc.pr_number)
+            _append_deploy_log(db, doc, "merge_failed", "failure",
+                               description="자동 Merge 실패 (conflict 또는 권한 문제)")
+            db.commit()
+            _notify_pr_status(db, doc, "checks_failed")
+    else:
+        # 수동 Merge 안내
+        db.commit()
+        _logger.info("PR 검증 통과 (수동 Merge 대기): %s #%s", repo_full, doc.pr_number)
+        _notify_pr_status(db, doc, "checks_passed_manual")
+
+
+# ---------------------------------------------------------
+# 7. 기존 워크스페이스 Webhook 보정 (POST /github/webhooks/backfill)
+# ---------------------------------------------------------
+@router.post("/webhooks/backfill")
+def github_webhook_backfill(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """webhook 미등록 워크스페이스에 대해 일괄 등록 (본인 소유만)."""
+    workspaces = db.query(Workspace).filter(
+        Workspace.github_webhook_id.is_(None),
+        Workspace.owner_id == current_user.id,
+    ).all()
+
+    total = len(workspaces)
+    registered = 0
+    failed = 0
+
+    for ws in workspaces:
+        owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+        if not owner_user or not owner_user.github_access_token:
+            failed += 1
+            continue
+        try:
+            hook_id = register_webhook(
+                token=owner_user.github_access_token,
+                owner=ws.github_org,
+                repo=ws.repo,
+            )
+            ws.github_webhook_id = hook_id
+            db.commit()
+            registered += 1
+        except Exception as e:
+            _logger.warning("webhook 등록 실패 (workspace=%s): %s", ws.id, e)
+            failed += 1
+
+    return SuccessResponse(data={"total": total, "registered": registered, "failed": failed})

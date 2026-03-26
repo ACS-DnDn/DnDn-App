@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,16 +8,19 @@ import time
 from apps.api.src.database import engine
 from apps.api.src.models import Base
 from apps.api.src.routers import (
+    admin_companies,
     auth,
     dashboard,
     documents,
     github,
+    internal,
     org,
     report_settings,
     reports,
     workspaces,
     hr_users,
     hr_departments,
+    hr_company,
     slack,
 )
 
@@ -26,6 +29,27 @@ from apps.api.src.routers import (
 # TODO: 운영 환경 전환 전 Alembic 마이그레이션으로 교체 필요
 #       (create_all은 개발/테스트 전용으로만 사용)
 Base.metadata.create_all(bind=engine)
+
+# 기존 테이블에 누락된 컬럼 자동 추가 (create_all은 새 컬럼을 추가하지 않으므로)
+from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+_insp = _sa_inspect(engine)
+_migrations = [
+    ("documents", "submit_comment", "TEXT"),
+    ("documents", "pr_number", "INTEGER"),
+    ("documents", "pr_url", "VARCHAR(500)"),
+    ("documents", "pr_status", "VARCHAR(20)"),
+    ("workspaces", "github_webhook_id", "INTEGER"),
+    ("documents", "auto_merge", "BOOLEAN"),
+    ("documents", "deploy_log", "JSON"),
+    ("companies", "created_at", "DATETIME"),
+]
+with engine.begin() as _conn:
+    for _tbl, _col, _coltype in _migrations:
+        if _tbl in _insp.get_table_names():
+            existing = [c["name"] for c in _insp.get_columns(_tbl)]
+            if _col not in existing:
+                _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+del _insp, _migrations
 
 # 메트릭 정의
 REQUEST_COUNT = Counter(
@@ -47,11 +71,19 @@ app = FastAPI(
 )
 
 # 3. CORS 설정 (프론트엔드 도메인 허용)
-# 개발 환경이므로 일단 모든 출처를 허용(*)합니다. 실무에서는 프론트 주소만 넣으세요.
+# 프로덕션 도메인과 로컬 개발 환경만 허용합니다.
+_ALLOWED_ORIGINS = [
+    "https://www.dndn.cloud",
+    "https://dndn.cloud",
+    "https://www.dndnhr.cloud",
+    "https://dndnhr.cloud",
+    "http://localhost:3000",   # 로컬 개발
+    "http://localhost:5173",   # Vite 기본 포트
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 예: ["http://localhost:3000"]
-    allow_credentials=False,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -78,18 +110,27 @@ async def metrics_middleware(request: Request, call_next):
 # /metrics 엔드포인트
 app.mount("/metrics", make_asgi_app())
 
-# 4. 라우터 등록 (여기서 URL들이 합쳐집니다)
-app.include_router(auth.router)
-app.include_router(dashboard.router)
-app.include_router(documents.router)
-app.include_router(org.router)
-app.include_router(github.router)
-app.include_router(report_settings.router)
-app.include_router(reports.router)
-app.include_router(workspaces.router)
-app.include_router(hr_users.router)
-app.include_router(hr_departments.router)
-app.include_router(slack.router)
+# 4. 라우터 등록 — /api prefix 아래에 묶음
+#    프론트엔드가 /api/auth/login 등으로 호출하고,
+#    프로덕션 ALB도 /api prefix를 그대로 전달하므로 일치시킴
+api = APIRouter(prefix="/api")
+api.include_router(auth.router)
+api.include_router(dashboard.router)
+api.include_router(documents.router)
+api.include_router(org.router)
+api.include_router(github.router)
+api.include_router(report_settings.router)
+api.include_router(reports.router)
+api.include_router(workspaces.router)
+api.include_router(hr_users.router)
+api.include_router(hr_departments.router)
+api.include_router(hr_company.router)
+api.include_router(admin_companies.router)
+api.include_router(slack.router)
+app.include_router(api)
+
+# 내부 서비스 간 통신 — /api prefix 없이 등록 (ALB Ingress /api 경로에 노출 안 됨)
+app.include_router(internal.router)
 
 
 # 💡 1. 우리가 발생시키는 모든 HTTPException을 가로채서 공통 포맷으로 변경
@@ -127,3 +168,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.get("/", tags=["System"])
 async def root():
     return {"message": "AI Document System API Server is Running!"}
+
+
+@app.get("/health", tags=["System"])
+async def health():
+    return {"status": "ok"}

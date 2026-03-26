@@ -8,10 +8,12 @@ from pydantic import BaseModel
 class SlackStatusResponse(BaseModel):
     connected: bool
     workspace: str | None
-    channel: str | None
+    channel: str | None        # 채널 ID
+    channelName: str | None    # 채널 표시명
     notifyEnabled: bool
 
 
 class SlackSettingsRequest(BaseModel):
-    channel: str | None = None
+    channel: str | None = None        # 채널 ID
+    channelName: str | None = None    # 채널 표시명
     notifyEnabled: bool | None = None

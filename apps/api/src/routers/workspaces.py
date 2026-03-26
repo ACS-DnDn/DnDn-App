@@ -25,8 +25,51 @@ from apps.api.src.security.aws_sts import (
     get_cfn_link,
     StsValidationError,
 )
+from apps.api.src.security.github_oauth import (
+    register_webhook,
+    GITHUB_WEBHOOK_SECRET,
+)
+from apps.api.src.routers.workspace_auth import _check_ws_member, _check_ws_leader
+
+import logging
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
+
+# 워크스페이스 생성 시 기본 OPA 인프라 정책
+DEFAULT_OPA_SETTINGS = [
+    {"category": "네트워크 보안", "items": [
+        {"key": "net-sg-open", "label": "보안그룹 전체 개방(0.0.0.0/0) 차단", "on": True, "severity": "block", "params": {"type": "list", "label": "허용 CIDR", "values": ["10.0.0.0/8", "172.16.0.0/12"]}, "exceptions": []},
+        {"key": "net-rds-public", "label": "RDS 퍼블릭 접근 차단", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "net-flow-log", "label": "VPC Flow Log 활성화 필수", "on": False, "severity": "warn", "params": None, "exceptions": []},
+    ]},
+    {"category": "IAM 보안", "items": [
+        {"key": "iam-wildcard", "label": "와일드카드(*) 권한 사용 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "iam-admin-attach", "label": "AdministratorAccess 정책 직접 연결 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "iam-boundary", "label": "Permission Boundary 적용 필수", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 Boundary ARN 패턴", "values": []}, "exceptions": []},
+    ]},
+    {"category": "스토리지 보안", "items": [
+        {"key": "stor-s3-public", "label": "S3 퍼블릭 접근 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "stor-s3-encrypt", "label": "S3 버킷 암호화 필수", "on": True, "severity": "warn", "params": None, "exceptions": []},
+        {"key": "stor-rds-encrypt", "label": "RDS 스토리지 암호화 필수", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "stor-ebs-encrypt", "label": "EBS 볼륨 암호화 필수", "on": False, "severity": "warn", "params": None, "exceptions": []},
+    ]},
+    {"category": "컴퓨팅 제어", "items": [
+        {"key": "comp-ec2-public-ip", "label": "EC2 퍼블릭 IP 자동 할당 금지", "on": True, "severity": "block", "params": None, "exceptions": []},
+        {"key": "comp-instance", "label": "허용 인스턴스 타입 제한", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 타입", "values": ["t3.micro", "t3.small", "t3.medium"]}, "exceptions": []},
+        {"key": "comp-tag", "label": "필수 태그 정책 강제", "on": True, "severity": "warn", "params": {"type": "list", "label": "필수 태그 키", "values": ["Environment", "Team", "Service"]}, "exceptions": []},
+    ]},
+    {"category": "로깅 / 모니터링", "items": [
+        {"key": "log-cloudtrail", "label": "CloudTrail 활성화 필수", "on": True, "severity": "block", "params": None, "exceptions": []},
+    ]},
+    {"category": "비용 관리", "items": [
+        {"key": "cost-region", "label": "허용 리전 제한", "on": False, "severity": "warn", "params": {"type": "list", "label": "허용 리전", "values": ["us-east-1", "ap-northeast-2"]}, "exceptions": []},
+    ]},
+    {"category": "가용성", "items": [
+        {"key": "avail-multi-az", "label": "Multi-AZ 배포 필수", "on": True, "severity": "warn", "params": {"type": "services", "label": "적용 서비스", "values": ["RDS"], "options": ["RDS", "ElastiCache", "Aurora"]}, "exceptions": []},
+        {"key": "avail-backup", "label": "백업 보존 기간 최소값", "on": True, "severity": "warn", "params": {"type": "number", "label": "최소 보존일", "value": 7, "unit": "일"}, "exceptions": []},
+    ]},
+]
 
 
 # ---------------------------------------------------------
@@ -39,12 +82,18 @@ def get_workspaces(
 ):
     """
     현재 사용자가 접근 가능한 워크스페이스 목록을 조회한다.
-    같은 부서의 부서장이 생성한 워크스페이스가 반환된다.
+    같은 부서의 부서장이 생성한 워크스페이스만 반환된다.
     """
+    if not current_user.department_id:
+        return SuccessResponse(data=WorkspaceListResponse(items=[]))
+
     workspaces = (
         db.query(Workspace)
         .join(User, Workspace.owner_id == User.id)
-        .filter(User.company_id == current_user.company_id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
         .order_by(Workspace.created_at.desc())
         .all()
     )
@@ -132,17 +181,11 @@ def get_opa_settings(
     """
     워크스페이스에 저장된 인프라 정책(OPA) 설정을 반환한다.
     인프라 정책 탭 진입 시 자동 호출.
+    같은 부서 구성원이면 조회 가능.
     """
-    # 1. 워크스페이스 존재 여부 확인 (404)
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
+    ws = _check_ws_member(db, workspace_id, current_user)
 
-    # 2. 소유자 권한 확인 (403)
-    if ws.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-
-    # 3. OPA 설정이 없으면 빈 배열 반환
+    # OPA 설정이 없으면 빈 배열 반환
     policies = ws.opa_settings if ws.opa_settings else []
 
     return SuccessResponse(data=OpaSettingsResponse(policies=policies))
@@ -164,17 +207,11 @@ def save_opa_settings(
     """
     인프라 정책(OPA) 설정 전체를 교체한다.
     저장 버튼 클릭 시 현재 상태 전체를 전송.
+    같은 부서 leader/admin만 변경 가능.
     """
-    # 1. 워크스페이스 존재 여부 확인 (404)
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
+    ws = _check_ws_leader(db, workspace_id, current_user)
 
-    # 2. 소유자 권한 확인 (403)
-    if ws.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-
-    # 3. policies 구조 검증 (400)
+    # policies 구조 검증 (400)
     if req.policies is None:
         raise HTTPException(status_code=400, detail="MISSING_POLICIES")
 
@@ -268,7 +305,7 @@ def create_workspace(
     if existing:
         raise HTTPException(status_code=409, detail="CONFLICT")
 
-    # 3. 워크스페이스 생성
+    # 3. 워크스페이스 생성 (기본 OPA 정책 포함)
     ws = Workspace(
         alias=req.alias,
         acct_id=req.acctId,
@@ -279,11 +316,26 @@ def create_workspace(
         icon=req.icon,
         memo=req.memo,
         owner_id=current_user.id,
+        opa_settings=DEFAULT_OPA_SETTINGS,
     )
 
     db.add(ws)
     db.commit()
     db.refresh(ws)
+
+    # GitHub webhook 자동 등록 (best-effort)
+    if current_user.github_access_token and GITHUB_WEBHOOK_SECRET:
+        try:
+            hook_id = register_webhook(
+                token=current_user.github_access_token,
+                owner=req.githubOrg,
+                repo=req.repo,
+            )
+            ws.github_webhook_id = hook_id
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            _logger.warning("GitHub webhook 등록 실패 (workspace=%s): %s", ws.id, e)
 
     return SuccessResponse(
         data=WorkspaceCreateResponse(

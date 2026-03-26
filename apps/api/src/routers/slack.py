@@ -15,6 +15,8 @@ from apps.api.src.schemas.slack import SlackStatusResponse, SlackSettingsRequest
 from apps.api.src.security.slack_oauth import (
     get_auth_url,
     exchange_code,
+    list_channels,
+    join_channel,
     SlackError,
 )
 
@@ -37,6 +39,7 @@ def _user_status(user: User) -> SlackStatusResponse:
         connected=connected,
         workspace=user.slack_workspace if connected else None,
         channel=user.slack_channel if connected else None,
+        channelName=user.slack_channel_name if connected else None,
         notifyEnabled=user.slack_notify if user.slack_notify is not None else True,
     )
 
@@ -82,11 +85,22 @@ def slack_callback(
     except SlackError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
+    previous_workspace = current_user.slack_workspace
     current_user.slack_access_token = result.access_token
     current_user.slack_workspace = result.workspace
     current_user.slack_user_id = result.slack_user_id
+    if previous_workspace and previous_workspace != result.workspace:
+        current_user.slack_channel = None
+        current_user.slack_channel_name = None
     if not current_user.slack_channel:
-        current_user.slack_channel = "general"
+        try:
+            chs = list_channels(result.access_token)
+            if chs:
+                current_user.slack_channel = chs[0]["id"]
+                current_user.slack_channel_name = chs[0]["name"]
+                join_channel(result.access_token, chs[0]["id"])
+        except SlackError:
+            pass
     if current_user.slack_notify is None:
         current_user.slack_notify = True
     db.commit()
@@ -102,6 +116,19 @@ def slack_status(current_user: User = Depends(get_current_user)):
     return SuccessResponse(data=_user_status(current_user))
 
 
+# ── GET /slack/channels ────────────────────────────────────
+@router.get("/channels", response_model=SuccessResponse[list])
+def slack_channels(current_user: User = Depends(get_current_user)):
+    """연동된 Slack 워크스페이스의 public 채널 목록 반환."""
+    if not current_user.slack_access_token:
+        raise HTTPException(status_code=400, detail="SLACK_NOT_CONNECTED")
+    try:
+        channels = list_channels(current_user.slack_access_token)
+    except SlackError as e:
+        raise HTTPException(status_code=e.status, detail=e.code) from e
+    return SuccessResponse(data=channels)
+
+
 # ── PATCH /slack/settings ──────────────────────────────────
 @router.patch("/settings", response_model=SuccessResponse[SlackStatusResponse])
 def slack_update_settings(
@@ -115,6 +142,9 @@ def slack_update_settings(
 
     if req.channel is not None:
         current_user.slack_channel = req.channel
+        join_channel(current_user.slack_access_token, req.channel)
+    if req.channelName is not None:
+        current_user.slack_channel_name = req.channelName
     if req.notifyEnabled is not None:
         current_user.slack_notify = req.notifyEnabled
     db.commit()
@@ -134,6 +164,7 @@ def slack_disconnect(
     current_user.slack_workspace = None
     current_user.slack_user_id = None
     current_user.slack_channel = None
+    current_user.slack_channel_name = None
     current_user.slack_notify = None
     db.commit()
 

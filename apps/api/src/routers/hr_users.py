@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User
+from apps.api.src.models import User, Department, Document, Approval, Workspace
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.hr import (
     HrUserResponse,
@@ -28,7 +28,7 @@ from apps.api.src.security.cognito import (
 
 router = APIRouter(prefix="/hr/users", tags=["HR - Users"])
 
-VALID_ROLES = {"hr", "leader", "member"}
+VALID_ROLES = {"hr", "member"}  # leader는 부서관리에서만 지정
 
 
 def _to_response(user: User) -> HrUserResponse:
@@ -86,14 +86,15 @@ def create_user(
 
     # 1. Cognito 사용자 생성
     try:
-        username = admin_create_user(req.email, req.name)
+        username, cognito_sub = admin_create_user(req.email, req.name)
         admin_set_group(username, req.role)
     except CognitoError as e:
         raise HTTPException(status_code=e.status, detail=e.code) from e
 
-    # 2. DB 저장 (cognito_sub는 첫 로그인 시 get_current_user가 채움)
+    # 2. DB 저장 (cognito_sub를 즉시 매핑 — 첫 로그인 시 ghost user 생성 방지)
     user = User(
         id=str(uuid.uuid4()),
+        cognito_sub=cognito_sub or None,
         email=req.email,
         name=req.name,
         role=req.role,
@@ -132,10 +133,12 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
-    # 역할 변경 시 Cognito 그룹도 변경
+    # 역할 변경 시 Cognito 그룹도 변경 (leader는 부서관리에서만 지정)
     if req.role and req.role != user.role:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="INVALID_ROLE")
+        if user.role == "leader":
+            raise HTTPException(status_code=400, detail="LEADER_MANAGED_BY_DEPT")
         try:
             admin_set_group(user.email, req.role, old_group=user.role)
         except CognitoError as e:
@@ -170,10 +173,25 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
+    # 워크스페이스 소유자인 경우 삭제 불가
+    owns_ws = db.query(Workspace).filter(Workspace.owner_id == user_id).first()
+    if owns_ws:
+        raise HTTPException(
+            status_code=409,
+            detail="이 사용자가 소유한 워크스페이스가 있어 삭제할 수 없습니다. 먼저 워크스페이스 소유자를 변경해주세요.",
+        )
+
     try:
         admin_delete_user(user.email)
     except CognitoError as e:
-        raise HTTPException(status_code=e.status, detail=e.code) from e
+        # Cognito에 없는 사용자(수동 DB 삽입 등)면 무시하고 DB만 삭제
+        if e.exception_name != "UserNotFoundException":
+            raise HTTPException(status_code=e.status, detail=e.code) from e
+
+    # FK 참조 정리
+    db.query(Department).filter(Department.leader_id == user_id).update({"leader_id": None})
+    db.query(Document).filter(Document.author_id == user_id).update({"author_id": None})
+    db.query(Approval).filter(Approval.user_id == user_id).delete()
 
     db.delete(user)
     db.commit()

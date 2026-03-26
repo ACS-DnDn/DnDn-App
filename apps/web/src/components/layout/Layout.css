@@ -102,9 +102,13 @@
 .nav-sub-item:hover { color: var(--mint); }
 .nav-sub-item.active { color: var(--mint); font-weight: 600; }
 
-.sidebar-bottom { padding: 12px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-bottom { padding: 0 10px 12px; flex-shrink: 0; }
+.sidebar-profile {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px 0; border-top: 1px solid var(--border); margin-top: 6px;
+}
 .sidebar-company-logo { width: 30px; height: 30px; border-radius: 6px; object-fit: contain; flex-shrink: 0; }
-.sidebar-toggle { background: none; border: none; cursor: pointer; padding: 0; margin-left: auto; pointer-events: all; }
+.sidebar-toggle { background: none; border: none; cursor: pointer; padding: 0; margin-left: auto; }
 .sidebar-toggle .toggle-track {
   width: 36px; height: 20px; background: var(--mint); border-radius: 10px;
   position: relative; transition: background 0.25s;
@@ -116,6 +120,15 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 :root.dark .sidebar-toggle .toggle-thumb { transform: translateX(16px); }
+.sidebar-logout {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 12px;
+  border: none; border-radius: 8px;
+  background: transparent; color: var(--text-muted);
+  font-size: 13px; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.sidebar-logout:hover { background: var(--mint-soft); color: var(--danger, #e53e3e); }
+.sidebar-logout .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
 
 /* ── 오버레이 ── */
 .overlay {

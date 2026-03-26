@@ -12,11 +12,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-      '/todo': 'http://localhost:8001', // reporter 포트 — 확정 후 수정
+      '/api': 'http://localhost:8000',
+      '/report-api': 'http://localhost:8001',
     },
   },
 });

@@ -227,6 +227,35 @@ input[type="password"]::-ms-clear { display: none; }
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── 비밀번호 찾기 링크 ── */
+.forgot-link {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: Pretendard, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.forgot-link:hover {
+  color: var(--mint);
+}
+
+.forgot-desc {
+  margin: 0 0 28px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
 /* ── 비밀번호 변경 모달 ── */
 .pw-modal-overlay {
   position: fixed;
@@ -362,6 +391,34 @@ input[type="password"]::-ms-clear { display: none; }
 .pw-modal-btn:hover { opacity: 0.88; }
 .pw-modal-btn:active { opacity: 0.78; }
 .pw-modal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pw-modal-desc {
+  margin: -8px 0 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.pw-modal-back {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: Pretendard, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.pw-modal-back:hover {
+  color: var(--mint);
+}
 
 /* ── 비밀번호 규칙 툴팁 ── */
 .pw-modal-field--has-rules {

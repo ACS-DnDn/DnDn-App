@@ -1,11 +1,16 @@
 name: Build App Images
 
 on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'Comma-separated apps to build (api,worker,report,web) or "all"'
+        required: false
+        default: 'all'
   push:
     branches: [main]
     paths:
       - 'apps/**'
-      - '!apps/web/**'
       - 'contracts/payload/job_payload.schema.json'
       - 'contracts/canonical_model.schema.json'
       - 'contracts/event_model.schema.json'
@@ -25,13 +30,16 @@ jobs:
     name: Detect changed apps
     runs-on: ubuntu-latest
     outputs:
-      api:     ${{ steps.filter.outputs.api }}
-      worker:  ${{ steps.filter.outputs.worker }}
-      report:  ${{ steps.filter.outputs.report }}
+      api:     ${{ steps.result.outputs.api }}
+      worker:  ${{ steps.result.outputs.worker }}
+      report:  ${{ steps.result.outputs.report }}
+      web:     ${{ steps.result.outputs.web }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name == 'push'
         with:
           filters: |
             api:    ['apps/api/**']
@@ -41,6 +49,32 @@ jobs:
               - 'contracts/canonical_model.schema.json'
               - 'contracts/event_model.schema.json'
             report: ['apps/report/**']
+            web:    ['apps/web/**']
+
+      - name: Resolve targets
+        id: result
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            INPUT="${{ github.event.inputs.apps }}"
+            api=false; worker=false; report=false; web=false
+            if [ "$INPUT" = "all" ] || [ -z "$INPUT" ]; then
+              api=true; worker=true; report=true; web=true
+            else
+              [[ "$INPUT" == *api* ]]    && api=true
+              [[ "$INPUT" == *worker* ]] && worker=true
+              [[ "$INPUT" == *report* ]] && report=true
+              [[ "$INPUT" == *web* ]]    && web=true
+            fi
+            echo "api=$api" >> "$GITHUB_OUTPUT"
+            echo "worker=$worker" >> "$GITHUB_OUTPUT"
+            echo "report=$report" >> "$GITHUB_OUTPUT"
+            echo "web=$web" >> "$GITHUB_OUTPUT"
+          else
+            echo "api=${{ steps.filter.outputs.api }}" >> "$GITHUB_OUTPUT"
+            echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
+            echo "report=${{ steps.filter.outputs.report }}" >> "$GITHUB_OUTPUT"
+            echo "web=${{ steps.filter.outputs.web }}" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── API ───────────────────────────────────────────────────────────────
   publish-api:
@@ -62,10 +96,11 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-api:${{ github.sha }}
-          docker build -t $IMAGE apps/api/
-          docker push $IMAGE
-          echo "API image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-api
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/api/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "API image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Worker ────────────────────────────────────────────────────────────
   publish-worker:
@@ -87,10 +122,11 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-worker:${{ github.sha }}
-          docker build -f apps/worker/Dockerfile -t $IMAGE .
-          docker push $IMAGE
-          echo "Worker image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-worker
+          docker build -f apps/worker/Dockerfile -t $REPO:${{ github.sha }} -t $REPO:latest .
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Worker image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Report ────────────────────────────────────────────────────────────
   publish-report:
@@ -112,38 +148,94 @@ jobs:
 
       - name: Build & Push
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-report:${{ github.sha }}
-          docker build -t $IMAGE apps/report/
-          docker push $IMAGE
-          echo "Report image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deploy units using this image:" >> "$GITHUB_STEP_SUMMARY"
-          echo "- dndn-report-api" >> "$GITHUB_STEP_SUMMARY"
-          echo "- dndn-report-worker" >> "$GITHUB_STEP_SUMMARY"
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-report
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/report/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Report image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Web ───────────────────────────────────────────────────────────────
-  # Web Dockerfile은 프론트 담당 브랜치에서 별도로 정리 중이므로
-  # 이 브랜치에서는 apps/web 변경만으로는 workflow가 돌지 않게 제외하고,
-  # image publish job도 함께 잠시 비활성화합니다.
-  # publish-web:
-  #   name: Publish Web Image
-  #   needs: detect
-  #   if: needs.detect.outputs.web == 'true'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Configure AWS credentials (OIDC)
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
-  #         aws-region: ${{ env.AWS_REGION }}
-  #
-  #     - name: Login to ECR
-  #       uses: aws-actions/amazon-ecr-login@v2
-  #
-  #     - name: Build & Push
-  #       run: |
-  #         IMAGE=${{ env.ECR_REGISTRY }}/dndn-prd-web:${{ github.sha }}
-  #         docker build -t $IMAGE apps/web/
-  #         docker push $IMAGE
-  #         echo "Web image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+  publish-web:
+    name: Publish Web Image
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::387721658341:role/DnDn-PRD-GHA-Deploy-Role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        run: |
+          REPO=${{ env.ECR_REGISTRY }}/dndn-prd-web
+          docker build -t $REPO:${{ github.sha }} -t $REPO:latest apps/web/
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+          echo "Web image: $REPO:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy: GitOps image tag 업데이트 → ArgoCD 자동 sync ────────────────
+  update-gitops:
+    name: Update GitOps manifests
+    needs: [detect, publish-api, publish-worker, publish-report, publish-web]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Infra repo
+        uses: actions/checkout@v4
+        with:
+          repository: ACS-DnDn/DnDn-Infra
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+          ref: main
+
+      - name: Update image tags
+        run: |
+          SHA=${{ github.sha }}
+          REGISTRY=${{ env.ECR_REGISTRY }}
+          CHANGED=false
+
+          update_tag() {
+            local file="$1" old_image="$2" new_image="$3"
+            if [ -f "$file" ]; then
+              sed -i "s|${old_image}:.*|${new_image}:${SHA}|" "$file"
+              CHANGED=true
+              echo "✓ Updated $file → ${new_image}:${SHA}"
+            fi
+          }
+
+          if [ "${{ needs.detect.outputs.api }}" = "true" ] && [ "${{ needs.publish-api.result }}" = "success" ]; then
+            update_tag "gitops/environments/prod/apps/dndn-api/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-api" "${REGISTRY}/dndn-prd-api"
+          fi
+          if [ "${{ needs.detect.outputs.worker }}" = "true" ] && [ "${{ needs.publish-worker.result }}" = "success" ]; then
+            update_tag "gitops/environments/prod/apps/dndn-worker/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-worker" "${REGISTRY}/dndn-prd-worker"
+          fi
+          if [ "${{ needs.detect.outputs.report }}" = "true" ] && [ "${{ needs.publish-report.result }}" = "success" ]; then
+            update_tag "gitops/environments/prod/apps/dndn-report/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-report" "${REGISTRY}/dndn-prd-report"
+          fi
+          if [ "${{ needs.detect.outputs.web }}" = "true" ] && [ "${{ needs.publish-web.result }}" = "success" ]; then
+            update_tag "gitops/environments/prod/apps/dndn-web/deployment.yaml" \
+              "${REGISTRY}/dndn-prd-web" "${REGISTRY}/dndn-prd-web"
+          fi
+
+          if [ "$CHANGED" = "false" ]; then
+            echo "No apps to update"
+            exit 0
+          fi
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore(gitops): update image tags from DnDn-App@${GITHUB_SHA::7}"
+          git push

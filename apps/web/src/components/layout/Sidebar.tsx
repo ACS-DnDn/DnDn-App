@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { apiFetch } from '@/services/api';
+import { AuthContext } from '@/contexts/AuthContext';
 
 interface SidebarProps {
   open: boolean;
@@ -34,7 +35,7 @@ const NAV_ITEMS: { section: string; items: NavItem[] }[] = [
         label: '보고서 생성', href: '/report-settings',
         icon: <svg className="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 13V9"/><path d="M10 13V7"/><path d="M13 13v-3"/></svg>,
         children: [
-          { label: '현황 보고서', href: '/report-settings?section=summary' },
+          { label: '인프라 활동 보고서', href: '/report-settings?section=summary' },
           { label: '이벤트 보고서', href: '/report-settings?section=events' },
         ],
       },
@@ -76,6 +77,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const session = useSession();
   const { isDark, toggle } = useTheme();
+  const { logout } = useContext(AuthContext);
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -152,7 +154,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="nav-item" style={{ gap: 10, cursor: 'default', pointerEvents: 'none' }}>
+          <button
+            className="sidebar-logout"
+            onClick={() => { onClose(); logout(); }}
+          >
+            <svg className="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M7 17H4a1 1 0 01-1-1V4a1 1 0 011-1h3" />
+              <path d="M14 14l3-4-3-4" />
+              <path d="M17 10H8" />
+            </svg>
+            로그아웃
+          </button>
+          <div className="sidebar-profile">
             {logoSrc && (
               <img className="sidebar-company-logo" src={logoSrc} alt="" />
             )}
@@ -163,7 +176,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             <button
               className="sidebar-toggle"
               onClick={(e) => { e.stopPropagation(); toggle(); }}
-              style={{ pointerEvents: 'all' }}
               aria-label="테마 전환"
             >
               <div className="toggle-track"><div className="toggle-thumb" /></div>

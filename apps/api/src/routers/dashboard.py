@@ -1,9 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt: datetime | None) -> str:
+    """UTC datetime → KST 'YYYY.MM.DD HH:MM' 문자열"""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST).strftime("%Y.%m.%d %H:%M")
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Document, Approval
+from apps.api.src.models import User, Document, Approval, DocumentRead, Workspace
 from apps.api.src.routers.auth import get_current_user
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.dashboard import DashboardResponse
@@ -19,22 +30,56 @@ def get_dashboard(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     # 1. 문서 통계
-    pending_count = (
+    approval_pending = (
         db.query(Approval)
         .filter(Approval.user_id == current_user.id, Approval.status == "current")
         .count()
     )
+    rejected_pending = (
+        db.query(Document)
+        .filter(Document.author_id == current_user.id, Document.status == "rejected")
+        .count()
+    )
+    deploy_failed_pending = (
+        db.query(Document)
+        .filter(Document.author_id == current_user.id, Document.status == "deploy_failed")
+        .count()
+    )
+    pending_count = approval_pending + rejected_pending + deploy_failed_pending
     ongoing_count = (
         db.query(Document)
         .filter(Document.author_id == current_user.id, Document.status == "progress")
         .count()
     )
-    new_doc_count = 5
+    # 내 워크스페이스(같은 회사·부서) 문서 중 안 읽은 것만 카운트
+    my_ws_ids = (
+        db.query(Workspace.id)
+        .join(User, Workspace.owner_id == User.id)
+        .filter(
+            User.company_id == current_user.company_id,
+            User.department_id == current_user.department_id,
+        )
+    )
+    read_doc_ids = (
+        db.query(DocumentRead.document_id)
+        .filter(DocumentRead.user_id == current_user.id)
+    )
+    new_doc_count = (
+        db.query(Document)
+        .filter(
+            Document.workspace_id.in_(my_ws_ids),
+            Document.id.notin_(read_doc_ids),
+            Document.status != "draft",
+        )
+        .count()
+    )
 
     # 3. 결재 대기 문서 (Pending Docs)
     pending_approvals = (
         db.query(Approval)
+        .join(Document, Approval.document_id == Document.id)
         .filter(Approval.user_id == current_user.id, Approval.status == "current")
+        .order_by(Document.created_at.desc())
         .all()
     )
     pending_docs = []
@@ -44,29 +89,57 @@ def get_dashboard(
         pending_docs.append(
             {
                 "id": str(doc.id),
-                "docNum": str(doc.id)[:8],
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "title": doc.title,
                 "status": doc_status_for_me,
                 "type": doc.type if doc.type else "작업 계획서",
-                "author": doc.author.name if doc.author else "알수없음",
-                "date": doc.created_at.strftime("%Y.%m.%d") if doc.created_at else "",
+                "author": doc.author.name if doc.author else "DnDn Agent",
+                "date": _to_kst_str(doc.created_at),
             }
         )
+
+    # 3-1. 반려/배포실패 문서 — 기안자에게 대시보드에 노출
+    author_pending_docs = (
+        db.query(Document)
+        .filter(
+            Document.author_id == current_user.id,
+            Document.status.in_(["rejected", "deploy_failed"]),
+        )
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    seen_ids = {d["id"] for d in pending_docs}
+    for doc in author_pending_docs:
+        if str(doc.id) not in seen_ids:
+            pending_docs.append(
+                {
+                    "id": str(doc.id),
+                    "docNum": doc.doc_num or str(doc.id)[:8],
+                    "title": doc.title,
+                    "status": "deploy_failed" if doc.status == "deploy_failed" else "rejected",
+                    "type": doc.type if doc.type else "작업 계획서",
+                    "author": doc.author.name if doc.author else "DnDn Agent",
+                    "date": _to_kst_str(doc.created_at),
+                }
+            )
 
     # 4. 결재 완료/내 문서 (Completed Docs)
     completed_docs = []
     my_docs = (
-        db.query(Document).filter(Document.author_id == current_user.id).limit(5).all()
+        db.query(Document).filter(
+            Document.author_id == current_user.id,
+            Document.status != "draft",
+        ).order_by(Document.created_at.desc()).limit(5).all()
     )
     for doc in my_docs:
         completed_docs.append(
             {
                 "id": str(doc.id),
-                "docNum": str(doc.id)[:8],
+                "docNum": doc.doc_num or str(doc.id)[:8],
                 "title": doc.title,
                 "type": doc.type if doc.type else "작업 계획서",
                 "author": current_user.name,
-                "date": doc.created_at.strftime("%Y.%m.%d") if doc.created_at else "",
+                "date": _to_kst_str(doc.created_at),
             }
         )
 

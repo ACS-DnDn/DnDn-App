@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTheme } from '@/hooks/useTheme';
 import { AnimatedLogo } from '@/components/layout/AnimatedLogo';
-import { apiFetch } from '@/services/api';
-import { getDocuments } from '@/services/document.service';
+import { apiFetch, reportApiFetch } from '@/services/api';
+import { getAllDocuments, getDocumentById, deleteDocument } from '@/services/document.service';
 import type { Document } from '@/mocks';
 import type { OrgDept } from '@/mocks';
 import './PlanPage.css';
@@ -20,7 +20,7 @@ interface PendingApprover { id: string; name: string; rank: string; type: string
 interface RefDoc { no: string; name: string; }
 interface LogEntry { id: string; time: string; msg: string; type: string; tab: number; clickable?: 'security' | 'policy'; }
 interface CheckovIssue { id: string; resource: string; file?: string; line?: number; severity?: string; }
-interface OpaBlock { key: string; label: string; }
+interface OpaBlock { key: string; label: string; detail?: string; }
 interface ValidationResult {
   checkov: { passed: boolean; summary: string; issues: CheckovIssue[] };
   opa: { passed: boolean; summary: string; blocks: OpaBlock[]; warns: OpaBlock[] };
@@ -68,8 +68,11 @@ export function PlanPage() {
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [generatedTfFiles, setGeneratedTfFiles] = useState<{ name: string; code: string }[]>([]);
   const [lastValidation, setLastValidation] = useState<ValidationResult | null>(null);
+  const [tfJobId, setTfJobId] = useState<string | null>(null);
+  const tfSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [validationPopup, setValidationPopup] = useState<'security' | 'policy' | null>(null);
   const logPanelRef = useRef<HTMLDivElement>(null);
+  const [editDeployLog, setEditDeployLog] = useState<import('@/mocks/types/document').DeployLogEntry[] | null>(null);
 
   /* ── 결재 상신 모달 state ── */
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
@@ -91,8 +94,8 @@ export function PlanPage() {
     apiFetch<{ data: { items: OrgDept[] } }>('/org/members')
       .then(res => setOrgData(res.data.items))
       .catch(() => {});
-    getDocuments({ pageSize: 100 })
-      .then(res => setDocList(res.items))
+    getAllDocuments()
+      .then(items => setDocList(items.filter(d => d.type !== '계획서')))
       .catch(() => {});
     apiFetch<{ success: boolean; data: { items: { id: string; alias: string; acctId: string }[] } }>('/workspaces')
       .then(res => setWs(res.data.items[0] ?? null))
@@ -116,9 +119,54 @@ export function PlanPage() {
     if (!doc) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === doc.id)) return prev;
-      return [...prev, { no: doc.id, name: `${doc.icon} ${doc.name}` }];
+      return [...prev, { no: doc.id, name: doc.name }];
     });
   }, [searchParams, docList]);
+
+  /* ── init: load existing document for editing (반려 문서 수정) ── */
+  useEffect(() => {
+    const editDocId = searchParams.get('editDocId');
+    if (!editDocId) return;
+    let blobUrl: string | null = null;
+    getDocumentById(editDocId).then(doc => {
+      if (!doc) return;
+      setDraftDocumentId(editDocId);
+      // HTML 문서 로드
+      if (doc.content) {
+        const blob = new Blob([doc.content], { type: 'text/html' });
+        blobUrl = URL.createObjectURL(blob);
+        setIframeSrc(blobUrl);
+        setDocState('ready');
+      }
+      // Terraform 파일 로드
+      if (doc.terraform && Object.keys(doc.terraform).length > 0) {
+        const files = Object.entries(doc.terraform).map(([name, code]) => ({ name, code }));
+        setGeneratedTfFiles(files);
+        setTfCodes(files.map(f => f.code));
+        setTfState('ready');
+        setTfStatus('ok');
+        setTfStatusText('완료');
+      }
+      // 참조문서 로드
+      if (doc.refDocs) {
+        setRefDocs(doc.refDocs.map(rd => ({ no: rd.id, name: rd.title ?? rd.id })));
+      }
+      // 제목 로드
+      if (doc.name) setNlTarget(doc.name);
+      // 결재선 복원
+      if (doc.approvalLine) {
+        const restored = doc.approvalLine
+          .filter(item => item.type !== '작성자' && item.userId)
+          .map(item => ({ id: item.userId!, name: item.name, rank: item.role, type: item.type }));
+        if (restored.length > 0) setApprovers(restored);
+      }
+      // 배포 실패 이력 저장 (AI 재생성 시 참조)
+      if (doc.deployLog && doc.deployLog.length > 0) setEditDeployLog(doc.deployLog);
+    }).catch((err) => {
+      console.error('문서 로드 실패:', err);
+    });
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [searchParams]);
 
   /* ── scroll log panel ── */
   useEffect(() => {
@@ -137,7 +185,7 @@ export function PlanPage() {
   /* ══════════════════════════════
      결재선
   ══════════════════════════════ */
-  const authorInfo = { name: session.name, rank: session.role };
+  const authorInfo = { name: session.name, rank: session.position ?? session.role };
 
   function removeApprover(idx: number) {
     setApprovers(prev => prev.filter((_, i) => i !== idx));
@@ -235,7 +283,7 @@ export function PlanPage() {
     if (!d) return;
     setRefDocs(prev => {
       if (prev.some(r => r.no === d.id)) return prev;
-      return [...prev, { no: d.id, name: `${d.id} — ${d.name}` }];
+      return [...prev, { no: d.id, name: d.name }];
     });
     setDocPopupOpen(false);
   }
@@ -246,7 +294,7 @@ export function PlanPage() {
   async function pollJob(jobId: string): Promise<Record<string, unknown>> {
     for (let i = 0; i < 120; i++) {
       await new Promise<void>(r => setTimeout(r, 1000));
-      const raw = await apiFetch<{ success: boolean; data: { status: string; result?: Record<string, unknown>; error?: { message: string } } }>(`/documents/generate/${jobId}`);
+      const raw = await reportApiFetch<{ success: boolean; data: { status: string; result?: Record<string, unknown>; error?: { message: string } } }>(`/documents/generate/${jobId}`);
       const { status, result, error } = raw.data;
       if (status === 'done') return result ?? {};
       if (status === 'failed') throw new Error(error?.message ?? '생성 실패');
@@ -255,6 +303,7 @@ export function PlanPage() {
   }
 
   async function generateDoc() {
+    if (!ws?.id) { alert('워크스페이스를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     setDocState('loading');
     setTfState('blank');
     setTfStatus('pending');
@@ -264,13 +313,17 @@ export function PlanPage() {
     setLogEntries([]);
     setDraftDocumentId(null);
     try {
-      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/plan', {
+      const raw = await reportApiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/plan', {
         method: 'POST',
         body: JSON.stringify({
           workspaceId: ws?.id,
           target: nlTarget,
           content: nlInput,
           ...(refDocs.length > 0 && { refDocIds: refDocs.map(rd => rd.no) }),
+          authorId: session.id,
+          authorName: session.name,
+          authorPosition: session.position || undefined,
+          companyLogoUrl: session.company?.logoUrl || undefined,
         }),
       });
       const { jobId } = raw.data;
@@ -287,20 +340,48 @@ export function PlanPage() {
     }
   }
 
-  function doAutoSave() {
+  const doAutoSave = useCallback(async () => {
     const html = iframeRef.current?.contentDocument?.documentElement.outerHTML;
-    if (!html) return;
-    localStorage.setItem(`doc-${docId}`, html);
+    if (!html || !draftDocumentId) return;
+    try {
+      await reportApiFetch('/documents/html/save', {
+        method: 'PUT',
+        body: JSON.stringify({ docId: draftDocumentId, html }),
+      });
+    } catch {
+      // S3 실패 시 localStorage fallback
+      localStorage.setItem(`doc-${docId}`, html);
+    }
     const timestamp = new Date();
     setLastSaved(
       `${String(timestamp.getHours()).padStart(2, '0')}:${String(timestamp.getMinutes()).padStart(2, '0')}:${String(timestamp.getSeconds()).padStart(2, '0')}`
     );
-  }
+  }, [draftDocumentId, docId]);
 
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(doAutoSave, 2000);
-  }, []);
+    autoSaveRef.current = setTimeout(() => { void doAutoSave(); }, 2000);
+  }, [doAutoSave]);
+
+  async function handleDelete() {
+    // 문서 생성 중에는 삭제 불가
+    if (docState === 'loading') return;
+    if (!draftDocumentId) {
+      // 아직 백엔드에 저장 전 — 페이지만 초기화
+      if (!confirm('작성 중인 내용을 삭제하시겠습니까?')) return;
+      navigate(-1);
+      return;
+    }
+    if (!confirm('이 문서를 삭제하시겠습니까? 삭제된 문서는 복구할 수 없습니다.')) return;
+    try {
+      await deleteDocument(draftDocumentId);
+      alert('문서가 삭제되었습니다.');
+      navigate('/documents');
+    } catch (err) {
+      console.error('문서 삭제 실패:', err);
+      alert('문서 삭제에 실패했습니다.');
+    }
+  }
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
@@ -343,14 +424,51 @@ export function PlanPage() {
     addLog('작업 계획서 분석 중...', 'muted', 0);
     addLog('Terraform 코드 생성 중...', 'run', 0);
     try {
-      const raw = await apiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
+      const raw = await reportApiFetch<{ success: boolean; data: { jobId: string } }>('/documents/generate/terraform', {
         method: 'POST',
-        body: JSON.stringify({ documentId: draftDocumentId, workspaceId: ws?.id }),
+        body: JSON.stringify({
+          documentId: draftDocumentId,
+          workspaceId: ws?.id,
+          ...(editDeployLog && { deployLog: editDeployLog }),
+        }),
       });
       const { jobId } = raw.data;
+      setTfJobId(jobId);
       const result = await pollJob(jobId);
-      const rawFiles = (result.files as Record<string, string>) ?? {};
-      const files = Object.entries(rawFiles).map(([name, code]) => ({ name, code }));
+      // 백엔드 응답 구조가 다양할 수 있으므로 재귀적으로 tf 파일 배열을 탐색
+      console.log('[TF DEBUG] pollJob result:', JSON.stringify(result));
+      let files: Array<{ name: string; code: string }> = [];
+
+      // {filename, content} 배열을 재귀 탐색
+      function findTfFiles(obj: unknown, depth = 0): Array<{ name: string; code: string }> {
+        if (depth > 5 || !obj) return [];
+        // [{filename, content}, ...] 배열 발견
+        if (Array.isArray(obj) && obj.length > 0 && obj[0]?.filename) {
+          return obj.map((f: Record<string, unknown>) => ({
+            name: String(f.filename ?? 'unknown.tf'),
+            code: typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2),
+          }));
+        }
+        // {"main.tf": "코드", ...} 딕셔너리
+        if (typeof obj === 'object' && !Array.isArray(obj)) {
+          const entries = Object.entries(obj as Record<string, unknown>);
+          const tfEntries = entries.filter(([k]) => k.endsWith('.tf'));
+          if (tfEntries.length > 0) {
+            return tfEntries.map(([name, code]) => ({
+              name, code: typeof code === 'string' ? code : JSON.stringify(code, null, 2),
+            }));
+          }
+          // 중첩 객체 안에서 탐색 (files 키 우선)
+          for (const key of ['files', ...entries.map(([k]) => k).filter(k => k !== 'files')]) {
+            const val = (obj as Record<string, unknown>)[key];
+            const found = findTfFiles(val, depth + 1);
+            if (found.length > 0) return found;
+          }
+        }
+        return [];
+      }
+
+      files = findTfFiles(result);
       if (files.length === 0) throw new Error('생성된 Terraform 파일이 없습니다.');
       setGeneratedTfFiles(files);
       setTfCodes(files.map(f => f.code));
@@ -369,7 +487,7 @@ export function PlanPage() {
   }
 
   async function _doValidate(fileMap: Record<string, string>) {
-    return apiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
+    return reportApiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
       method: 'POST',
       body: JSON.stringify({ files: fileMap, workspaceId: ws?.id }),
     });
@@ -394,25 +512,10 @@ export function PlanPage() {
         result.checkov.passed ? `보안 검증 통과 ✓ (${result.checkov.summary})` : `보안 검증 이슈: ${result.checkov.summary}`,
         result.checkov.passed ? 'ok' : 'warn'
       );
-      if (!isRetry) {
-        result.checkov.issues?.slice(0, 10).forEach(issue => {
-          const loc = issue.file && issue.line ? ` (${issue.file}:${issue.line})` : '';
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • ${issue.id}: ${issue.resource}${loc}`, type: 'muted', tab: -1 }]);
-        });
-      }
-
       updateLog(opaId,
         result.opa.passed ? `정책 검증 통과 ✓ (${result.opa.summary})` : `정책 위반 감지: ${result.opa.summary}`,
         result.opa.passed ? 'ok' : (result.opa.blocks.length > 0 ? 'err' : 'warn')
       );
-      if (!isRetry) {
-        result.opa.blocks?.forEach(b => {
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [차단] ${b.label}`, type: 'muted', tab: -1 }]);
-        });
-        result.opa.warns?.forEach(w => {
-          setLogEntries(prev => [...prev, { id: Math.random().toString(36).slice(2), time: '', msg: `  • [경고] ${w.label}`, type: 'muted', tab: -1 }]);
-        });
-      }
 
       // 이슈 있고 첫 번째 시도면 자동 수정
       const hasIssues = !result.checkov.passed || !result.opa.passed;
@@ -420,7 +523,7 @@ export function PlanPage() {
         const fixLogId = Math.random().toString(36).slice(2);
         setLogEntries(prev => [...prev, { id: fixLogId, time: now(), msg: '이슈 자동 수정 중...', type: 'run', tab: -1 }]);
         try {
-          const fixRaw = await apiFetch<{ success: boolean; data: { files: Record<string, string> } }>('/documents/generate/terraform/fix', {
+          const fixRaw = await reportApiFetch<{ success: boolean; data: { files: Record<string, string> } }>('/documents/generate/terraform/fix', {
             method: 'POST',
             body: JSON.stringify({
               files: fileMap,
@@ -434,8 +537,10 @@ export function PlanPage() {
           setTfCodes(fixedFiles.map(f => f.code));
           updateLog(fixLogId, '코드 수정 완료 → 재검증 중...', 'ok');
           await runValidation(fixedFiles, fixedFiles.map(f => f.code), true);
-        } catch {
-          updateLog(fixLogId, '자동 수정 실패 — 수동으로 수정 후 재검증하세요', 'warn');
+        } catch (fixErr) {
+          const errMsg = fixErr instanceof Error ? fixErr.message : String(fixErr);
+          console.error('[TF FIX]', errMsg);
+          updateLog(fixLogId, `자동 수정 실패: ${errMsg}`, 'warn');
         }
       }
     } catch (err) {
@@ -448,6 +553,24 @@ export function PlanPage() {
     if (generatedTfFiles.length === 0) { setLogEntries([]); return; }
     setLogEntries([]);
     runValidation(generatedTfFiles, tfCodes);
+  }
+
+  /* ── terraform 코드 S3 자동 저장 ── */
+  function scheduleTfSave(updatedCodes: string[]) {
+    if (tfSaveRef.current) clearTimeout(tfSaveRef.current);
+    tfSaveRef.current = setTimeout(async () => {
+      if (!tfJobId || !ws?.id || generatedTfFiles.length === 0) return;
+      const filesMap: Record<string, string> = {};
+      generatedTfFiles.forEach((f, i) => { filesMap[f.name] = updatedCodes[i] ?? f.code; });
+      try {
+        await reportApiFetch('/documents/generate/terraform/save', {
+          method: 'PUT',
+          body: JSON.stringify({ workspaceId: ws.id, jobId: tfJobId, files: filesMap }),
+        });
+      } catch (e) {
+        console.error('[TF SAVE] 자동 저장 실패:', e);
+      }
+    }, 3000);
   }
 
   /* ── auto-resize textarea ── */
@@ -475,6 +598,7 @@ export function PlanPage() {
       if (docTimerRef.current) clearTimeout(docTimerRef.current);
       if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
       if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+      if (tfSaveRef.current) clearTimeout(tfSaveRef.current);
       validationTimersRef.current.forEach((t) => { clearTimeout(t); });
       const iframeDoc = iframeRef.current?.contentDocument;
       if (iframeDoc) {
@@ -488,19 +612,16 @@ export function PlanPage() {
   ══════════════════════════════ */
   function renderPagination() {
     if (totalDocPages <= 1) return null;
-    const range: (number | '…')[] = [];
-    for (let i = 1; i <= totalDocPages; i++) {
-      if (i === 1 || i === totalDocPages || Math.abs(i - docPage) <= 1) range.push(i);
-      else if (range[range.length - 1] !== '…') range.push('…');
-    }
+    const BLOCK = 5;
+    const blockStart = Math.floor((docPage - 1) / BLOCK) * BLOCK + 1;
+    const blockEnd = Math.min(blockStart + BLOCK - 1, totalDocPages);
     return (
       <div className="doc-pagination">
-        <button className="doc-page-btn" disabled={docPage === 1} onClick={() => setDocPage(docPage - 1)}>&lsaquo;</button>
-        {range.map((r, i) =>
-          r === '…' ? <span key={`e${i}`} className="doc-page-ellipsis">&hellip;</span>
-            : <button key={r} className={`doc-page-btn${r === docPage ? ' active' : ''}`} onClick={() => setDocPage(r)}>{r}</button>
-        )}
-        <button className="doc-page-btn" disabled={docPage === totalDocPages} onClick={() => setDocPage(docPage + 1)}>&rsaquo;</button>
+        <button className="doc-page-btn" disabled={blockStart === 1} onClick={() => setDocPage(blockStart - 1)}>&lsaquo;</button>
+        {Array.from({ length: blockEnd - blockStart + 1 }, (_, i) => blockStart + i).map(p => (
+          <button key={p} className={`doc-page-btn${p === docPage ? ' active' : ''}`} onClick={() => setDocPage(p)}>{p}</button>
+        ))}
+        <button className="doc-page-btn" disabled={blockEnd === totalDocPages} onClick={() => setDocPage(blockEnd + 1)}>&rsaquo;</button>
       </div>
     );
   }
@@ -565,7 +686,7 @@ export function PlanPage() {
           <div className="divider-v" />
           <div className="profile-info">
             <span className="profile-name">{session.name}</span>
-            <span className="profile-role">{session.role}</span>
+            <span className="profile-role">{session.position ?? session.role}</span>
           </div>
           <span className="company-name">{session.company.name}</span>
           <div className="divider-v" />
@@ -642,6 +763,10 @@ export function PlanPage() {
           <button className="plan-btn-cancel" onClick={() => navigate(-1)}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
             취소
+          </button>
+          <button className="plan-btn-delete" onClick={handleDelete} disabled={docState === 'loading'}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>
+            삭제
           </button>
           {lastSaved && <span className="auto-save-label">마지막 저장 {lastSaved}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
@@ -731,7 +856,9 @@ export function PlanPage() {
                     value={tfCodes[i]}
                     onChange={e => {
                       const val = e.target.value;
-                      setTfCodes(prev => prev.map((c, ci) => ci === i ? val : c));
+                      const updated = tfCodes.map((c, ci) => ci === i ? val : c);
+                      setTfCodes(updated);
+                      scheduleTfSave(updated);
                       autoResize(e.target);
                     }}
                     onKeyDown={handleTabKey}
@@ -862,7 +989,6 @@ export function PlanPage() {
           <div className="popup-search">
             <select className="doc-search-field" value={docSearchField} onChange={e => setDocSearchField(e.target.value as 'name' | 'author')}>
               <option value="name">제목</option>
-              <option value="author">작성자</option>
             </select>
             <input type="text" placeholder="검색어 입력" value={docSearchQ} onChange={e => setDocSearchQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') filterDocsAction(); }} />
             <button className="popup-search-btn" onClick={filterDocsAction}>검색</button>
@@ -870,7 +996,6 @@ export function PlanPage() {
           <div className="doc-list-header">
             <span className="doc-col-no">문서번호</span>
             <span className="doc-col-name">제목</span>
-            <span className="doc-col-author">작성자</span>
             <span className="doc-col-date">등록일</span>
           </div>
           <div className="popup-list">
@@ -878,9 +1003,8 @@ export function PlanPage() {
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>검색 결과가 없습니다.</div>
             ) : currentPageDocs.map(d => (
               <div key={d.id} className={`doc-popup-item${selectedDocNo === d.id ? ' selected' : ''}`} onClick={() => setSelectedDocNo(prev => prev === d.id ? null : d.id)}>
-                <div className="doc-item-no">{d.id}</div>
+                <div className="doc-item-no">{d.docNum || d.id.slice(0, 8)}</div>
                 <div className="doc-item-name">{d.name}</div>
-                <div className="doc-item-author">{d.author}</div>
                 <div className="doc-item-date">{d.date}</div>
               </div>
             ))}
@@ -970,7 +1094,10 @@ export function PlanPage() {
                   <div className="vd-section">
                     <div className="vd-section-title err">차단 항목</div>
                     {lastValidation.opa.blocks.map((b, i) => (
-                      <div key={i} className="vd-item err">{b.label}</div>
+                      <div key={i} className="vd-item err">
+                        <div className="vd-item-label">{b.label}</div>
+                        {b.detail && <div className="vd-item-detail">{b.detail}</div>}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -978,7 +1105,10 @@ export function PlanPage() {
                   <div className="vd-section">
                     <div className="vd-section-title warn">경고 항목</div>
                     {lastValidation.opa.warns.map((w, i) => (
-                      <div key={i} className="vd-item warn">{w.label}</div>
+                      <div key={i} className="vd-item warn">
+                        <div className="vd-item-label">{w.label}</div>
+                        {w.detail && <div className="vd-item-detail">{w.detail}</div>}
+                      </div>
                     ))}
                   </div>
                 )}

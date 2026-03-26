@@ -65,9 +65,11 @@
 .documents-page .doc-table td { height: 44px; padding: 0 14px; font-size: 12.5px; font-weight: 600; color: var(--text); vertical-align: middle; text-align: center; border: none; }
 
 /* 헤더 내 필터 */
-.th-filter { appearance: none; border: none; background: transparent; font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: 'Pretendard', sans-serif; cursor: pointer; outline: none; text-align: center; text-align-last: center; padding: 4px 0 4px 4px; width: auto; }
+.th-type { width: 90px; }
+.th-status { width: 90px; }
+.th-filter { appearance: none; border: none; background: transparent; font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: 'Pretendard', sans-serif; cursor: pointer; outline: none; text-align: center; text-align-last: center; padding: 4px 0 4px 4px; width: 100%; }
 .th-filter:focus { color: var(--mint); }
-.th-filter-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; width: auto; gap: 2px; }
+.th-filter-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
 .th-filter-wrap svg { width: 10px; height: 10px; color: var(--text-muted); pointer-events: none; flex-shrink: 0; }
 
 /* 체크박스 */
