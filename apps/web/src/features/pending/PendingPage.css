@@ -15,4 +15,7 @@
 /* ── 모바일 ── */
 @media (max-width: 768px) {
   .pending-page { min-width: 0; }
+  /* 문서번호 숨김 — 제목+작성자+날짜+상태 표시 */
+  .pending-page .td-docnum { display: none; }
+  .pending-page .doc-table th:nth-child(2) { display: none; }
 }

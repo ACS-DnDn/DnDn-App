@@ -53,6 +53,17 @@ export function PlanPage() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  /* ── 모바일 풀스크린 ── */
+  const [docFullscreen, setDocFullscreen] = useState(false);
+  const [tfFullscreen, setTfFullscreen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const reset = () => { if (!mq.matches) { setDocFullscreen(false); setTfFullscreen(false); } };
+    mq.addEventListener('change', reset);
+    return () => mq.removeEventListener('change', reset);
+  }, []);
+
   /* ── right panel state ── */
   const [tfState, setTfState] = useState<'blank' | 'loading' | 'ready'>('blank');
   const [tfTab, setTfTab] = useState(0);
@@ -778,7 +789,12 @@ export function PlanPage() {
           </div>
         </div>
 
-        <div className={`doc-editor${docState === 'ready' ? ' has-doc' : ''}`}>
+        <div className={`doc-editor${docState === 'ready' ? ' has-doc' : ''}${docFullscreen ? ' fullscreen' : ''}`}>
+          {docFullscreen && (
+            <button className="btn-fullscreen-close" onClick={() => setDocFullscreen(false)} aria-label="닫기">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            </button>
+          )}
           {docState === 'blank' && <div className="doc-blank" />}
 
           {docState === 'loading' && (
@@ -813,6 +829,12 @@ export function PlanPage() {
             />
           )}
         </div>
+        {docState === 'ready' && !docFullscreen && (
+          <button className="btn-expand-doc" onClick={() => setDocFullscreen(true)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            문서 크게 보기
+          </button>
+        )}
       </section>
 
       {/* ── 오른쪽: Terraform ── */}
@@ -841,7 +863,12 @@ export function PlanPage() {
         )}
 
         {tfState === 'ready' && (
-          <div className="tf-code-area">
+          <div className={`tf-code-area${tfFullscreen ? ' fullscreen' : ''}`}>
+            {tfFullscreen && (
+              <button className="btn-fullscreen-close" onClick={() => setTfFullscreen(false)} aria-label="닫기">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+              </button>
+            )}
             <div className="tf-tabs-bar">
               {(generatedTfFiles.length > 0 ? generatedTfFiles : TF_FILES).map((f, i) => (
                 <button key={f.name} className={`plan-tf-tab${tfTab === i ? ' active' : ''}`} onClick={() => setTfTab(i)}>{f.name}</button>
@@ -868,6 +895,12 @@ export function PlanPage() {
               ))}
             </div>
           </div>
+        )}
+        {tfState === 'ready' && !tfFullscreen && (
+          <button className="btn-expand-tf" onClick={() => setTfFullscreen(true)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            코드 크게 보기
+          </button>
         )}
 
         <div className="tf-statusbar">

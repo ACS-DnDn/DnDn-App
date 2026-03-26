@@ -110,8 +110,12 @@
   .documents-page { min-width: 0; }
   .page-header { padding: 14px 16px 12px; }
   .control-bar { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
-  .search-wrap { min-width: 0; max-width: 100%; flex: 1; }
-  .date-picker-wrap { flex-wrap: wrap; }
+  .ctrl-sep { display: none; }
+  .search-wrap { min-width: 0; max-width: 100%; flex: 1 1 100%; order: 1; }
+  .btn-search { order: 2; }
+  .date-picker-wrap { flex: 1 1 100%; order: 3; flex-wrap: nowrap; }
+  .date-display-field { flex: 1; width: auto; min-width: 0; }
+  .date-range-sep { flex-shrink: 0; }
   .table-wrap { padding: 10px 12px 0; margin: 10px 12px; }
   .documents-page .doc-table th { padding: 6px 8px; font-size: 11px; }
   .documents-page .doc-table td { padding: 0 8px; font-size: 11.5px; }
@@ -121,9 +125,12 @@
   .documents-page .doc-table th.td-check,
   .documents-page .doc-table th.th-type,
   .documents-page .doc-table th:nth-child(5) { display: none; }
-  .td-docnum { font-size: 10.5px; }
-  .td-date { font-size: 10.5px; }
-  .btn-read-action { font-size: 11px; padding: 6px 10px; }
+  .td-docnum { display: none; }
+  .documents-page .doc-table th:nth-child(2) { display: none; }
+  /* 남은 컬럼: 제목(auto) + 등록일(90px) + 상태(64px) */
+  .td-date { font-size: 10.5px; width: 90px; }
+  .th-status { width: 64px; }
+  .btn-read-action { font-size: 11px; padding: 6px 10px; order: 4; }
   .empty-state { padding: 48px 20px; }
   .pagination { gap: 0; }
   .page-btn { min-width: 30px; height: 30px; font-size: 13px; }
