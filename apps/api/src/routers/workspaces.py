@@ -1,5 +1,7 @@
 # apps/api/routers/workspaces.py
 
+import random
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
@@ -35,6 +37,16 @@ import logging
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
+
+_WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+
+
+def _generate_workspace_code(db: Session) -> str:
+    existing = {r[0] for r in db.query(Workspace.code).filter(Workspace.code.isnot(None)).all()}
+    while True:
+        code = "".join(random.choices(_WS_CODE_CHARS, k=3))
+        if code not in existing:
+            return code
 
 # 워크스페이스 생성 시 기본 OPA 인프라 정책
 DEFAULT_OPA_SETTINGS = [
@@ -317,6 +329,7 @@ def create_workspace(
         memo=req.memo,
         owner_id=current_user.id,
         opa_settings=DEFAULT_OPA_SETTINGS,
+        code=_generate_workspace_code(db),
     )
 
     db.add(ws)

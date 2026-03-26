@@ -40,6 +40,7 @@ _migrations = [
     ("documents", "auto_merge", "BOOLEAN"),
     ("documents", "deploy_log", "JSON"),
     ("companies", "created_at", "DATETIME"),
+    ("workspaces", "code", "VARCHAR(20)"),
 ]
 with engine.begin() as _conn:
     for _tbl, _col, _coltype in _migrations:
@@ -48,6 +49,22 @@ with engine.begin() as _conn:
             if _col not in existing:
                 _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
 del _insp, _migrations
+
+# 기존 워크스페이스에 code가 없으면 자동 백필
+import random as _random
+_WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+with engine.begin() as _conn:
+    _rows = _conn.execute(_sa_text("SELECT id FROM workspaces WHERE code IS NULL")).fetchall()
+    if _rows:
+        _existing = {r[0] for r in _conn.execute(_sa_text("SELECT code FROM workspaces WHERE code IS NOT NULL")).fetchall()}
+        for (_ws_id,) in _rows:
+            while True:
+                _code = "".join(_random.choices(_WS_CODE_CHARS, k=3))
+                if _code not in _existing:
+                    break
+            _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
+            _existing.add(_code)
+del _random, _WS_CODE_CHARS
 
 # 2. FastAPI 앱 초기화
 app = FastAPI(

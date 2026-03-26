@@ -201,7 +201,7 @@ class Workspace(Base):
     __tablename__ = "workspaces"
 
     id = Column(String(50), primary_key=True, default=generate_uuid)
-    code = Column(String(20), nullable=True)  # 문서번호용 워크스페이스 식별 코드 (예: "PROD")
+    code = Column(String(20), nullable=True, unique=True)  # 문서번호용 워크스페이스 식별 코드 (예: "A3K")
     alias = Column(String(100), nullable=False)  # 별칭 (예: "Production")
     acct_id = Column(String(12), nullable=False)  # AWS 계정 ID (12자리)
     github_org = Column(String(100), nullable=False)  # GitHub 조직명
