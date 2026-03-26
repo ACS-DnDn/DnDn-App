@@ -73,3 +73,21 @@ class CompanyResponse(BaseModel):
 
 class CompanyUpdateRequest(BaseModel):
     name: str | None = None
+
+
+# ── 슈퍼어드민 — 회사 등록 ─────────────────────────────────
+
+class AdminCompanyCreateRequest(BaseModel):
+    hrEmail: EmailStr
+    hrName: str
+
+
+class AdminCompanyResponse(BaseModel):
+    id: int
+    name: str
+    logoUrl: str | None
+    hrEmail: str | None = None
+    createdAt: str | None = None
+
+    class Config:
+        from_attributes = True
