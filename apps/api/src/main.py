@@ -6,6 +6,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from apps.api.src.database import engine
 from apps.api.src.models import Base
 from apps.api.src.routers import (
+    admin_companies,
     auth,
     dashboard,
     documents,
@@ -38,6 +39,7 @@ _migrations = [
     ("workspaces", "github_webhook_id", "INTEGER"),
     ("documents", "auto_merge", "BOOLEAN"),
     ("documents", "deploy_log", "JSON"),
+    ("companies", "created_at", "DATETIME"),
 ]
 with engine.begin() as _conn:
     for _tbl, _col, _coltype in _migrations:
@@ -87,6 +89,7 @@ api.include_router(workspaces.router)
 api.include_router(hr_users.router)
 api.include_router(hr_departments.router)
 api.include_router(hr_company.router)
+api.include_router(admin_companies.router)
 api.include_router(slack.router)
 app.include_router(api)
 

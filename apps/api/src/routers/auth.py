@@ -318,11 +318,17 @@ def auth_confirm_reset(req: ConfirmResetRequest):
 )
 def get_my_info(current_user: User = Depends(get_current_user)):
     """Cognito JWT를 검증하고 유저 및 소속 회사 정보를 반환한다."""
-    company_data = {"name": "소속 회사 없음", "logoUrl": ""}
-
-    if current_user.company:
-        company_data["name"] = current_user.company.name
-        company_data["logoUrl"] = current_user.company.logo_url or ""
+    company_data = None
+    if current_user.role == "superadmin":
+        # 슈퍼어드민은 회사 소속이 없음
+        company_data = {"name": "슈퍼어드민", "logoUrl": ""}
+    elif current_user.company:
+        company_data = {
+            "name": current_user.company.name,
+            "logoUrl": current_user.company.logo_url or "",
+        }
+    else:
+        company_data = {"name": "소속 회사 없음", "logoUrl": ""}
 
     created_at = None
     if current_user.created_at:

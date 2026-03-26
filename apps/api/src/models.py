@@ -47,6 +47,7 @@ class Company(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     logo_url = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # 역참조: 이 회사에 소속된 유저들
     users = relationship("User", back_populates="company")
