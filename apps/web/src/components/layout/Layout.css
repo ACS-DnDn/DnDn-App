@@ -143,6 +143,16 @@
 .main { padding-top: var(--nav-h); min-height: 100vh; }
 .main-inner { min-width: 0; width: 100%; }
 
+/* ── 모바일: TopNav 간소화 ── */
+@media (max-width: 768px) {
+  .topnav { padding: 0 12px; gap: 8px; }
+  .nav-title { display: none; }
+  .profile-info { display: none; }
+  .divider-v { display: none; }
+  .company-area { display: none; }
+  .ws-label { display: none; }
+}
+
 /* ── 데스크탑: 사이드바 항상 표시 ── */
 @media (min-width: 1024px) {
   .sidebar { transform: translateX(0); box-shadow: none; }
