@@ -5,11 +5,11 @@
 echo "==> dndn-api 포트 이름 추가"
 kubectl patch svc dndn-api -n dndn-api \
   --type='json' \
-  -p='[{"op":"replace","path":"/spec/ports/0/name","value":"http"}]'
+  -p='[{"op":"add","path":"/spec/ports/0/name","value":"http"}]'
 
 echo "==> dndn-report 포트 이름 추가"
 kubectl patch svc dndn-report -n dndn-report \
   --type='json' \
-  -p='[{"op":"replace","path":"/spec/ports/0/name","value":"http"}]'
+  -p='[{"op":"add","path":"/spec/ports/0/name","value":"http"}]'
 
 echo "완료"
