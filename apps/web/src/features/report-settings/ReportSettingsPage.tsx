@@ -9,7 +9,7 @@ import './ReportSettingsPage.css';
 
 /* ── 상수 ── */
 const PRESETS: Record<string, string> = { daily: '일일', weekly: '주간', monthly: '월간', quarterly: '분기' };
-const PRESET_NAMES: Record<string, string> = { daily: '일일보고서', weekly: '주간보고서', monthly: '월간보고서', quarterly: '분기보고서' };
+const PRESET_NAMES: Record<string, string> = { daily: '일일 인프라 활동 보고서', weekly: '주간 인프라 활동 보고서', monthly: '월간 인프라 활동 보고서', quarterly: '분기 인프라 활동 보고서' };
 const PRESET_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 /* ── 시간 목록 (30분 단위, 구글캘린더 스타일) ── */
@@ -380,7 +380,7 @@ export function ReportSettingsPage() {
   }
 
   async function saveSch() {
-    if (!schTitle.trim()) { showToast('보고서 이름을 입력해주세요.'); return; }
+    if (!schTitle.trim()) { showToast('보고서 제목을 입력해주세요.'); return; }
     if (!selectedPreset) { showToast('반복 주기를 선택해주세요.'); return; }
     if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
     const req = {
@@ -670,8 +670,8 @@ export function ReportSettingsPage() {
           </div>
           <div className="modal-form">
             <div className="mf-group">
-              <label className="mf-label">보고서 이름</label>
-              <input type="text" className="fi" value={schTitle} onChange={e => { setSchTitle(e.target.value); autoFilled.current = false; }} placeholder="주간보고서" style={{ width: '100%', boxSizing: 'border-box' }} />
+              <label className="mf-label">보고서 제목</label>
+              <input type="text" className="fi" value={schTitle} onChange={e => { setSchTitle(e.target.value); autoFilled.current = false; }} placeholder="주간 인프라 활동 보고서" style={{ width: '100%', boxSizing: 'border-box' }} />
             </div>
             <div className="mf-group">
               <label className="mf-label">반복 주기</label>

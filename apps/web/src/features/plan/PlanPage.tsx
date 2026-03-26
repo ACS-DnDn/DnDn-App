@@ -153,6 +153,13 @@ export function PlanPage() {
       }
       // 제목 로드
       if (doc.name) setNlTarget(doc.name);
+      // 결재선 복원
+      if (doc.approvalLine) {
+        const restored = doc.approvalLine
+          .filter(item => item.type !== '작성자' && item.userId)
+          .map(item => ({ id: item.userId!, name: item.name, rank: item.role, type: item.type }));
+        if (restored.length > 0) setApprovers(restored);
+      }
       // 배포 실패 이력 저장 (AI 재생성 시 참조)
       if (doc.deployLog && doc.deployLog.length > 0) setEditDeployLog(doc.deployLog);
     }).catch((err) => {

@@ -590,6 +590,7 @@ def get_document_detail(
             {
                 "seq": apv.seq,
                 "type": apv.type or "결재",
+                "userId": apv.user_id,
                 "name": apv.user.name if apv.user else "알수없음",
                 "role": apv.user.position if apv.user else "",
                 "status": apv.status,

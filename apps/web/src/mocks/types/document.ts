@@ -5,6 +5,7 @@ export type DocAction = 'approve' | 'rejected' | null;
 export interface ApprovalLineItem {
   seq: number;
   type: string;       // "작성자" | "결재" | "협조" | "참조"
+  userId?: string;
   name: string;
   role: string;
   status: string;     // "author" | "current" | "wait" | "approved" | "rejected"
