@@ -29,6 +29,7 @@ from apps.api.src.security.github_oauth import (
     register_webhook,
     GITHUB_WEBHOOK_SECRET,
 )
+from apps.api.src.routers.workspace_auth import _check_ws_member, _check_ws_leader
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -180,17 +181,11 @@ def get_opa_settings(
     """
     워크스페이스에 저장된 인프라 정책(OPA) 설정을 반환한다.
     인프라 정책 탭 진입 시 자동 호출.
+    같은 부서 구성원이면 조회 가능.
     """
-    # 1. 워크스페이스 존재 여부 확인 (404)
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
+    ws = _check_ws_member(db, workspace_id, current_user)
 
-    # 2. 소유자 권한 확인 (403)
-    if ws.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-
-    # 3. OPA 설정이 없으면 빈 배열 반환
+    # OPA 설정이 없으면 빈 배열 반환
     policies = ws.opa_settings if ws.opa_settings else []
 
     return SuccessResponse(data=OpaSettingsResponse(policies=policies))
@@ -212,17 +207,11 @@ def save_opa_settings(
     """
     인프라 정책(OPA) 설정 전체를 교체한다.
     저장 버튼 클릭 시 현재 상태 전체를 전송.
+    같은 부서 leader/admin만 변경 가능.
     """
-    # 1. 워크스페이스 존재 여부 확인 (404)
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
+    ws = _check_ws_leader(db, workspace_id, current_user)
 
-    # 2. 소유자 권한 확인 (403)
-    if ws.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-
-    # 3. policies 구조 검증 (400)
+    # policies 구조 검증 (400)
     if req.policies is None:
         raise HTTPException(status_code=400, detail="MISSING_POLICIES")
 

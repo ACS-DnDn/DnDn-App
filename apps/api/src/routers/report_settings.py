@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Workspace, ReportSettings
 from apps.api.src.routers.auth import get_current_user
+from apps.api.src.routers.workspace_auth import _check_ws_member, _check_ws_leader
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.report_settings import (
     EventSettingsRequest,
@@ -70,17 +71,7 @@ def _kst_to_cron(
     return f"cron({mm} {hh} {day_of_month} * ? *)"
 
 
-# ---------------------------------------------------------
-# 헬퍼: 워크스페이스 확인
-# ---------------------------------------------------------
-def _get_workspace(db: Session, workspace_id: str, current_user: User) -> Workspace:
-    """워크스페이스 존재 여부 확인 (404) + 소유자 권한 확인 (403)."""
-    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
-    if ws.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
-    return ws
+# _get_workspace 대신 workspace_auth 모듈의 _check_ws_member / _check_ws_leader 사용
 
 
 def _get_or_create_settings(db: Session, workspace_id: str) -> ReportSettings:
@@ -150,8 +141,9 @@ def get_report_settings(
     """
     현황 보고서 · 스케줄 목록 · 이벤트 설정을 한 번에 반환한다.
     페이지 최초 진입 시 자동 호출.
+    같은 부서 구성원이면 조회 가능.
     """
-    _get_workspace(db, workspaceId, current_user)
+    _check_ws_member(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
     # EventBridge Scheduler에서 이 워크스페이스의 스케줄 목록 조회
@@ -209,8 +201,9 @@ def create_schedule(
 ):
     """
     새로운 보고서 생성 스케줄을 EventBridge Scheduler에 추가한다.
+    같은 부서 leader/admin만 변경 가능.
     """
-    _get_workspace(db, workspaceId, current_user)
+    _check_ws_leader(db, workspaceId, current_user)
     _check_scheduler_config()
     _validate_schedule(req)
 
@@ -262,8 +255,9 @@ def update_schedule(
 ):
     """
     기존 스케줄을 수정한다.
+    같은 부서 leader/admin만 변경 가능.
     """
-    _get_workspace(db, workspaceId, current_user)
+    _check_ws_leader(db, workspaceId, current_user)
     _check_scheduler_config()
     _validate_schedule(req)
 
@@ -317,8 +311,9 @@ def delete_schedule(
 ):
     """
     스케줄을 삭제한다. 응답 본문 없음 (204).
+    같은 부서 leader/admin만 변경 가능.
     """
-    _get_workspace(db, workspaceId, current_user)
+    _check_ws_leader(db, workspaceId, current_user)
 
     name = _schedule_name(workspaceId, schedule_id)
     try:
@@ -347,8 +342,9 @@ def update_event_settings(
     """
     이벤트 보고서 유형별 ON/OFF 설정을 저장한다.
     변경된 항목만 포함해도 기존 설정과 병합된다.
+    같은 부서 leader/admin만 변경 가능.
     """
-    _get_workspace(db, workspaceId, current_user)
+    _check_ws_leader(db, workspaceId, current_user)
     settings = _get_or_create_settings(db, workspaceId)
 
     # 기존 설정과 병합 (새 dict 할당으로 SQLAlchemy 변경 감지 보장)
