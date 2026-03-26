@@ -213,6 +213,13 @@ export function ViewerPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [docFullscreen, setDocFullscreen] = useState(false);
 
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const reset = () => { if (!mq.matches) setDocFullscreen(false); };
+    mq.addEventListener('change', reset);
+    return () => mq.removeEventListener('change', reset);
+  }, []);
+
   if (docNotFound) return <Navigate to="/documents" replace />;
   if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
   if (!doc) return null;

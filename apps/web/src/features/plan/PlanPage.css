@@ -296,7 +296,7 @@ html:has(.plan-page) { overflow: hidden; }
 
 /* ── 모바일 ── */
 @media (max-width: 768px) {
-  .plan-page { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .plan-page { grid-template-columns: 1fr; height: auto; overflow: visible; padding-bottom: 60px; }
   html:has(.plan-page) { overflow: auto; }
 
   /* 패널 순서: 입력(좌) → 문서(중) → TF(우) */

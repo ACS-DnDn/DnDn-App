@@ -152,7 +152,6 @@
   .company-name { display: none; }
   .company-logo { display: none; }
   .ws-label { display: none; }
-  .profile-info { align-items: flex-end; }
   .profile-name { font-size: 13px; }
 }
 

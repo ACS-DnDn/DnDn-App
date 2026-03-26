@@ -57,6 +57,13 @@ export function PlanPage() {
   const [docFullscreen, setDocFullscreen] = useState(false);
   const [tfFullscreen, setTfFullscreen] = useState(false);
 
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const reset = () => { if (!mq.matches) { setDocFullscreen(false); setTfFullscreen(false); } };
+    mq.addEventListener('change', reset);
+    return () => mq.removeEventListener('change', reset);
+  }, []);
+
   /* ── right panel state ── */
   const [tfState, setTfState] = useState<'blank' | 'loading' | 'ready'>('blank');
   const [tfTab, setTfTab] = useState(0);
