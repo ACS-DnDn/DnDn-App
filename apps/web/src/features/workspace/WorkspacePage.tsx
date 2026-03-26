@@ -201,7 +201,6 @@ export function WorkspacePage() {
                 <div className="info-card aws-section">
                   <div className="info-card-header">AWS 연동</div>
                   <div className="info-row"><span className="info-label">계정 ID</span><span className="info-value">{account.acctId}</span></div>
-                  <div className="info-row"><span className="info-label">리전</span><span className="info-value">us-east-1</span></div>
                 </div>
 
                 {/* GitHub 연동 */}
