@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { apiFetch } from '@/services/api';
 import './MyPage.css';
@@ -42,20 +42,6 @@ export function MyPage() {
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (avatarUrl) URL.revokeObjectURL(avatarUrl);
-    setAvatarUrl(URL.createObjectURL(file));
-  };
-
-  useEffect(() => {
-    return () => { if (avatarUrl) URL.revokeObjectURL(avatarUrl); };
-  }, [avatarUrl]);
-
   // Slack 연동 상태 로드
   useEffect(() => {
     apiFetch<{ success: boolean; data: SlackStatus }>('/slack/status')
@@ -161,19 +147,13 @@ export function MyPage() {
       <div className="info-card profile-card">
         <div className="profile-section">
           <div className="avatar-wrap">
-            <div className="avatar" style={avatarUrl ? {} : session.company.logoUrl ? { background: 'var(--bg-alt)', border: '1px solid var(--border)' } : undefined}>
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-              ) : session.company.logoUrl ? (
+            <div className="avatar" style={session.company.logoUrl ? { background: 'var(--bg-alt)', border: '1px solid var(--border)' } : undefined}>
+              {session.company.logoUrl ? (
                 <img src={session.company.logoUrl} alt="" style={{ width: 52, height: 52, objectFit: 'contain' }} />
               ) : (
                 <span>{session.name.charAt(0)}</span>
               )}
             </div>
-            <button className="avatar-edit-btn" onClick={() => fileInputRef.current?.click()} title="프로필 이미지 변경">
-              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2.5l2 2L5 11H3V9l6.5-6.5z"/></svg>
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
           </div>
           <div className="banner-info">
             <div className="banner-name-row">
