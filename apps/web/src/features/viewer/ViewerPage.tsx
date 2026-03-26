@@ -158,8 +158,10 @@ export function ViewerPage() {
           const link = document.createElement('a');
           link.href = blobUrl;
           link.download = a.name;
+          document.body.appendChild(link);
           link.click();
-          URL.revokeObjectURL(blobUrl);
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
         } else {
           const url = await getAttachmentDownloadUrl(doc.id, a.id);
           window.open(url, '_blank');
