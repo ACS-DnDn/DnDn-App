@@ -130,9 +130,13 @@ export function ViewerPage() {
   useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
 
+  const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+
   /* 토스트 */
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revokeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => { clearTimeout(revokeTimer.current); }, []);
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     clearTimeout(toastTimer.current);
@@ -161,7 +165,7 @@ export function ViewerPage() {
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          revokeTimer.current = setTimeout(() => URL.revokeObjectURL(blobUrl), DOWNLOAD_URL_REVOKE_DELAY_MS);
         } else {
           const url = await getAttachmentDownloadUrl(doc.id, a.id);
           window.open(url, '_blank');
