@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
+import { useSession } from '@/hooks/useSession';
 import { getReportSettings, createSchedule, updateSchedule, deleteSchedule, updateEventSettings, createSummaryReport } from '@/services/report.service';
 import { getWorkspaces } from '@/services/workspace.service';
 import type { Schedule, SchedulePreset, EventSettingsKey } from '@/mocks';
@@ -158,6 +159,8 @@ function toLocalDateTimeInput(d: Date): string {
 
 /* ── 컴포넌트 ── */
 export function ReportSettingsPage() {
+  const session = useSession();
+  const isLeader = session.auth === 'leader';
   const [params, setParams] = useSearchParams();
   const section = params.get('section') === 'events' ? 'events' : 'summary';
   const setSection = (s: 'summary' | 'events') => setParams({ section: s });
@@ -564,7 +567,7 @@ export function ReportSettingsPage() {
                   <span className="rpt-card-title">스케줄 관리</span>
                   <p className="rpt-card-desc">주기적으로 자동 생성할 보고서 스케줄을 등록합니다</p>
                 </div>
-                <button className="btn-add" onClick={() => openSchModal()}>+ 추가</button>
+                {isLeader && <button className="btn-add" onClick={() => openSchModal()}>+ 추가</button>}
               </div>
             </div>
 
@@ -581,14 +584,16 @@ export function ReportSettingsPage() {
                       {s.title} <span className="sch-interval">{PRESETS[s.preset]}</span>
                     </span>
                     <span className="sch-meta">다음: {sNext ? fmtDate(sNext) : '—'}</span>
-                    <div className="sch-actions">
-                      <button className="sch-btn edit" title="편집" onClick={() => openSchModal(s.id)}>
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M11.5 2.5l2 2L5 13H3v-2z" /><path d="M9.5 4.5l2 2" /></svg>
-                      </button>
-                      <button className="sch-btn del" title="삭제" onClick={() => delSchedule(s.id)}>
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" /></svg>
-                      </button>
-                    </div>
+                    {isLeader && (
+                      <div className="sch-actions">
+                        <button className="sch-btn edit" title="편집" onClick={() => openSchModal(s.id)}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M11.5 2.5l2 2L5 13H3v-2z" /><path d="M9.5 4.5l2 2" /></svg>
+                        </button>
+                        <button className="sch-btn del" title="삭제" onClick={() => delSchedule(s.id)}>
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" /></svg>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -613,7 +618,7 @@ export function ReportSettingsPage() {
                   } catch {
                     showToast('설정 저장 중 오류가 발생했습니다.');
                   }
-                }} disabled={settingsLoading || settingsError}>설정 저장</button>
+                }} disabled={!isLeader || settingsLoading || settingsError}>설정 저장</button>
               </div>
             </div>
 
@@ -636,7 +641,7 @@ export function ReportSettingsPage() {
                             <span className="ei-label">{item.label}<span className="ei-svc">{item.svc}</span></span>
                             <div className="ei-right" onClick={e => e.stopPropagation()}>
                               <label className="rpt-sw">
-                                <input type="checkbox" checked={evtSettings[item.key] !== false} onChange={() => toggleEvt(item.key)} disabled={settingsLoading || settingsError} />
+                                <input type="checkbox" checked={evtSettings[item.key] !== false} onChange={() => toggleEvt(item.key)} disabled={!isLeader || settingsLoading || settingsError} />
                                 <div className="tr" /><div className="kn" />
                               </label>
                             </div>

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from apps.api.src.database import get_db
 from apps.api.src.models import User, Workspace
 from apps.api.src.routers.auth import get_current_user
+from apps.api.src.routers.workspace_auth import _check_ws_member
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.report_settings import (
     SummaryCreateRequest,
@@ -77,13 +78,14 @@ def create_summary_report(
     - 내부 Lambda(스케줄 트리거): X-Internal-Key 인증, 소유자 확인 생략
     Worker가 SQS 메시지를 수신하여 비동기로 보고서를 생성한다.
     """
-    ws = db.query(Workspace).filter(Workspace.id == workspaceId).first()
-    if not ws:
-        raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
-
-    # 일반 사용자 호출 시 소유자 권한 확인
-    if caller is not None and ws.owner_id != caller.id:
-        raise HTTPException(status_code=403, detail="FORBIDDEN")
+    # 일반 사용자: 같은 부서 구성원이면 보고서 생성 가능
+    # 내부 Lambda: caller=None → 소속 확인 생략
+    if caller is not None:
+        ws = _check_ws_member(db, workspaceId, caller)
+    else:
+        ws = db.query(Workspace).filter(Workspace.id == workspaceId).first()
+        if not ws:
+            raise HTTPException(status_code=404, detail="WORKSPACE_NOT_FOUND")
 
     if not req.title or not req.title.strip():
         raise HTTPException(status_code=400, detail="BAD_REQUEST")
