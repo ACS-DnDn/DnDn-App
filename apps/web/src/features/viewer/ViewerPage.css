@@ -1,3 +1,9 @@
+/* ── Toast ── */
+.toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-20px); padding: 12px 22px; border-radius: 10px; font-size: 13.5px; font-weight: 600; font-family: Pretendard, sans-serif; z-index: 9999; opacity: 0; pointer-events: none; transition: all .25s ease; box-shadow: 0 4px 20px rgba(0,0,0,.12); }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.toast.info { background: #e8f4fd; color: #1565c0; border: 1px solid #90caf9; }
+:root.dark .toast.info { background: rgba(100,149,237,.15); color: #90caf9; border-color: rgba(100,149,237,.3); }
+
 /* ── ViewerPage 2-panel layout ── */
 .viewer-page { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - var(--nav-h)); overflow: hidden; }
 
