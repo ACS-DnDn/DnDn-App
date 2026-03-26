@@ -295,8 +295,9 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
     # HTML 저장 → {workspace_id}/reports/{doc_id}.html
     html_key = save_report_html(doc_id, html, workspace_id)
 
-    # HTML에서 제목 추출
-    title = _extract_title_from_html(html, doc_id)
+    # HTML에서 제목 추출 (WEEKLY는 사용자 입력 제목을 fallback으로 사용)
+    meta_title = canonical.get("meta", {}).get("title") or doc_id
+    title = _extract_title_from_html(html, meta_title)
 
     created = False
     db = SessionLocal()
