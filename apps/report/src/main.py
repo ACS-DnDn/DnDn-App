@@ -52,13 +52,31 @@ logger = logging.getLogger(__name__)
 # 테이블 자동 생성 (Attachment 등 신규 모델 반영)
 Base.metadata.create_all(bind=engine)
 
-# ── 문서번호 타입 매핑 ──────────────────────────────────────
+# 기존 테이블에 누락된 컬럼 자동 추가 (create_all은 새 컬럼을 추가하지 않으므로)
+from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+_insp = _sa_inspect(engine)
+_migrations = [
+    ("workspaces", "code", "VARCHAR(20)"),
+]
+with engine.begin() as _conn:
+    for _tbl, _col, _coltype in _migrations:
+        if _tbl in _insp.get_table_names():
+            existing_cols = [c["name"] for c in _insp.get_columns(_tbl)]
+            if _col not in existing_cols:
+                _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+del _insp, _migrations
+
+# ── 문서번호 타입 매핑 (API와 동일) ─────────────────────────
 DOC_TYPE_CODE = {
     "계획서": "PLN",
     "이벤트보고서": "EVT",
-    "헬스이벤트보고서": "RPT",
+    "헬스이벤트보고서": "EVT",
     "주간보고서": "RPT",
 }
+
+# API와 동일하게 KST 기준 연도 사용
+from datetime import timedelta
+KST = timezone(timedelta(hours=9))
 
 
 def _next_doc_num(db: Session, doc_type: str, workspace_id: str | None = None) -> str:
@@ -69,7 +87,7 @@ def _next_doc_num(db: Session, doc_type: str, workspace_id: str | None = None) -
     from sqlalchemy import cast, Integer
 
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
-    year = datetime.now(timezone.utc).year
+    year = datetime.now(KST).year
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
     wscode = (ws.code or "WS") if ws else "WS"
     prefix = f"{year}-{wscode}-{code}-"

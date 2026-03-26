@@ -958,6 +958,10 @@ def presign_upload(
     current_user: User = Depends(get_current_user),
 ):
     """S3 presigned PUT URL을 발급한다. 프론트에서 이 URL로 직접 업로드."""
+    # Path Traversal 방지: 파일명에 경로 구분자 포함 차단
+    if any(c in fileName for c in ("../", "/", "\\", "\x00")):
+        raise HTTPException(status_code=400, detail="INVALID_FILENAME")
+
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
@@ -968,7 +972,8 @@ def presign_upload(
 
     attachment_id = str(__import__("uuid").uuid4())
     workspace_id = doc.workspace_id or "default"
-    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{fileName}"
+    safe_name = os.path.basename(fileName)
+    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{safe_name}"
 
     # presigned PUT URL 생성
     s3 = _get_s3_client()

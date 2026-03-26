@@ -64,6 +64,16 @@ with engine.begin() as _conn:
                     break
             _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
             _existing.add(_code)
+    # 백필 완료 후 unique index 생성 (ALTER TABLE ADD COLUMN은 unique 제약을 만들지 않으므로)
+    _idx_exists = _conn.execute(_sa_text(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workspaces' "
+        "AND INDEX_NAME = 'idx_workspaces_code_unique'"
+    )).scalar()
+    if not _idx_exists:
+        _conn.execute(_sa_text(
+            "CREATE UNIQUE INDEX idx_workspaces_code_unique ON workspaces(code)"
+        ))
 del _random, _WS_CODE_CHARS
 
 # 2. FastAPI 앱 초기화

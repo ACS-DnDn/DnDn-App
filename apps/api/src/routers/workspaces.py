@@ -41,12 +41,16 @@ router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 _WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
 
 
+_MAX_CODE_ATTEMPTS = 100
+
+
 def _generate_workspace_code(db: Session) -> str:
     existing = {r[0] for r in db.query(Workspace.code).filter(Workspace.code.isnot(None)).all()}
-    while True:
+    for _ in range(_MAX_CODE_ATTEMPTS):
         code = "".join(random.choices(_WS_CODE_CHARS, k=3))
         if code not in existing:
             return code
+    raise HTTPException(status_code=503, detail="워크스페이스 코드 공간이 부족합니다.")
 
 # 워크스페이스 생성 시 기본 OPA 인프라 정책
 DEFAULT_OPA_SETTINGS = [
@@ -317,24 +321,33 @@ def create_workspace(
     if existing:
         raise HTTPException(status_code=409, detail="CONFLICT")
 
-    # 3. 워크스페이스 생성 (기본 OPA 정책 포함)
-    ws = Workspace(
-        alias=req.alias,
-        acct_id=req.acctId,
-        github_org=req.githubOrg,
-        repo=req.repo,
-        path=req.path,
-        branch=req.branch,
-        icon=req.icon,
-        memo=req.memo,
-        owner_id=current_user.id,
-        opa_settings=DEFAULT_OPA_SETTINGS,
-        code=_generate_workspace_code(db),
-    )
+    # 3. 워크스페이스 생성 (기본 OPA 정책 포함, 코드 중복 시 재시도)
+    from sqlalchemy.exc import IntegrityError as _IntegrityError
 
-    db.add(ws)
-    db.commit()
-    db.refresh(ws)
+    for _attempt in range(3):
+        ws = Workspace(
+            alias=req.alias,
+            acct_id=req.acctId,
+            github_org=req.githubOrg,
+            repo=req.repo,
+            path=req.path,
+            branch=req.branch,
+            icon=req.icon,
+            memo=req.memo,
+            owner_id=current_user.id,
+            opa_settings=DEFAULT_OPA_SETTINGS,
+            code=_generate_workspace_code(db),
+        )
+
+        db.add(ws)
+        try:
+            db.commit()
+            db.refresh(ws)
+            break
+        except _IntegrityError:
+            db.rollback()
+            if _attempt == 2:
+                raise HTTPException(status_code=503, detail="워크스페이스 코드 생성 실패")
 
     # GitHub webhook 자동 등록 (best-effort)
     if current_user.github_access_token and GITHUB_WEBHOOK_SECRET:
