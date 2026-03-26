@@ -147,8 +147,8 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
-# /metrics 엔드포인트
-app.mount("/metrics", make_asgi_app())
+# /metrics 엔드포인트 (trailing slash 포함 마운트로 307 리다이렉트 방지)
+app.mount("/metrics/", make_asgi_app())
 
 
 def _run_work_plan(job_id: str, req: WorkPlanRequest, ctx: dict):

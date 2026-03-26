@@ -107,8 +107,8 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
-# /metrics 엔드포인트
-app.mount("/metrics", make_asgi_app())
+# /metrics 엔드포인트 (trailing slash 포함 마운트로 307 리다이렉트 방지)
+app.mount("/metrics/", make_asgi_app())
 
 # 4. 라우터 등록 — /api prefix 아래에 묶음
 #    프론트엔드가 /api/auth/login 등으로 호출하고,
