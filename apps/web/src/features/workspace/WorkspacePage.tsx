@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { getWorkspaces, getOpaSettings, saveOpaSettings } from '@/services/workspace.service';
@@ -323,7 +324,7 @@ export function WorkspacePage() {
       )}
 
       {/* 토스트 */}
-      {toast && <div className={`toast ${toast.type} show`}>{toast.msg}</div>}
+      {toast && createPortal(<div className={`toast ${toast.type} show`}>{toast.msg}</div>, document.body)}
 
     </div>
   );

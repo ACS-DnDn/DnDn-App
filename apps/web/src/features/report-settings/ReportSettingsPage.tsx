@@ -457,7 +457,7 @@ export function ReportSettingsPage() {
 
   return (
     <div className="rpt-page">
-      <div className={`rpt-toast${toast ? ' show' : ''}`}>{toast}</div>
+      {createPortal(<div className={`rpt-toast${toast ? ' show' : ''}`}>{toast}</div>, document.body)}
 
       <div className="page-inner">
         {/* 섹션 탭 */}
