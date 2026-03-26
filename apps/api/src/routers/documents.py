@@ -423,7 +423,7 @@ def get_documents(
         items.append(
             {
                 "id": str(doc.id),
-                "docNum": doc.doc_num or str(doc.id)[:8],
+                "docNum": doc.doc_num or "",
                 "name": doc.title,
                 "author": doc.author.name if doc.author else "DnDn Agent",
                 "date": _to_kst_str(doc.created_at),
@@ -594,7 +594,7 @@ def get_document_detail(
             db.query(Document).filter(Document.id.in_(doc.ref_doc_ids)).all()
         )
         ref_docs = [
-            {"id": r.id, "docNum": r.doc_num or str(r.id)[:8], "title": r.title, "type": r.type} for r in ref_doc_records
+            {"id": r.id, "docNum": r.doc_num or "", "title": r.title, "type": r.type} for r in ref_doc_records
         ]
 
     # 첨부파일 목록
@@ -647,7 +647,7 @@ def get_document_detail(
     return SuccessResponse(
         data=DocumentDetailResponse(
             id=str(doc.id),
-            docNum=doc.doc_num or str(doc.id)[:8],
+            docNum=doc.doc_num or "",
             title=doc.title,
             type=doc.type,
             status=doc.status,
