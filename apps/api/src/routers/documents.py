@@ -498,10 +498,11 @@ def submit_document(
         doc.auto_merge = None
         doc.deploy_log = None
 
-    # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
+    # 상신 시 doc_num이 없으면 채번 + 등록일(created_at) 최신화
     need_html_update = False
     if not req.isDraft and not doc.doc_num:
         doc.doc_num = _next_doc_num(db, doc.type or "계획서", doc.workspace_id)
+        doc.created_at = datetime.now(timezone.utc)
         need_html_update = bool(doc.html_key)
 
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
@@ -565,7 +566,7 @@ def submit_document(
     # 9. 명세서에 맞는 응답 반환
     return SuccessResponse(
         data=DocumentSubmitResponse(
-            id=str(doc.id), docNum=doc.doc_num or str(doc.id)[:8], status=doc.status
+            id=str(doc.id), docNum=doc.doc_num or "", status=doc.status
         )
     )
 

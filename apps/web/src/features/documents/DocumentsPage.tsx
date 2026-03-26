@@ -419,7 +419,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.length > 0 ? pageDocs.map(doc => {
-                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
+                const docNum = doc.docNum || '-';
                 return (
                   <tr
                     key={doc.id}
