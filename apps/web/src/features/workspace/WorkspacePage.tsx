@@ -226,13 +226,14 @@ export function WorkspacePage() {
                 <div className="opa-desc">생성된 Terraform 코드를 정적 분석하여 자동 검증합니다</div>
               </div>
               <button className="btn-save-opa" onClick={() => {
+                if (session.auth !== 'leader') { showToast('권한이 없습니다.'); return; }
                 if (!account) return;
                 setIsSaving(true);
                 saveOpaSettings(account.id, opaData)
                   .then(() => showToast('인프라 정책 설정이 저장되었습니다.', 'ok'))
                   .catch(() => showToast('저장에 실패했습니다.', 'warn'))
                   .finally(() => setIsSaving(false));
-              }} disabled={session.auth !== 'leader' || isSaving}>
+              }} disabled={isSaving}>
                 {isSaving ? '저장 중...' : '설정 저장'}
               </button>
             </div>
@@ -255,6 +256,7 @@ export function WorkspacePage() {
                         item={item}
                         shut={closedItems.has(item.key)}
                         readOnly={session.auth !== 'leader'}
+                        onUnauthorized={() => showToast('권한이 없습니다.')}
                         onToggleShut={() => setClosedItems(prev => {
                           const next = new Set(prev);
                           next.has(item.key) ? next.delete(item.key) : next.add(item.key);
@@ -333,6 +335,7 @@ interface PolicyItemProps {
   item: OpaItem;
   shut: boolean;
   readOnly?: boolean;
+  onUnauthorized?: () => void;
   onToggleShut: () => void;
   onToggleSwitch: () => void;
   onSetSeverity: (sev: OpaSeverity) => void;
@@ -342,7 +345,7 @@ interface PolicyItemProps {
   onToggleSvc: (svc: string) => void;
 }
 
-function PolicyItem({ item, shut, readOnly, onToggleShut, onToggleSwitch, onSetSeverity, onDelTag, onAddTag, onUpdateParam, onToggleSvc }: PolicyItemProps) {
+function PolicyItem({ item, shut, readOnly, onUnauthorized, onToggleShut, onToggleSwitch, onSetSeverity, onDelTag, onAddTag, onUpdateParam, onToggleSvc }: PolicyItemProps) {
   const [addingField, setAddingField] = useState<'params' | 'exceptions' | null>(null);
   const [inputVal, setInputVal] = useState('');
 
@@ -359,7 +362,7 @@ function PolicyItem({ item, shut, readOnly, onToggleShut, onToggleSwitch, onSetS
         <span className="ei-label">{item.label}</span>
         <div className="ei-right">
           <span className={`sev sev-${item.severity}`}>{item.severity === 'block' ? 'BLOCK' : 'WARN'}</span>
-          <label className="sw" onClick={(e) => e.stopPropagation()}>
+          <label className="sw" onClick={(e) => { e.stopPropagation(); if (readOnly && onUnauthorized) onUnauthorized(); }}>
             <input type="checkbox" checked={item.on} onChange={onToggleSwitch} disabled={readOnly} />
             <div className="tr" /><div className="kn" />
           </label>

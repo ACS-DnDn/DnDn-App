@@ -611,6 +611,7 @@ export function ReportSettingsPage() {
                   <p className="rpt-card-desc">AWS 이벤트 발생 시 자동으로 보고서를 생성합니다</p>
                 </div>
                 <button className="btn-save" onClick={async () => {
+                  if (!isLeader) { showToast('권한이 없습니다.'); return; }
                   if (!workspaceId) return;
                   try {
                     await updateEventSettings(workspaceId, evtSettings);
@@ -618,7 +619,7 @@ export function ReportSettingsPage() {
                   } catch {
                     showToast('설정 저장 중 오류가 발생했습니다.');
                   }
-                }} disabled={!isLeader || settingsLoading || settingsError}>설정 저장</button>
+                }} disabled={settingsLoading || settingsError}>설정 저장</button>
               </div>
             </div>
 
@@ -640,7 +641,7 @@ export function ReportSettingsPage() {
                           <div className="ei-head" onClick={() => toggleDesc(item.key)}>
                             <span className="ei-label">{item.label}<span className="ei-svc">{item.svc}</span></span>
                             <div className="ei-right" onClick={e => e.stopPropagation()}>
-                              <label className="rpt-sw">
+                              <label className="rpt-sw" onClick={() => { if (!isLeader) showToast('권한이 없습니다.'); }}>
                                 <input type="checkbox" checked={evtSettings[item.key] !== false} onChange={() => toggleEvt(item.key)} disabled={!isLeader || settingsLoading || settingsError} />
                                 <div className="tr" /><div className="kn" />
                               </label>
