@@ -281,3 +281,22 @@ html:has(.plan-page) { overflow: hidden; }
 .vd-item.warn { background: rgba(252,196,25,0.08); color: #e67700; border: 1px solid rgba(252,196,25,0.2); }
 .vd-item-label { font-weight: 600; }
 .vd-item-detail { font-size: 11px; margin-top: 2px; opacity: 0.85; font-weight: 400; }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .plan-page { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  html:has(.plan-page) { overflow: auto; }
+  .plan-left { overflow-y: visible; border-right: none; border-bottom: 1px solid var(--border); }
+  .plan-center { overflow: visible; border-right: none; border-bottom: 1px solid var(--border); min-height: 60vh; }
+  .plan-right { min-height: 300px; max-height: 500px; }
+  .lsec { padding: 12px 12px; }
+  .approver-table-wrap { max-height: 100px; min-height: 100px; }
+  .nl-textarea { min-height: 80px; }
+  .center-topbar { flex-wrap: wrap; }
+  .tf-statusbar { height: 140px; }
+  .plan-popup.popup-doc { width: min(560px, 92vw); height: min(480px, 80vh); }
+  .apv-popup-body { flex-direction: column; height: auto; }
+  .apv-left { width: 100%; max-height: 200px; }
+  .apv-mid { flex-direction: row; justify-content: center; padding: 8px 0; }
+  .vd-popup { width: min(560px, 92vw); }
+}

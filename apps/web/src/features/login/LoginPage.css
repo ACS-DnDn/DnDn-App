@@ -493,3 +493,26 @@ input[type="password"]::-ms-clear { display: none; }
   from { opacity: 0; transform: translateY(20px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .login-logo-obj { height: 110px; }
+  .logo-wrap { margin-bottom: 48px; }
+  .glow { width: 100%; height: 400px; }
+  .login-container .field { margin-bottom: 32px; }
+  .login-container .field-input { font-size: 15px; }
+  .btn-login { font-size: 17px; padding: 14px 0; }
+  .version { bottom: 16px; left: 16px; }
+  .service-links { bottom: 16px; right: 16px; gap: 14px; }
+  .mode-toggle { top: 16px; right: 16px; }
+  .pw-modal { padding: 28px 20px 24px; }
+  .pw-rules-tooltip {
+    position: fixed;
+    left: 24px; right: 24px;
+    bottom: 24px; top: auto;
+    transform: none;
+    min-width: 0;
+  }
+  .pw-rules-tooltip::before,
+  .pw-rules-tooltip::after { display: none; }
+}

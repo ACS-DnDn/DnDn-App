@@ -271,3 +271,17 @@ pre.tf-pre { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,2
 .ref-doc-modal-close:hover { background: var(--red-soft); color: var(--red); border-color: var(--red); }
 .ref-doc-modal-body { flex: 1; overflow: hidden; padding: 0; }
 .ref-doc-iframe { width: 100%; height: 100%; border: none; }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .viewer-page { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .doc-main { overflow: visible; }
+  .doc-scroll { padding: 20px 16px; }
+  .doc-toolbar { padding: 10px 16px; flex-wrap: wrap; gap: 6px; }
+  .viewer-page .doc-title { font-size: 20px; }
+  .doc-meta-row { gap: 10px; }
+  .doc-panel { border-left: none; border-top: 1px solid var(--border); }
+  .approval-scroll { max-height: 300px; }
+  .sidebar-actions { padding: 14px 16px; }
+  .report-actions { padding: 14px 16px; }
+}

@@ -122,3 +122,21 @@
 .btn-next:hover { opacity: .85; }
 
 @keyframes fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .wsc-page { padding: 24px 16px; }
+  .wizard { padding: 28px 20px; }
+  .page-title { font-size: 22px; }
+  .step-section-title { font-size: 17px; }
+  .step-section-desc { margin-bottom: 28px; }
+  .step-bar { margin-bottom: 32px; }
+  .field-row { grid-template-columns: 1fr; }
+  .seq-list { padding-left: 28px; gap: 36px; }
+  .seq-step::before { left: -36px; }
+  .seq-step:not(:last-child)::after { left: -24px; }
+  .policy-detail { width: calc(100vw - 48px); }
+  .profile-header { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .wizard-foot { flex-wrap: wrap; gap: 10px; }
+  .btn-wiz { padding: 10px 22px; font-size: 14px; }
+}
