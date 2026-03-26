@@ -180,6 +180,8 @@ export function ReportSettingsPage() {
 
   const [rangeStart, setRangeStart] = useState<Date | null>(() => initRange(7).start);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(() => initRange(7).end);
+  const [reportTitle, setReportTitle] = useState('');
+  const reportTitleEdited = useRef(false);
   const [startTime, setStartTime] = useState('00:00');
   const [endTime, setEndTime] = useState('00:00');
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
@@ -269,7 +271,11 @@ export function ReportSettingsPage() {
   }
   const summaryStart = rangeStart ? toLocalDateTimeInput(applyTime(rangeStart, startTime)) : '';
   const summaryEnd = rangeEnd ? toLocalDateTimeInput(applyTime(rangeEnd, endTime)) : '';
-  const reportTitle = rangeStart && rangeEnd ? `인프라 활동 보고서 ${dayStr(rangeStart)} ~ ${dayStr(rangeEnd)}` : '인프라 활동 보고서';
+  // 날짜 변경 시 사용자가 직접 수정하지 않았으면 기본 제목 자동 설정
+  useEffect(() => {
+    if (reportTitleEdited.current) return;
+    setReportTitle(rangeStart && rangeEnd ? `인프라 활동 보고서 ${dayStr(rangeStart)} ~ ${dayStr(rangeEnd)}` : '인프라 활동 보고서');
+  }, [rangeStart, rangeEnd]);
 
   /* 캘린더 그리드 생성 */
   function buildCalDays(base: Date): (Date | null)[] {
@@ -431,6 +437,7 @@ export function ReportSettingsPage() {
 
   /* 현황 보고서 생성 */
   async function generateNow() {
+    if (!reportTitle.trim()) { showToast('보고서 제목을 입력해주세요.'); return; }
     if (!summaryStart || !summaryEnd) { showToast('기간을 선택해주세요.'); return; }
     if (summaryStart > summaryEnd) { showToast('시작일시가 종료일시보다 클 수 없습니다.'); return; }
     if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
@@ -484,7 +491,7 @@ export function ReportSettingsPage() {
             <div className="card-form">
               <div className="fg">
                 <label className="fg-label">보고서 제목</label>
-                <input type="text" className="fi-title" value={reportTitle} readOnly placeholder="인프라 활동 보고서" />
+                <input type="text" className="fi-title" value={reportTitle} onChange={e => { setReportTitle(e.target.value); reportTitleEdited.current = true; }} placeholder="인프라 활동 보고서" />
               </div>
               <div className="fg">
                 <label className="fg-label">수집 기간</label>
