@@ -211,6 +211,7 @@ export function ViewerPage() {
   const [autoMerge, setAutoMerge] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [docFullscreen, setDocFullscreen] = useState(false);
 
   if (docNotFound) return <Navigate to="/documents" replace />;
   if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
@@ -271,7 +272,7 @@ export function ViewerPage() {
     <>
     <div className="viewer-page">
       {/* ── 문서 본문 ── */}
-      <main className="doc-main">
+      <main className={`doc-main${docFullscreen ? ' fullscreen' : ''}`}>
         <div className="doc-toolbar">
           <button className="btn-back" onClick={() => navigate(-1)} title="뒤로 가기">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 2L4 8l6 6"/></svg>
@@ -297,6 +298,16 @@ export function ViewerPage() {
             <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13 }}>문서 내용을 불러올 수 없습니다.</div>
           )}
         </div>
+        {docFullscreen && (
+          <button className="btn-fullscreen-close" onClick={() => setDocFullscreen(false)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            닫기
+          </button>
+        )}
+        <button className="btn-expand-doc" onClick={() => setDocFullscreen(true)}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 10v4h4M14 6V2h-4M2 10l4-4M14 6l-4 4"/></svg>
+          문서 크게 보기
+        </button>
       </main>
 
       {/* ── 우측 패널 ── */}

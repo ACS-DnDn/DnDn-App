@@ -282,18 +282,85 @@ html:has(.plan-page) { overflow: hidden; }
 .vd-item-label { font-weight: 600; }
 .vd-item-detail { font-size: 11px; margin-top: 2px; opacity: 0.85; font-weight: 400; }
 
+/* 모바일 전용 버튼 — 데스크톱에서는 숨김 */
+.btn-expand-doc, .btn-expand-tf, .btn-fullscreen-close { display: none; }
+.btn-expand-doc, .btn-expand-tf {
+  align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 10px; margin: 0;
+  border: 1px solid var(--border-med); border-radius: 8px;
+  background: var(--bg-card); color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  font-family: Pretendard, sans-serif;
+}
+.btn-expand-doc:hover, .btn-expand-tf:hover { border-color: var(--mint-border); color: var(--mint); }
+
 /* ── 모바일 ── */
 @media (max-width: 768px) {
   .plan-page { grid-template-columns: 1fr; height: auto; overflow: visible; }
   html:has(.plan-page) { overflow: auto; }
-  .plan-left { overflow-y: visible; border-right: none; border-bottom: 1px solid var(--border); }
-  .plan-center { overflow: visible; border-right: none; border-bottom: 1px solid var(--border); min-height: 60vh; }
-  .plan-right { min-height: 300px; max-height: 500px; }
-  .lsec { padding: 12px 12px; }
-  .approver-table-wrap { max-height: 100px; min-height: 100px; }
+
+  /* 패널 순서: 입력(좌) → 문서(중) → TF(우) */
+  .plan-left {
+    overflow-y: visible; border-right: none; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  /* 좌 패널 내부 재배치: 참조문서 → 작업대상 → 작업내용 → 결재선 */
+  .plan-left .lsec:nth-child(1) { order: 4; }
+  .plan-left .lsec:nth-child(2) { order: 1; }
+  .plan-left .lsec:nth-child(3) { order: 2; }
+  .plan-left .lsec:nth-child(4) { order: 3; border-bottom: 1px solid var(--border); }
+  .lsec { padding: 14px 16px; }
+  .approver-table-wrap { max-height: 120px; min-height: 80px; }
   .nl-textarea { min-height: 80px; }
-  .center-topbar { flex-wrap: wrap; }
-  .tf-statusbar { height: 140px; }
+
+  /* 가운데: 문서 — 컴팩트 미리보기 */
+  .plan-center { overflow: hidden; border-right: none; border-bottom: 1px solid var(--border); min-height: 0; }
+  .doc-editor { max-height: 200px; overflow: hidden; position: relative; }
+  .doc-editor::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 60px;
+    background: linear-gradient(transparent, var(--bg-card)); pointer-events: none;
+  }
+  .doc-editor.fullscreen { position: fixed; inset: 0; z-index: 400; max-height: none; overflow: auto; background: var(--bg-card); padding-bottom: 0; }
+  .doc-editor.fullscreen::after { display: none; }
+  .btn-expand-doc { display: flex; }
+
+  /* 상단바 → 하단 고정 액션바 */
+  .center-topbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg-card); border-top: 1px solid var(--border);
+    padding: 8px 12px; z-index: 250;
+    display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+  }
+  .plan-btn-cancel { font-size: 12px; padding: 7px 10px; }
+  .plan-btn-delete { font-size: 12px; padding: 7px 10px; }
+  .auto-save-label { display: none; }
+  .btn-tf { font-size: 11px; padding: 7px 10px; }
+  .plan-btn-save { font-size: 12px; padding: 7px 14px; }
+
+  /* 오른쪽: TF — 컴팩트 미리보기 */
+  .plan-right { min-height: 0; max-height: none; }
+  .tf-code-area { max-height: 180px; overflow: hidden; position: relative; }
+  .tf-code-area::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 50px;
+    background: linear-gradient(transparent, var(--bg-sidebar)); pointer-events: none;
+  }
+  .tf-code-area.fullscreen { position: fixed; inset: 0; z-index: 400; max-height: none; overflow: auto; background: var(--bg-sidebar); }
+  .tf-code-area.fullscreen::after { display: none; }
+  .btn-expand-tf { display: flex; }
+  .tf-statusbar { height: 120px; }
+
+  /* 풀스크린 닫기 버튼 */
+  .btn-fullscreen-close {
+    position: fixed; top: 12px; right: 12px; z-index: 410;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--bg-card); border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text);
+  }
+
+  /* 팝업 */
   .plan-popup.popup-doc { width: min(560px, 92vw); height: min(480px, 80vh); }
   .apv-popup-body { flex-direction: column; height: auto; }
   .apv-left { width: 100%; max-height: 200px; }

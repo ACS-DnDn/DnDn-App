@@ -147,10 +147,13 @@
 @media (max-width: 768px) {
   .topnav { padding: 0 12px; gap: 8px; }
   .nav-title { display: none; }
-  .profile-info { display: none; }
+  .profile-role { display: none; }
   .divider-v { display: none; }
-  .company-area { display: none; }
+  .company-name { display: none; }
+  .company-logo { display: none; }
   .ws-label { display: none; }
+  .profile-info { align-items: flex-end; }
+  .profile-name { font-size: 13px; }
 }
 
 /* ── 데스크탑: 사이드바 항상 표시 ── */
