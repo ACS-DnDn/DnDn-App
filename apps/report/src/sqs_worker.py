@@ -38,7 +38,7 @@ from sqlalchemy import func as sa_func
 
 from .s3_client import save_report, save_report_html, _client as _s3_client, S3_BUCKET
 from .database import SessionLocal, Base, engine
-from .models import Document, Attachment
+from .models import Document, Attachment, Workspace
 
 # 테이블 자동 생성 (독립 실행 시에도 Attachment 테이블 보장)
 Base.metadata.create_all(bind=engine)
@@ -72,13 +72,15 @@ def _extract_title_from_html(html: str, fallback: str) -> str:
     return fallback
 
 
-def _next_doc_num(db, doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-EVT-0001)."""
+def _next_doc_num(db, doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-EVT-0001)."""
     from sqlalchemy import cast, Integer
 
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
     year = datetime.now(timezone.utc).year
-    prefix = f"{year}-{code}-"
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -272,7 +274,7 @@ def _process(workspace_id: str, event_type: str, s3_key: str):
             logger.info("스킵 (Document 이미 존재): %s", doc_id)
             db.close()
             return
-        doc_num = _next_doc_num(db, doc_type)
+        doc_num = _next_doc_num(db, doc_type, workspace_id)
         logo_url = _get_company_logo(db, workspace_id)
     finally:
         db.close()

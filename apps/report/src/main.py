@@ -61,8 +61,8 @@ DOC_TYPE_CODE = {
 }
 
 
-def _next_doc_num(db: Session, doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001).
+def _next_doc_num(db: Session, doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-EVT-0001).
 
     CAST(suffix AS INTEGER)로 최댓값을 구해 10000번 이후 정렬 오류를 방지한다.
     """
@@ -70,7 +70,9 @@ def _next_doc_num(db: Session, doc_type: str) -> str:
 
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
     year = datetime.now(timezone.utc).year
-    prefix = f"{year}-{code}-"
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -289,7 +291,7 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
         logger.error("event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    evt_doc_num = _next_doc_num(db, "이벤트보고서")
+    evt_doc_num = _next_doc_num(db, "이벤트보고서", req.workspace_id)
     evt_meta = {"doc_num": evt_doc_num, "author_label": "DnDn Agent"}
 
     try:
@@ -347,7 +349,7 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
         logger.error("health_event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    health_doc_num = _next_doc_num(db, "헬스이벤트보고서")
+    health_doc_num = _next_doc_num(db, "헬스이벤트보고서", req.workspace_id)
     health_meta = {"doc_num": health_doc_num, "author_label": "DnDn Agent"}
 
     try:
@@ -413,7 +415,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
         logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    weekly_doc_num = _next_doc_num(db, "주간보고서")
+    weekly_doc_num = _next_doc_num(db, "주간보고서", req.workspace_id)
     weekly_meta = {"doc_num": weekly_doc_num, "author_label": "DnDn Agent"}
 
     try:

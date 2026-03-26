@@ -29,6 +29,7 @@ class JobType(str, enum.Enum):
 class Workspace(Base):
     __tablename__ = "workspaces"
     id = Column(String(50), primary_key=True)
+    code = Column(String(20), nullable=True)
     github_org = Column(String(100), nullable=True)
     repo = Column(String(200), nullable=True)
     owner_id = Column(String(50), ForeignKey("users.id"), nullable=True)
