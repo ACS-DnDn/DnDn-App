@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getAttachmentDownloadUrl, markDocumentsAsRead } from '@/services/document.service';
-import { apiFetch } from '@/services/api';
+import { apiFetch, BASE_URL } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import './ViewerPage.css';
 
@@ -129,6 +130,44 @@ export function ViewerPage() {
   useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
 
+  /* 토스트 */
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  /* 첨부파일 다운로드 */
+  async function handleAttachDownload() {
+    if (!doc) return;
+    const selected = attachments.filter((_, i) => attachChecked[i]);
+    showToast('다운로드 링크는 1시간 동안 유효합니다.');
+    for (const a of selected) {
+      try {
+        const isJsonFile = a.name.toLowerCase().endsWith('.json') || a.name.toLowerCase().endsWith('.jsonl');
+        if (isJsonFile) {
+          const token = localStorage.getItem('dndn-access-token');
+          const res = await fetch(`${BASE_URL}/documents/${doc.id}/attachments/${a.id}/download`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = a.name;
+          link.click();
+          URL.revokeObjectURL(blobUrl);
+        } else {
+          const url = await getAttachmentDownloadUrl(doc.id, a.id);
+          window.open(url, '_blank');
+        }
+      } catch { /* skip */ }
+    }
+  }
+
   /* 참조문서 모달 */
   const [refModalOpen, setRefModalOpen] = useState(false);
   const [refModalDoc, setRefModalDoc] = useState<{ id: string; docNum: string; name: string; content?: string } | null>(null);
@@ -223,6 +262,7 @@ export function ViewerPage() {
   }
 
   return (
+    <>
     <div className="viewer-page">
       {/* ── 문서 본문 ── */}
       <main className="doc-main">
@@ -288,16 +328,7 @@ export function ViewerPage() {
                 </div>
               ))}
             </div>
-            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={async () => {
-              if (!doc) return;
-              const selected = attachments.filter((_, i) => attachChecked[i]);
-              for (const a of selected) {
-                try {
-                  const url = await getAttachmentDownloadUrl(doc.id, a.id);
-                  window.open(url, '_blank');
-                } catch { /* skip */ }
-              }
-            }}>
+            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={handleAttachDownload}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2v8M5 7l3 3 3-3" /><path d="M3 13h10" /></svg>
               <span>{checkedCount > 0 ? `${checkedCount}개 다운로드` : '다운로드'}</span>
             </button>
@@ -525,5 +556,7 @@ export function ViewerPage() {
         </div>
       </div>
     </div>
+    {toast && createPortal(<div className="toast info show">{toast}</div>, document.body)}
+    </>
   );
 }
