@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 class CompanyResponse(BaseModel):
     name: str
-    logoUrl: str
+    logoUrl: str = ""
 
 
 class UserMeResponse(BaseModel):
