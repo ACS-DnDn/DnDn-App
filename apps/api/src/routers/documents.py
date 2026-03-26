@@ -67,9 +67,13 @@ _S3_URI_RE = re.compile(r's3://([^/"\'\s]+)/([^"\'\s]+)')
 
 
 def _replace_s3_uris_with_presigned(content: str, s3_client, expires: int) -> str:
-    """JSON 문자열 내 s3://bucket/key 패턴을 presigned GET URL로 치환."""
+    """JSON 문자열 내 s3://bucket/key 패턴을 presigned GET URL로 치환.
+    허용된 버킷(_S3_BUCKET)의 URI만 치환하며, 그 외 버킷은 [S3_URL_REDACTED]로 대체."""
     def _make_presigned(m: re.Match) -> str:
         bucket, key = m.group(1), m.group(2)
+        if bucket != _S3_BUCKET:
+            _logger.warning("S3 URI 치환 스킵 — 허용되지 않은 버킷: %s", bucket)
+            return "[S3_URL_REDACTED]"
         try:
             return s3_client.generate_presigned_url(
                 "get_object",
@@ -1047,9 +1051,12 @@ def download_attachment(
     if attachment.original_name.lower().endswith((".json", ".jsonl")):
         try:
             obj = s3.get_object(Bucket=_S3_BUCKET, Key=attachment.file_path)
-            content = obj["Body"].read().decode("utf-8")
         except ClientError as err:
             raise HTTPException(status_code=404, detail="FILE_NOT_FOUND") from err
+        try:
+            content = obj["Body"].read().decode("utf-8")
+        except UnicodeDecodeError as err:
+            raise HTTPException(status_code=422, detail="INVALID_FILE_ENCODING") from err
         content = _replace_s3_uris_with_presigned(content, s3, _PRESIGNED_EXPIRES)
         media_type = "application/x-ndjson" if attachment.original_name.lower().endswith(".jsonl") else "application/json"
         return Response(
