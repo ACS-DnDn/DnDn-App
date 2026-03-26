@@ -113,6 +113,7 @@ class DocumentAttachment(BaseModel):
 class DocumentApprovalLine(BaseModel):
     seq: int
     type: str
+    userId: Optional[str] = None
     name: str
     role: str
     status: str
