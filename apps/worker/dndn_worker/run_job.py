@@ -1149,6 +1149,231 @@ def _write_cloudwatch_raw(raw_dir: Path, payload: Dict[str, Any], filename: str,
     return _s3_uri(bucket, f"{prefix}/raw/cloudwatch/{filename}")
 
 
+def _write_flow_logs_raw(raw_dir: Path, payload: Dict[str, Any], filename: str, obj: Any) -> str:
+    fl_dir = raw_dir / "flow_logs"
+    _ensure_dir(fl_dir)
+    path = fl_dir / filename
+    dump_json(path, obj)
+    bucket = payload["s3"]["bucket"]
+    prefix = payload["s3"]["prefix"].rstrip("/")
+    return _s3_uri(bucket, f"{prefix}/raw/flow_logs/{filename}")
+
+
+def _flow_logs_epoch(payload: Dict[str, Any]) -> Tuple[int, int]:
+    """payload time_range → epoch seconds for Logs Insights query."""
+    tr = payload["time_range"]
+    start_dt = _parse_dt(tr["start"])
+    end_dt = _parse_dt(tr["end"])
+    return int(start_dt.timestamp()), int(end_dt.timestamp())
+
+
+def _safe_int(val: Any, default: int = 0) -> int:
+    """Safely convert a value to int, handling empty strings and floats."""
+    if val is None or val == "":
+        return default
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return default
+
+
+def _poll_logs_query(logs_client: Any, query_id: str, *, max_wait: int = 60) -> List[List[Dict[str, str]]]:
+    """Poll CloudWatch Logs Insights query until complete."""
+    import time as _time
+    elapsed = 0
+    while elapsed < max_wait:
+        resp = logs_client.get_query_results(queryId=query_id)
+        status = resp.get("status", "")
+        if status in ("Complete", "Failed", "Cancelled", "Timeout"):
+            if status != "Complete":
+                print(f"[FlowLogs] Logs Insights query {query_id} ended with status: {status}")
+                return []
+            return resp.get("results", [])
+        _time.sleep(2)
+        elapsed += 2
+    print(f"[FlowLogs] Logs Insights query {query_id} timed out after {max_wait}s")
+    return []
+
+
+def build_weekly_flow_logs_extensions(
+    session: boto3.Session,
+    payload: Dict[str, Any],
+    raw_dir: Path,
+) -> Dict[str, Any]:
+    """VPC Flow Logs 수집 — CloudWatch Logs Insights 집계 쿼리."""
+    if payload.get("type") != "WEEKLY":
+        return {}
+
+    collection: Dict[str, Any] = {}
+    rejected_top: List[Dict[str, Any]] = []
+    port_distribution: List[Dict[str, Any]] = []
+    traffic_trend: List[Dict[str, Any]] = []
+    total_accepted = 0
+    total_rejected = 0
+    vpc_count = 0
+
+    start_epoch, end_epoch = _flow_logs_epoch(payload)
+
+    for region in payload.get("regions") or []:
+        try:
+            ec2 = session.client("ec2", region_name=region)
+            logs = session.client("logs", region_name=region)
+
+            # 1) Flow Logs 자동 탐색 — CloudWatch Logs 대상만 (페이지네이션)
+            flow_logs: List[Dict[str, Any]] = []
+            fl_token: Optional[str] = None
+            while True:
+                fl_kwargs: Dict[str, Any] = {
+                    "Filters": [{"Name": "log-destination-type", "Values": ["cloud-watch-logs"]}],
+                }
+                if fl_token:
+                    fl_kwargs["NextToken"] = fl_token
+                flow_logs_resp = ec2.describe_flow_logs(**fl_kwargs)
+                flow_logs.extend(flow_logs_resp.get("FlowLogs", []) or [])
+                fl_token = flow_logs_resp.get("NextToken")
+                if not fl_token:
+                    break
+            if not flow_logs:
+                collection[f"flow_logs.{region}"] = _advisor_stage_na(
+                    "NO_FLOW_LOGS", f"No CloudWatch Logs Flow Logs found in {region}"
+                )
+                continue
+
+            # 로그 그룹 수집 (중복 제거)
+            log_groups = list({fl.get("LogGroupName") for fl in flow_logs if fl.get("LogGroupName")})
+            if not log_groups:
+                collection[f"flow_logs.{region}"] = _advisor_stage_na(
+                    "NO_LOG_GROUPS", f"Flow Logs exist but no log group names in {region}"
+                )
+                continue
+
+            vpc_count += len({fl.get("ResourceId", "") for fl in flow_logs})
+
+            # 2) 거부 트래픽 Top 소스
+            q1 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    'filter action = "REJECT"'
+                    " | stats count(*) as cnt by srcAddr, dstPort"
+                    " | sort cnt desc"
+                    " | limit 20"
+                ),
+            )
+            q1_results = _poll_logs_query(logs, q1["queryId"])
+            for row in q1_results:
+                fields = {f["field"]: f["value"] for f in row}
+                rejected_top.append({
+                    "region": region,
+                    "src_addr": fields.get("srcAddr", ""),
+                    "dst_port": _safe_int(fields.get("dstPort")),
+                    "count": _safe_int(fields.get("cnt")),
+                })
+
+            # 3) 포트별 트래픽 분포
+            q2 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    "stats count(*) as cnt, sum(bytes) as totalBytes by dstPort, action"
+                    " | sort cnt desc"
+                    " | limit 20"
+                ),
+            )
+            q2_results = _poll_logs_query(logs, q2["queryId"])
+            for row in q2_results:
+                fields = {f["field"]: f["value"] for f in row}
+                port_distribution.append({
+                    "region": region,
+                    "dst_port": _safe_int(fields.get("dstPort")),
+                    "action": fields.get("action", ""),
+                    "count": _safe_int(fields.get("cnt")),
+                    "total_bytes": _safe_int(fields.get("totalBytes")),
+                })
+
+            # 4) 트래픽 추이 (시간대별)
+            q3 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    "stats count(*) as cnt,"
+                    ' sum(action = "ACCEPT") as accepted,'
+                    ' sum(action = "REJECT") as rejected'
+                    " by bin(1h) as hour"
+                    " | sort hour asc"
+                ),
+            )
+            q3_results = _poll_logs_query(logs, q3["queryId"])
+            for row in q3_results:
+                fields = {f["field"]: f["value"] for f in row}
+                accepted = _safe_int(fields.get("accepted"))
+                rejected = _safe_int(fields.get("rejected"))
+                total_accepted += accepted
+                total_rejected += rejected
+                traffic_trend.append({
+                    "region": region,
+                    "hour": fields.get("hour", ""),
+                    "total": _safe_int(fields.get("cnt")),
+                    "accepted": accepted,
+                    "rejected": rejected,
+                })
+
+            # raw 저장 (리전별 데이터만)
+            region_rejected = [r for r in rejected_top if r.get("region") == region]
+            region_ports = [r for r in port_distribution if r.get("region") == region]
+            region_trend = [r for r in traffic_trend if r.get("region") == region]
+            raw_data = {
+                "rejected_top": region_rejected,
+                "port_distribution": region_ports,
+                "traffic_trend": region_trend,
+            }
+            safe_region = _safe_fs_name(region)
+            raw_uri = _write_flow_logs_raw(raw_dir, payload, f"flow_logs_{safe_region}.json", raw_data)
+            collection[f"flow_logs.{region}"] = _advisor_stage_ok(
+                raw_s3_uri=raw_uri,
+                flow_log_count=len(flow_logs),
+                log_group_count=len(log_groups),
+            )
+
+        except ClientError as e:
+            na = _na_from_client_error(e)
+            if na is not None:
+                na_reason, message = na
+                collection[f"flow_logs.{region}"] = _advisor_stage_na(na_reason, message)
+            else:
+                code = _client_error_code(e)
+                collection[f"flow_logs.{region}"] = _advisor_stage_failed(
+                    "FLOW_LOGS_QUERY_FAILED", f"{code}: {e}"
+                )
+        except Exception as e:
+            collection[f"flow_logs.{region}"] = _advisor_stage_failed(
+                "FLOW_LOGS_UNEXPECTED", str(e)
+            )
+
+    # rollup
+    total_traffic = total_accepted + total_rejected
+    reject_ratio = f"{(total_rejected / total_traffic * 100):.2f}%" if total_traffic > 0 else "0%"
+
+    rejected_top.sort(key=lambda x: x.get("count", 0), reverse=True)
+
+    return {
+        "flow_logs_collection_status": collection,
+        "flow_logs_rejected_top": rejected_top[:20],
+        "flow_logs_port_distribution": port_distribution[:20],
+        "flow_logs_traffic_trend": traffic_trend,
+        "flow_logs_rollup": {
+            "total_accepted": total_accepted,
+            "total_rejected": total_rejected,
+            "total_traffic": total_traffic,
+            "reject_ratio_pct": reject_ratio,
+            "vpc_count": vpc_count,
+        },
+    }
+
+
 def _count_access_analyzer_field(value: Any) -> int:
     if value is None:
         return 0
@@ -2262,6 +2487,7 @@ def run_job_from_payload(
     extensions.update(build_weekly_access_analyzer_extensions(session, payload, raw_dir))
     extensions.update(build_weekly_cost_explorer_extensions(session, payload, raw_dir))
     extensions.update(build_weekly_cloudwatch_extensions(session, payload, raw_dir))
+    extensions.update(build_weekly_flow_logs_extensions(session, payload, raw_dir))
 
     result = {
         "meta": build_meta(payload, time_range),
