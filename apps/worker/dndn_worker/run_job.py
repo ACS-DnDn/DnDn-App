@@ -1208,8 +1208,12 @@ def build_weekly_flow_logs_extensions(
     rejected_top: List[Dict[str, Any]] = []
     port_distribution: List[Dict[str, Any]] = []
     traffic_trend: List[Dict[str, Any]] = []
+    top_talkers: List[Dict[str, Any]] = []
+    external_comm: List[Dict[str, Any]] = []
+    protocol_dist: List[Dict[str, Any]] = []
     total_accepted = 0
     total_rejected = 0
+    total_bytes = 0
     vpc_count = 0
 
     start_epoch, end_epoch = _flow_logs_epoch(payload)
@@ -1293,7 +1297,7 @@ def build_weekly_flow_logs_extensions(
                     "total_bytes": _safe_int(fields.get("totalBytes")),
                 })
 
-            # 4) 트래픽 추이 (시간대별)
+            # 4) 트래픽 추이 (일별)
             q3 = logs.start_query(
                 logGroupNames=log_groups,
                 startTime=start_epoch,
@@ -1301,9 +1305,10 @@ def build_weekly_flow_logs_extensions(
                 queryString=(
                     "stats count(*) as cnt,"
                     ' sum(action = "ACCEPT") as accepted,'
-                    ' sum(action = "REJECT") as rejected'
-                    " by bin(1h) as hour"
-                    " | sort hour asc"
+                    ' sum(action = "REJECT") as rejected,'
+                    " sum(bytes) as totalBytes"
+                    " by bin(1d) as day"
+                    " | sort day asc"
                 ),
             )
             q3_results = _poll_logs_query(logs, q3["queryId"])
@@ -1311,24 +1316,103 @@ def build_weekly_flow_logs_extensions(
                 fields = {f["field"]: f["value"] for f in row}
                 accepted = _safe_int(fields.get("accepted"))
                 rejected = _safe_int(fields.get("rejected"))
+                day_bytes = _safe_int(fields.get("totalBytes"))
                 total_accepted += accepted
                 total_rejected += rejected
+                total_bytes += day_bytes
                 traffic_trend.append({
                     "region": region,
-                    "hour": fields.get("hour", ""),
+                    "day": fields.get("day", ""),
                     "total": _safe_int(fields.get("cnt")),
                     "accepted": accepted,
                     "rejected": rejected,
+                    "bytes": day_bytes,
+                })
+
+            # 5) Top Talkers — 내부 IP별 트래픽 상위
+            q4 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    "stats count(*) as cnt, sum(bytes) as totalBytes"
+                    " by srcAddr"
+                    " | sort totalBytes desc"
+                    " | limit 10"
+                ),
+            )
+            q4_results = _poll_logs_query(logs, q4["queryId"])
+            for row in q4_results:
+                fields = {f["field"]: f["value"] for f in row}
+                top_talkers.append({
+                    "region": region,
+                    "src_addr": fields.get("srcAddr", ""),
+                    "count": _safe_int(fields.get("cnt")),
+                    "total_bytes": _safe_int(fields.get("totalBytes")),
+                })
+
+            # 6) 외부 통신 — RFC1918 외 목적지 IP 상위
+            q5 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    "filter dstAddr not like /^10\\./"
+                    " and dstAddr not like /^172\\.(1[6-9]|2[0-9]|3[01])\\./"
+                    " and dstAddr not like /^192\\.168\\./"
+                    " and dstAddr not like /^127\\./"
+                    " | stats count(*) as cnt, sum(bytes) as totalBytes by dstAddr"
+                    " | sort totalBytes desc"
+                    " | limit 10"
+                ),
+            )
+            q5_results = _poll_logs_query(logs, q5["queryId"])
+            for row in q5_results:
+                fields = {f["field"]: f["value"] for f in row}
+                external_comm.append({
+                    "region": region,
+                    "dst_addr": fields.get("dstAddr", ""),
+                    "count": _safe_int(fields.get("cnt")),
+                    "total_bytes": _safe_int(fields.get("totalBytes")),
+                })
+
+            # 7) 프로토콜 분포
+            q6 = logs.start_query(
+                logGroupNames=log_groups,
+                startTime=start_epoch,
+                endTime=end_epoch,
+                queryString=(
+                    "stats count(*) as cnt, sum(bytes) as totalBytes by protocol"
+                    " | sort cnt desc"
+                ),
+            )
+            q6_results = _poll_logs_query(logs, q6["queryId"])
+            for row in q6_results:
+                fields = {f["field"]: f["value"] for f in row}
+                proto_num = _safe_int(fields.get("protocol"))
+                proto_map = {6: "TCP", 17: "UDP", 1: "ICMP", 0: "ALL"}
+                protocol_dist.append({
+                    "region": region,
+                    "protocol": proto_map.get(proto_num, str(proto_num)),
+                    "protocol_num": proto_num,
+                    "count": _safe_int(fields.get("cnt")),
+                    "total_bytes": _safe_int(fields.get("totalBytes")),
                 })
 
             # raw 저장 (리전별 데이터만)
             region_rejected = [r for r in rejected_top if r.get("region") == region]
             region_ports = [r for r in port_distribution if r.get("region") == region]
             region_trend = [r for r in traffic_trend if r.get("region") == region]
+            region_talkers = [r for r in top_talkers if r.get("region") == region]
+            region_external = [r for r in external_comm if r.get("region") == region]
+            region_proto = [r for r in protocol_dist if r.get("region") == region]
             raw_data = {
                 "rejected_top": region_rejected,
                 "port_distribution": region_ports,
                 "traffic_trend": region_trend,
+                "top_talkers": region_talkers,
+                "external_comm": region_external,
+                "protocol_dist": region_proto,
             }
             safe_region = _safe_fs_name(region)
             raw_uri = _write_flow_logs_raw(raw_dir, payload, f"flow_logs_{safe_region}.json", raw_data)
@@ -1358,16 +1442,23 @@ def build_weekly_flow_logs_extensions(
     reject_ratio = f"{(total_rejected / total_traffic * 100):.2f}%" if total_traffic > 0 else "0%"
 
     rejected_top.sort(key=lambda x: x.get("count", 0), reverse=True)
+    top_talkers.sort(key=lambda x: x.get("total_bytes", 0), reverse=True)
+    external_comm.sort(key=lambda x: x.get("total_bytes", 0), reverse=True)
+    protocol_dist.sort(key=lambda x: x.get("count", 0), reverse=True)
 
     return {
         "flow_logs_collection_status": collection,
         "flow_logs_rejected_top": rejected_top[:20],
         "flow_logs_port_distribution": port_distribution[:20],
         "flow_logs_traffic_trend": traffic_trend,
+        "flow_logs_top_talkers": top_talkers[:10],
+        "flow_logs_external_comm": external_comm[:10],
+        "flow_logs_protocol_dist": protocol_dist,
         "flow_logs_rollup": {
             "total_accepted": total_accepted,
             "total_rejected": total_rejected,
             "total_traffic": total_traffic,
+            "total_bytes": total_bytes,
             "reject_ratio_pct": reject_ratio,
             "vpc_count": vpc_count,
         },
