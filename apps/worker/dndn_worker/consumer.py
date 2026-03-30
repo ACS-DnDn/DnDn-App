@@ -160,7 +160,7 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         message_id=message_id,
         receipt_handle=receipt_handle,
     )
-    start = time.time()
+    start = time.perf_counter()
     try:
         try:
             result = process_message_body(body, config)
@@ -192,7 +192,7 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
         )
         return result
     finally:
-        SQS_MESSAGE_DURATION.observe(time.time() - start)
+        SQS_MESSAGE_DURATION.observe(time.perf_counter() - start)
         _stop_message_heartbeat(heartbeat)
 
 

@@ -131,9 +131,9 @@ app.add_middleware(
 # 메트릭 미들웨어
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
-    start = time.time()
+    start = time.perf_counter()
     response = await call_next(request)
-    duration = time.time() - start
+    duration = time.perf_counter() - start
     endpoint = request.url.path
     REQUEST_COUNT.labels(
         method=request.method,
