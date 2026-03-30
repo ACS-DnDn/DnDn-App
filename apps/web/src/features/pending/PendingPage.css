@@ -11,3 +11,11 @@
 .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; flex-shrink: 0; }
 .badge-progress { background: var(--orange-soft); color: var(--orange); }
 .badge-rejected { background: var(--red-soft); color: var(--red); }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .pending-page { min-width: 0; }
+  /* 문서번호 숨김 — 제목+작성자+날짜+상태 표시 */
+  .pending-page .td-docnum { display: none; }
+  .pending-page .doc-table th:nth-child(2) { display: none; }
+}

@@ -173,3 +173,23 @@
 /* OPA 저장 버튼 */
 .btn-save-opa { padding: 9px 22px; border: none; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: opacity .15s; }
 .btn-save-opa:hover { opacity: .85; }
+
+/* ── 모바일 ── */
+@media (max-width: 768px) {
+  .workspace-page { padding: 20px 16px; }
+  .profile-section { padding: 20px 16px; gap: 16px; }
+  .banner-name-row { font-size: 18px; }
+  .info-card-header { padding: 14px 16px 12px; }
+  .info-row { padding: 12px 16px; }
+  .profile-btn-group { flex-wrap: wrap; }
+  .modal-body { padding: 16px; }
+  .modal-head { padding: 16px 16px 12px; }
+  .modal-foot { padding: 12px 16px 16px; }
+  .opa-header { padding: 16px; }
+  .eg-head { padding: 12px 16px; }
+  .ei-head { padding: 10px 16px 10px 32px; }
+  .ei-body { padding: 12px 16px 12px 32px; }
+  .ei-field { flex-direction: column; gap: 6px; }
+  .ei-field-label { width: auto; padding-top: 0; }
+  .workspace-page .empty-state { padding: 48px 20px; }
+}

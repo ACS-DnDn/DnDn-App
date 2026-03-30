@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from urllib.parse import quote
@@ -7,6 +8,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -61,6 +63,28 @@ def _get_s3_client():
     return _S3_CLIENT
 
 
+_S3_URI_RE = re.compile(r's3://([^/"\'\s]+)/([^"\'\s]+)')
+
+
+def _replace_s3_uris_with_presigned(content: str, s3_client, expires: int) -> str:
+    """JSON 문자열 내 s3://bucket/key 패턴을 presigned GET URL로 치환.
+    허용된 버킷(_S3_BUCKET)의 URI만 치환하며, 그 외 버킷은 [S3_URL_REDACTED]로 대체."""
+    def _make_presigned(m: re.Match) -> str:
+        bucket, key = m.group(1), m.group(2)
+        if bucket != _S3_BUCKET:
+            _logger.warning("S3 URI 치환 스킵 — 허용되지 않은 버킷: %s", bucket)
+            return "[S3_URL_REDACTED]"
+        try:
+            return s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=expires,
+            )
+        except ClientError:
+            return "[S3_URL_REDACTED]"
+    return _S3_URI_RE.sub(_make_presigned, content)
+
+
 def _s3_get_text(key: str) -> str | None:
     """S3에서 텍스트 파일 내용을 가져옵니다. 실패 시 None 반환."""
     if not key or not _S3_BUCKET:
@@ -103,18 +127,20 @@ _logger = logging.getLogger(__name__)
 _DOC_TYPE_CODE = {
     "계획서": "PLN",
     "이벤트보고서": "EVT",
-    "헬스이벤트보고서": "RPT",
+    "헬스이벤트보고서": "EVT",
     "주간보고서": "RPT",
 }
 
 
-def _next_doc_num(db: "Session", doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001)."""
+def _next_doc_num(db: "Session", doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-PLN-0001)."""
     from sqlalchemy import cast, Integer, func as sa_func
 
     code = _DOC_TYPE_CODE.get(doc_type, "DOC")
     year = datetime.now(KST).year
-    prefix = f"{year}-{code}-"
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -301,9 +327,12 @@ def get_documents(
             .distinct()
         )
     else:
+        # 워크스페이스 내 non-draft 문서 + 본인이 작성한 draft 문서 포함
         query = db.query(Document).filter(
-            Document.workspace_id.in_(my_ws_ids),
-            Document.status != "draft",
+            or_(
+                and_(Document.workspace_id.in_(my_ws_ids), Document.status != "draft"),
+                and_(Document.author_id == current_user.id, Document.status == "draft"),
+            )
         )
 
     # 3. 검색어(keyword) 필터링
@@ -394,7 +423,7 @@ def get_documents(
         items.append(
             {
                 "id": str(doc.id),
-                "docNum": doc.doc_num or str(doc.id)[:8],
+                "docNum": doc.doc_num or "",
                 "name": doc.title,
                 "author": doc.author.name if doc.author else "DnDn Agent",
                 "date": _to_kst_str(doc.created_at),
@@ -469,10 +498,11 @@ def submit_document(
         doc.auto_merge = None
         doc.deploy_log = None
 
-    # 상신 시 doc_num이 없으면 채번 (S3 HTML 갱신은 commit 후 수행)
+    # 상신 시 doc_num이 없으면 채번 + 등록일(created_at) 최신화
     need_html_update = False
     if not req.isDraft and not doc.doc_num:
-        doc.doc_num = _next_doc_num(db, doc.type or "계획서")
+        doc.doc_num = _next_doc_num(db, doc.type or "계획서", doc.workspace_id)
+        doc.created_at = datetime.now(timezone.utc)
         need_html_update = bool(doc.html_key)
 
     # 5. 기존 결재선이 있다면 싹 지우고 새로 그리기 (덮어쓰기)
@@ -536,7 +566,7 @@ def submit_document(
     # 9. 명세서에 맞는 응답 반환
     return SuccessResponse(
         data=DocumentSubmitResponse(
-            id=str(doc.id), docNum=doc.doc_num or str(doc.id)[:8], status=doc.status
+            id=str(doc.id), docNum=doc.doc_num or "", status=doc.status
         )
     )
 
@@ -564,7 +594,7 @@ def get_document_detail(
             db.query(Document).filter(Document.id.in_(doc.ref_doc_ids)).all()
         )
         ref_docs = [
-            {"id": r.id, "docNum": r.doc_num or str(r.id)[:8], "title": r.title, "type": r.type} for r in ref_doc_records
+            {"id": r.id, "docNum": r.doc_num or "", "title": r.title, "type": r.type} for r in ref_doc_records
         ]
 
     # 첨부파일 목록
@@ -617,7 +647,7 @@ def get_document_detail(
     return SuccessResponse(
         data=DocumentDetailResponse(
             id=str(doc.id),
-            docNum=doc.doc_num or str(doc.id)[:8],
+            docNum=doc.doc_num or "",
             title=doc.title,
             type=doc.type,
             status=doc.status,
@@ -956,6 +986,10 @@ def presign_upload(
     current_user: User = Depends(get_current_user),
 ):
     """S3 presigned PUT URL을 발급한다. 프론트에서 이 URL로 직접 업로드."""
+    # Path Traversal 방지: 파일명에 경로 구분자 포함 차단
+    if any(c in fileName for c in ("../", "/", "\\", "\x00")):
+        raise HTTPException(status_code=400, detail="INVALID_FILENAME")
+
     doc = db.query(Document).filter(Document.id == documentId).first()
     if not doc:
         raise HTTPException(status_code=404, detail="DOC_NOT_FOUND")
@@ -966,7 +1000,8 @@ def presign_upload(
 
     attachment_id = str(__import__("uuid").uuid4())
     workspace_id = doc.workspace_id or "default"
-    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{fileName}"
+    safe_name = os.path.basename(fileName)
+    s3_key = f"{workspace_id}/attachments/{documentId}/{attachment_id}_{safe_name}"
 
     # presigned PUT URL 생성
     s3 = _get_s3_client()
@@ -1022,6 +1057,27 @@ def download_attachment(
 
     s3 = _get_s3_client()
     encoded_filename = quote(attachment.original_name)
+
+    # JSON/JSONL 파일은 서버에서 직접 읽어 내부 S3 URI를 presigned URL로 치환 후 반환
+    if attachment.original_name.lower().endswith((".json", ".jsonl")):
+        try:
+            obj = s3.get_object(Bucket=_S3_BUCKET, Key=attachment.file_path)
+        except ClientError as err:
+            raise HTTPException(status_code=404, detail="FILE_NOT_FOUND") from err
+        try:
+            content = obj["Body"].read().decode("utf-8")
+        except UnicodeDecodeError as err:
+            raise HTTPException(status_code=422, detail="INVALID_FILE_ENCODING") from err
+        content = _replace_s3_uris_with_presigned(content, s3, _PRESIGNED_EXPIRES)
+        media_type = "application/x-ndjson" if attachment.original_name.lower().endswith(".jsonl") else "application/json"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename*=utf-8''{encoded_filename}",
+            },
+        )
+
     presigned_url = s3.generate_presigned_url(
         "get_object",
         Params={

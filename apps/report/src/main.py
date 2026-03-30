@@ -54,25 +54,59 @@ logger = logging.getLogger(__name__)
 # 테이블 자동 생성 (Attachment 등 신규 모델 반영)
 Base.metadata.create_all(bind=engine)
 
-# ── 문서번호 타입 매핑 ──────────────────────────────────────
+# 기존 테이블에 누락된 컬럼 자동 추가 (create_all은 새 컬럼을 추가하지 않으므로)
+from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+_insp = _sa_inspect(engine)
+_migrations = [
+    ("workspaces", "code", "VARCHAR(20)"),
+]
+with engine.begin() as _conn:
+    for _tbl, _col, _coltype in _migrations:
+        if _tbl in _insp.get_table_names():
+            existing_cols = [c["name"] for c in _insp.get_columns(_tbl)]
+            if _col not in existing_cols:
+                _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
+    # 기존 워크스페이스에 code가 없으면 자동 백필 (API와 동일 로직)
+    import random as _random
+    _WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+    _rows = _conn.execute(_sa_text("SELECT id FROM workspaces WHERE code IS NULL")).fetchall()
+    if _rows:
+        _existing_codes = {r[0] for r in _conn.execute(_sa_text("SELECT code FROM workspaces WHERE code IS NOT NULL")).fetchall()}
+        for (_ws_id,) in _rows:
+            for _ in range(100):
+                _code = "".join(_random.choices(_WS_CODE_CHARS, k=3))
+                if _code not in _existing_codes:
+                    break
+            _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
+            _existing_codes.add(_code)
+    del _random, _WS_CODE_CHARS
+del _insp, _migrations
+
+# ── 문서번호 타입 매핑 (API와 동일) ─────────────────────────
 DOC_TYPE_CODE = {
     "계획서": "PLN",
     "이벤트보고서": "EVT",
-    "헬스이벤트보고서": "RPT",
+    "헬스이벤트보고서": "EVT",
     "주간보고서": "RPT",
 }
 
+# API와 동일하게 KST 기준 연도 사용
+from datetime import timedelta
+KST = timezone(timedelta(hours=9))
 
-def _next_doc_num(db: Session, doc_type: str) -> str:
-    """연도-종류-일련번호 형식의 문서번호 채번 (예: 2026-PLN-0001).
+
+def _next_doc_num(db: Session, doc_type: str, workspace_id: str | None = None) -> str:
+    """연도-wscode-종류-일련번호 형식의 문서번호 채번 (예: 2026-PROD-EVT-0001).
 
     CAST(suffix AS INTEGER)로 최댓값을 구해 10000번 이후 정렬 오류를 방지한다.
     """
     from sqlalchemy import cast, Integer
 
     code = DOC_TYPE_CODE.get(doc_type, "DOC")
-    year = datetime.now(timezone.utc).year
-    prefix = f"{year}-{code}-"
+    year = datetime.now(KST).year
+    ws = db.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id else None
+    wscode = (ws.code or "WS") if ws else "WS"
+    prefix = f"{year}-{wscode}-{code}-"
 
     suffix_expr = sa_func.substr(Document.doc_num, len(prefix) + 1)
     max_seq = (
@@ -327,7 +361,7 @@ async def event_report(req: ReportRequest, db: Session = Depends(get_db)):
         logger.error("event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    evt_doc_num = _next_doc_num(db, "이벤트보고서")
+    evt_doc_num = _next_doc_num(db, "이벤트보고서", req.workspace_id)
     evt_meta = {"doc_num": evt_doc_num, "author_label": "DnDn Agent"}
 
     try:
@@ -385,7 +419,7 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
         logger.error("health_event_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    health_doc_num = _next_doc_num(db, "헬스이벤트보고서")
+    health_doc_num = _next_doc_num(db, "헬스이벤트보고서", req.workspace_id)
     health_meta = {"doc_num": health_doc_num, "author_label": "DnDn Agent"}
 
     try:
@@ -451,7 +485,7 @@ async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db))
         logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="보고서 저장 실패")
 
-    weekly_doc_num = _next_doc_num(db, "주간보고서")
+    weekly_doc_num = _next_doc_num(db, "주간보고서", req.workspace_id)
     weekly_meta = {"doc_num": weekly_doc_num, "author_label": "DnDn Agent"}
 
     try:

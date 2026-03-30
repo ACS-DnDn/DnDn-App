@@ -42,6 +42,7 @@ _migrations = [
     ("documents", "auto_merge", "BOOLEAN"),
     ("documents", "deploy_log", "JSON"),
     ("companies", "created_at", "DATETIME"),
+    ("workspaces", "code", "VARCHAR(20)"),
 ]
 with engine.begin() as _conn:
     for _tbl, _col, _coltype in _migrations:
@@ -50,6 +51,42 @@ with engine.begin() as _conn:
             if _col not in existing:
                 _conn.execute(_sa_text(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_coltype}"))
 del _insp, _migrations
+
+# 기존 워크스페이스에 code가 없으면 자동 백필
+import random as _random
+_WS_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ2345678"
+with engine.begin() as _conn:
+    _rows = _conn.execute(_sa_text("SELECT id FROM workspaces WHERE code IS NULL")).fetchall()
+    if _rows:
+        _existing = {r[0] for r in _conn.execute(_sa_text("SELECT code FROM workspaces WHERE code IS NOT NULL")).fetchall()}
+        for (_ws_id,) in _rows:
+            while True:
+                _code = "".join(_random.choices(_WS_CODE_CHARS, k=3))
+                if _code not in _existing:
+                    break
+            _conn.execute(_sa_text("UPDATE workspaces SET code = :code WHERE id = :id"), {"code": _code, "id": _ws_id})
+            _existing.add(_code)
+    # 백필 완료 후 unique index 생성 (ALTER TABLE ADD COLUMN은 unique 제약을 만들지 않으므로)
+    _idx_exists = _conn.execute(_sa_text(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workspaces' "
+        "AND INDEX_NAME = 'idx_workspaces_code_unique'"
+    )).scalar()
+    if not _idx_exists:
+        _conn.execute(_sa_text(
+            "CREATE UNIQUE INDEX idx_workspaces_code_unique ON workspaces(code)"
+        ))
+    # acct_id unique index (기존 테이블에 제약 추가)
+    _acct_idx = _conn.execute(_sa_text(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workspaces' "
+        "AND INDEX_NAME = 'idx_workspaces_acct_id_unique'"
+    )).scalar()
+    if not _acct_idx:
+        _conn.execute(_sa_text(
+            "CREATE UNIQUE INDEX idx_workspaces_acct_id_unique ON workspaces(acct_id)"
+        ))
+del _random, _WS_CODE_CHARS
 
 # 메트릭 정의
 REQUEST_COUNT = Counter(

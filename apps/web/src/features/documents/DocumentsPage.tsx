@@ -5,7 +5,7 @@ import type { Document } from '@/mocks/types/document';
 import './DocumentsPage.css';
 
 const PAGE_SIZE = 10;
-const STATUS_LABELS: Record<string, string> = { progress: '진행 중', done: '완료', rejected: '반려', deploying: '배포 중', deploy_failed: '배포 실패' };
+const STATUS_LABELS: Record<string, string> = { draft: '임시저장', progress: '진행 중', done: '완료', rejected: '반려', deploying: '배포 중', deploy_failed: '배포 실패' };
 const TYPE_LABELS: Record<string, string> = { '계획서': '작업계획서', '주간보고서': '인프라 활동 보고서', '이벤트보고서': '이벤트보고서', '헬스이벤트보고서': '이벤트보고서' };
 
 function formatDate(d: string) {
@@ -148,8 +148,12 @@ export function DocumentsPage() {
     if (ids.length > 0) markDocumentsAsRead(ids).catch(console.error);
   };
 
-  // 행 클릭 → 뷰어로 이동
+  // 행 클릭 → draft/반려는 수정 페이지, 나머지는 뷰어로 이동
   const handleRowClick = (doc: Document) => {
+    if (doc.status === 'draft') {
+      navigate(`/plan?editDocId=${doc.id}`);
+      return;
+    }
     if (!readIds.has(doc.id)) {
       setReadIds((prev: Set<string>) => new Set(prev).add(doc.id));
       markDocumentsAsRead([doc.id]).catch(console.error);
@@ -402,6 +406,7 @@ export function DocumentsPage() {
                   <div className="th-filter-wrap">
                     <select className="th-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}>
                       <option value="">상태</option>
+                      <option value="draft">임시저장</option>
                       <option value="done">완료</option>
                       <option value="deploying">배포 중</option>
                       <option value="deploy_failed">배포 실패</option>
@@ -414,7 +419,7 @@ export function DocumentsPage() {
             </thead>
             <tbody>
               {pageDocs.length > 0 ? pageDocs.map(doc => {
-                const docNum = doc.docNum ?? `${doc.date.slice(0, 4)}-DnDn-${doc.id}`;
+                const docNum = doc.docNum || 'Editing';
                 return (
                   <tr
                     key={doc.id}

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { getDocumentById, getAttachmentDownloadUrl, markDocumentsAsRead } from '@/services/document.service';
-import { apiFetch } from '@/services/api';
+import { apiFetch, BASE_URL } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import './ViewerPage.css';
 
@@ -129,6 +130,50 @@ export function ViewerPage() {
   useEffect(() => { setAttachChecked(attachments.map(() => false)); }, [doc?.id]);
   const checkedCount = attachChecked.filter(Boolean).length;
 
+  const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+
+  /* 토스트 */
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revokeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => { clearTimeout(revokeTimer.current); }, []);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  /* 첨부파일 다운로드 */
+  async function handleAttachDownload() {
+    if (!doc) return;
+    const selected = attachments.filter((_, i) => attachChecked[i]);
+    showToast('다운로드 링크는 1시간 동안 유효합니다.');
+    for (const a of selected) {
+      try {
+        const isJsonFile = a.name.toLowerCase().endsWith('.json') || a.name.toLowerCase().endsWith('.jsonl');
+        if (isJsonFile) {
+          const token = localStorage.getItem('dndn-access-token');
+          const res = await fetch(`${BASE_URL}/documents/${doc.id}/attachments/${a.id}/download`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = a.name;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          revokeTimer.current = setTimeout(() => URL.revokeObjectURL(blobUrl), DOWNLOAD_URL_REVOKE_DELAY_MS);
+        } else {
+          const url = await getAttachmentDownloadUrl(doc.id, a.id);
+          window.open(url, '_blank');
+        }
+      } catch { /* skip */ }
+    }
+  }
+
   /* 참조문서 모달 */
   const [refModalOpen, setRefModalOpen] = useState(false);
   const [refModalDoc, setRefModalDoc] = useState<{ id: string; docNum: string; name: string; content?: string } | null>(null);
@@ -166,6 +211,14 @@ export function ViewerPage() {
   const [autoMerge, setAutoMerge] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [docFullscreen, setDocFullscreen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const reset = () => { if (!mq.matches) setDocFullscreen(false); };
+    mq.addEventListener('change', reset);
+    return () => mq.removeEventListener('change', reset);
+  }, []);
 
   if (docNotFound) return <Navigate to="/documents" replace />;
   if (fetchError) return <div style={{ padding: '2rem', color: 'red' }}>문서를 불러오는 중 오류가 발생했습니다.</div>;
@@ -223,9 +276,10 @@ export function ViewerPage() {
   }
 
   return (
+    <>
     <div className="viewer-page">
       {/* ── 문서 본문 ── */}
-      <main className="doc-main">
+      <main className={`doc-main${docFullscreen ? ' fullscreen' : ''}`}>
         <div className="doc-toolbar">
           <button className="btn-back" onClick={() => navigate(-1)} title="뒤로 가기">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 2L4 8l6 6"/></svg>
@@ -251,6 +305,16 @@ export function ViewerPage() {
             <div style={{ padding: '2rem', color: 'var(--text-muted)', fontSize: 13 }}>문서 내용을 불러올 수 없습니다.</div>
           )}
         </div>
+        {docFullscreen && (
+          <button className="btn-fullscreen-close" onClick={() => setDocFullscreen(false)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            닫기
+          </button>
+        )}
+        <button className="btn-expand-doc" onClick={() => setDocFullscreen(true)}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 10v4h4M14 6V2h-4M2 10l4-4M14 6l-4 4"/></svg>
+          문서 크게 보기
+        </button>
       </main>
 
       {/* ── 우측 패널 ── */}
@@ -288,16 +352,7 @@ export function ViewerPage() {
                 </div>
               ))}
             </div>
-            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={async () => {
-              if (!doc) return;
-              const selected = attachments.filter((_, i) => attachChecked[i]);
-              for (const a of selected) {
-                try {
-                  const url = await getAttachmentDownloadUrl(doc.id, a.id);
-                  window.open(url, '_blank');
-                } catch { /* skip */ }
-              }
-            }}>
+            <button className="btn-attach-dl" disabled={checkedCount === 0} onClick={handleAttachDownload}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2v8M5 7l3 3 3-3" /><path d="M3 13h10" /></svg>
               <span>{checkedCount > 0 ? `${checkedCount}개 다운로드` : '다운로드'}</span>
             </button>
@@ -525,5 +580,7 @@ export function ViewerPage() {
         </div>
       </div>
     </div>
+    {toast && createPortal(<div className="toast info show">{toast}</div>, document.body)}
+    </>
   );
 }
