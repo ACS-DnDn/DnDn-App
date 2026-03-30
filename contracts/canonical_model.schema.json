@@ -33,6 +33,16 @@
       },
       "default": []
     },
+    "events_summary": {
+      "type": "object",
+      "description": "Aggregated summary of CloudTrail events (event name counts, source counts, time range).",
+      "additionalProperties": true
+    },
+    "resources_summary": {
+      "type": "object",
+      "description": "Aggregated summary of tracked resources (total count, top resources by event count).",
+      "additionalProperties": true
+    },
     "extensions": {
       "type": "object",
       "description": "Reserved for non-MVP fields (stats, trigger catalog hints, extra aggregations, experimental fields). Not validated strictly.",

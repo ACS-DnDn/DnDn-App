@@ -2580,11 +2580,51 @@ def run_job_from_payload(
     extensions.update(build_weekly_cloudwatch_extensions(session, payload, raw_dir))
     extensions.update(build_weekly_flow_logs_extensions(session, payload, raw_dir))
 
+    # 5-1) Build events_summary & resources_summary
+    events_summary: Dict[str, Any] = {}
+    resources_summary: Dict[str, Any] = {}
+    if events:
+        event_name_counts: Dict[str, int] = {}
+        event_source_counts: Dict[str, int] = {}
+        for ev in events:
+            en = ev.get("event_name", "Unknown")
+            es = ev.get("event_source", "Unknown")
+            event_name_counts[en] = event_name_counts.get(en, 0) + 1
+            event_source_counts[es] = event_source_counts.get(es, 0) + 1
+        events_summary = {
+            "total_events": len(events),
+            "unique_event_names": len(event_name_counts),
+            "event_name_counts": dict(sorted(event_name_counts.items(), key=lambda x: x[1], reverse=True)[:20]),
+            "event_source_counts": dict(sorted(event_source_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
+            "time_range": {
+                "start": events[-1].get("event_time", ""),
+                "end": events[0].get("event_time", ""),
+            },
+        }
+    if resources:
+        sorted_res = sorted(
+            resources,
+            key=lambda r: (r.get("change_summary") or {}).get("event_count", 0),
+            reverse=True,
+        )
+        top_resources = []
+        for r in sorted_res[:15]:
+            top_resources.append({
+                "resource": r.get("resource", {}),
+                "change_summary": r.get("change_summary", {}),
+            })
+        resources_summary = {
+            "total_tracked": len(resources),
+            "top_resources": top_resources,
+        }
+
     result = {
         "meta": build_meta(payload, time_range),
         "collection_status": collection_status,
         "events": events,
         "resources": resources,
+        "events_summary": events_summary,
+        "resources_summary": resources_summary,
         "extensions": extensions,
     }
 
