@@ -410,6 +410,10 @@
         "trigger": {
           "$ref": "#/$defs/trigger"
         },
+        "title": {
+          "type": "string",
+          "description": "Optional user-provided report title."
+        },
         "partition": {
           "type": "object",
           "description": "Optional partitioning hints used in S3 paths (year/week or year/month/day).",
