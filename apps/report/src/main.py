@@ -169,7 +169,7 @@ async def metrics_middleware(request: Request, call_next):
     response = await call_next(request)
     duration = time.perf_counter() - start
     route = request.scope.get("route")
-    endpoint = route.path if route else request.url.path
+    endpoint = route.path if (route and getattr(route, "path", None)) else "unmatched_route"
     REQUEST_COUNT.labels(
         method=request.method,
         endpoint=endpoint,
