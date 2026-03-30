@@ -136,6 +136,7 @@ _EVIDENCE_DIR_LABELS = {
     "cost-explorer": "CostExplorer_비용데이터",
     "cloudwatch": "CloudWatch_메트릭",
     "config": "Config_리소스데이터",
+    "flow_logs": "FlowLogs_트래픽분석",
 }
 
 
