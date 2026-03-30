@@ -3,6 +3,8 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from prometheus_client import Counter, Histogram, make_asgi_app
+import time
 from apps.api.src.database import engine
 from apps.api.src.models import Base
 from apps.api.src.routers import (
@@ -86,6 +88,18 @@ with engine.begin() as _conn:
         ))
 del _random, _WS_CODE_CHARS
 
+# 메트릭 정의
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP request count",
+    ["method", "endpoint", "status"],
+)
+REQUEST_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "endpoint"],
+)
+
 # 2. FastAPI 앱 초기화
 app = FastAPI(
     title="AI Document System API",
@@ -110,6 +124,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 메트릭 미들웨어
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    route = request.scope.get("route")
+    endpoint = route.path if (route and getattr(route, "path", None)) else "unmatched_route"
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=endpoint,
+        status=response.status_code,
+    ).inc()
+    REQUEST_DURATION.labels(
+        method=request.method,
+        endpoint=endpoint,
+    ).observe(duration)
+    return response
+
+
+# /metrics 엔드포인트 (trailing slash 포함 마운트로 307 리다이렉트 방지)
+app.mount("/metrics/", make_asgi_app())
 
 # 4. 라우터 등록 — /api prefix 아래에 묶음
 #    프론트엔드가 /api/auth/login 등으로 호출하고,

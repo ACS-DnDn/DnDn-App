@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 import uuid
 import enum
 
-from apps.report.src.database import Base
+from .database import Base
 
 
 def generate_uuid():
