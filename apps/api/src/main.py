@@ -94,7 +94,8 @@ async def metrics_middleware(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     duration = time.perf_counter() - start
-    endpoint = request.url.path
+    route = request.scope.get("route")
+    endpoint = route.path if route else request.url.path
     REQUEST_COUNT.labels(
         method=request.method,
         endpoint=endpoint,

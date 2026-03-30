@@ -179,7 +179,7 @@ def process_sqs_message(sqs_client: Any, message: Dict[str, Any], config: Consum
             SQS_MESSAGES_TOTAL.labels(outcome="dropped").inc()
             return None
         except Exception as exc:
-            print(f"[consumer] leaving message {message_id} in queue for retry: {exc}")
+            print(f"[consumer] leaving message {message_id} in queue for retry: {type(exc).__name__}: {exc}")
             SQS_MESSAGES_TOTAL.labels(outcome="retried").inc()
             return None
 
