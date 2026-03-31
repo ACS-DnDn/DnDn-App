@@ -154,7 +154,7 @@ export function GenerateProgress() {
       {job.status === 'done' && (
         <button
           className="gen-progress-link"
-          onClick={() => { navigate('/documents'); setJob(null); }}
+          onClick={() => { navigate(`/viewer/${job.runId}`); setJob(null); }}
         >
           보기
         </button>
