@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { getReportSettings, createSchedule, updateSchedule, deleteSchedule, updateEventSettings, createSummaryReport } from '@/services/report.service';
+import { startGenerateTracking } from '@/components/GenerateProgress';
 import { getWorkspaces } from '@/services/workspace.service';
 import type { Schedule, SchedulePreset, EventSettingsKey } from '@/mocks';
 import './ReportSettingsPage.css';
@@ -442,8 +443,9 @@ export function ReportSettingsPage() {
     if (summaryStart > summaryEnd) { showToast('시작일시가 종료일시보다 클 수 없습니다.'); return; }
     if (!workspaceId) { showToast('워크스페이스를 찾을 수 없습니다.'); return; }
     try {
-      await createSummaryReport(workspaceId, reportTitle, new Date(summaryStart).toISOString(), new Date(summaryEnd).toISOString());
-      showToast('인프라 활동 보고서 생성을 요청했습니다.');
+      const { runId } = await createSummaryReport(workspaceId, reportTitle, new Date(summaryStart).toISOString(), new Date(summaryEnd).toISOString());
+      showToast('보고서 생성을 요청했습니다.');
+      startGenerateTracking(runId);
     } catch {
       showToast('보고서 생성 요청 중 오류가 발생했습니다.');
     }

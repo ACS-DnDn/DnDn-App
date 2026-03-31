@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { TopNav } from './TopNav';
 import { Sidebar } from './Sidebar';
+import { GenerateProgress } from '@/components/GenerateProgress';
 import './Layout.css';
 
 function CrumbLink({ to, children }: { to: string; children: React.ReactNode }) {
@@ -58,6 +59,7 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
+      <GenerateProgress />
     </>
   );
 }

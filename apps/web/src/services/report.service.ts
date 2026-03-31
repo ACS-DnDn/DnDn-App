@@ -78,6 +78,16 @@ export async function createSummaryReport(
   return res.data;
 }
 
+/** 문서 생성 완료 여부 확인 (폴링용). 존재하면 documentId 반환, 아직이면 null */
+export async function checkDocumentReady(documentId: string): Promise<string | null> {
+  try {
+    await apiFetch<unknown>(`/documents/${encodeURIComponent(documentId)}`);
+    return documentId;
+  } catch {
+    return null;
+  }
+}
+
 export async function updateEventSettings(
   workspaceId: string,
   settings: Record<string, boolean>,
