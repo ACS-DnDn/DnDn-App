@@ -541,6 +541,7 @@ def submit_document(
             seq=app.seq,
             type=app.type,
             status=approval_status,
+            approval_date=datetime.now(timezone.utc) if approval_status == "noted" else None,
         )
         db.add(new_approval)
 

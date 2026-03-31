@@ -79,12 +79,19 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const { isDark, toggle } = useTheme();
   const { logout } = useContext(AuthContext);
   const [pendingCount, setPendingCount] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setRefreshTick(t => t + 1);
+    window.addEventListener('dndn:badge-refresh', handler);
+    return () => window.removeEventListener('dndn:badge-refresh', handler);
+  }, []);
 
   useEffect(() => {
     apiFetch<{ success: boolean; data: { docStats: { pending: number } } }>('/dashboard')
       .then(res => setPendingCount(res.data.docStats.pending))
       .catch(() => {});
-  }, [location.pathname]);
+  }, [location.pathname, refreshTick]);
 
   const logoSrc = isDark && session.company.logoDarkUrl
     ? session.company.logoDarkUrl

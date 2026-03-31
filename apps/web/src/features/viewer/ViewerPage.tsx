@@ -38,10 +38,10 @@ function fmtDate(iso?: string | null): string | undefined {
 
 const DOT_MAP: Record<string, string> = {
   author: 'dot-author', approved: 'dot-approved', current: 'dot-current',
-  wait: 'dot-wait', rejected: 'dot-rejected',
+  wait: 'dot-wait', rejected: 'dot-rejected', noted: 'dot-approved',
 };
 const STATUS_LABEL: Record<string, string> = {
-  author: '기안', approved: '결재', current: '대기', wait: '대기', rejected: '반려',
+  author: '기안', approved: '결재', current: '대기', wait: '대기', rejected: '반려', noted: '참조',
 };
 
 function mapApprovalLine(items: import('@/mocks/types/document').ApprovalLineItem[]) {
@@ -249,6 +249,7 @@ export function ViewerPage() {
         `/documents/${id}/approve`,
         { method: 'POST', body: JSON.stringify(body) }
       );
+      window.dispatchEvent(new Event('dndn:badge-refresh'));
       navigate('/documents', { replace: true });
     } catch {
       alert('결재 처리 중 오류가 발생했습니다.');
@@ -267,6 +268,7 @@ export function ViewerPage() {
         method: 'POST',
         body: JSON.stringify({ comment: rejectReason.trim() }),
       });
+      window.dispatchEvent(new Event('dndn:badge-refresh'));
       navigate('/documents', { replace: true });
     } catch {
       alert('반려 처리 중 오류가 발생했습니다.');
