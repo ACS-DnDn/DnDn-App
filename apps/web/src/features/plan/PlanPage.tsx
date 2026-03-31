@@ -655,7 +655,7 @@ export function PlanPage() {
       </tr>
     );
 
-    const typeOrder = ['결재', '협조', '참조'];
+    const typeOrder = ['결재', '참조'];
     let isFirst = true;
     typeOrder.forEach(type => {
       const filtered = approvers.filter(a => a.type === type);
@@ -995,7 +995,6 @@ export function PlanPage() {
                     <span className="apv-pending-name">{p.name}</span>
                     <select className="apv-pending-type" value={p.type} onChange={e => changePendingType(i, e.target.value)}>
                       <option>결재</option>
-                      <option>협조</option>
                       <option>참조</option>
                     </select>
                     <button className="apv-pending-del" onClick={() => removePending(i)}>&times;</button>
