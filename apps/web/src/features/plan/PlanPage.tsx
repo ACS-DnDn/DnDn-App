@@ -315,6 +315,7 @@ export function PlanPage() {
 
   async function generateDoc() {
     if (!ws?.id) { alert('워크스페이스를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+    if (!nlTarget.trim() && !nlInput.trim() && refDocs.length === 0) { alert('참조문서, 작업대상, 작업내용 중 하나 이상을 입력해 주세요.'); return; }
     setDocState('loading');
     setTfState('blank');
     setTfStatus('pending');
