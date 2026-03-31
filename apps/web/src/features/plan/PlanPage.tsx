@@ -774,7 +774,7 @@ export function PlanPage() {
       {/* ── 가운데 패널 ── */}
       <section className="plan-center">
         <div className="center-topbar">
-          <button className="plan-btn-cancel" onClick={() => navigate(-1)}>
+          <button className="plan-btn-cancel" onClick={() => navigate('/dashboard')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
             취소
           </button>

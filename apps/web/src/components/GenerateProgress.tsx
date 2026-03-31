@@ -158,11 +158,9 @@ export function GenerateProgress() {
           보기
         </button>
       )}
-      {(job.status === 'done' || job.status === 'failed') && (
-        <button className="gen-progress-close" onClick={() => setJob(null)} aria-label="닫기">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" /></svg>
-        </button>
-      )}
+      <button className="gen-progress-close" onClick={() => { setJob(null); sessionStorage.removeItem(SS_KEY); }} aria-label="닫기">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" /></svg>
+      </button>
     </div>,
     document.body,
   );

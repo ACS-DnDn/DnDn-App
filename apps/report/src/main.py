@@ -707,8 +707,8 @@ async def get_generate_status(job_id: str, db: Session = Depends(get_db)):
 
 # ── 보고서 HTML 자동 렌더 (Lambda → S3 JSON 저장 후 호출) ──────
 @app.post("/api/report/render")
-async def render_report(req: RenderRequest):
-    """S3 canonical JSON 읽기 → AI HTML 보고서 생성 → HTML 저장 → html_key 반환"""
+async def render_report(req: RenderRequest, db: Session = Depends(get_db)):
+    """S3 canonical JSON 읽기 → AI HTML 보고서 생성 → HTML 저장 → Document 레코드 생성"""
     try:
         canonical = await asyncio.to_thread(get_report, req.doc_id, req.workspace_id)
     except Exception as e:
@@ -717,14 +717,22 @@ async def render_report(req: RenderRequest):
             status_code=404, detail="canonical JSON을 찾을 수 없습니다."
         )
 
+    meta = canonical.get("meta", {})
+    meta_type = meta.get("type", "EVENT").upper()
+
+    # 문서번호 채번 + doc_meta 생성
+    type_map = {"WEEKLY": "주간보고서", "HEALTH": "헬스이벤트보고서"}
+    doc_type = type_map.get(meta_type, "이벤트보고서")
+    doc_num = _next_doc_num(db, doc_type, req.workspace_id)
+    doc_meta = {"doc_num": doc_num, "author_label": "DnDn Agent"}
+
     try:
-        meta_type = canonical.get("meta", {}).get("type", "EVENT").upper()
         if meta_type == "WEEKLY":
-            fn = partial(generate_weekly_report, canonical)
+            fn = partial(generate_weekly_report, canonical, doc_meta=doc_meta)
         elif meta_type == "HEALTH":
-            fn = partial(generate_health_event_report, canonical)
+            fn = partial(generate_health_event_report, canonical, doc_meta=doc_meta)
         else:
-            fn = partial(generate_event_report, canonical)
+            fn = partial(generate_event_report, canonical, doc_meta=doc_meta)
         html = await asyncio.to_thread(fn)
     except Exception as e:
         logger.error("render_report: AI 생성 실패: %s", e, exc_info=True)
@@ -734,10 +742,27 @@ async def render_report(req: RenderRequest):
         html_key = await asyncio.to_thread(
             save_report_html, req.doc_id, html, req.workspace_id
         )
-        return {"ok": True, "data": {"doc_id": req.doc_id, "html_key": html_key}}
     except Exception as e:
         logger.error("render_report: HTML 저장 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="HTML 저장 실패")
+
+    # Document 레코드 생성 (doc_id = run_id → 프론트 폴링과 일치)
+    title = _extract_title_from_html(html, meta.get("title", req.doc_id))
+    existing = db.query(Document).filter(Document.id == req.doc_id).first()
+    if not existing:
+        doc = Document(
+            id=req.doc_id,
+            doc_num=doc_num,
+            title=title,
+            type=doc_type,
+            html_key=html_key,
+            workspace_id=req.workspace_id,
+            status="done",
+        )
+        db.add(doc)
+        db.commit()
+
+    return {"ok": True, "data": {"doc_id": req.doc_id, "html_key": html_key}}
 
 
 # ── Checkov CLI 직접 실행 (MCP 불필요) ────────────────────────
