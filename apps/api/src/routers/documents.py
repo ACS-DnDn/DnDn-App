@@ -541,7 +541,6 @@ def submit_document(
             seq=app.seq,
             type=app.type,
             status=approval_status,
-            approval_date=datetime.now(timezone.utc) if approval_status == "noted" else None,
         )
         db.add(new_approval)
 
@@ -602,6 +601,21 @@ def get_document_detail(
 
     if not _has_document_access(db, doc, current_user):
         raise HTTPException(status_code=403, detail="FORBIDDEN")
+
+    # 참조자가 처음 열람한 시점 기록
+    noted_approval = (
+        db.query(Approval)
+        .filter(
+            Approval.document_id == doc.id,
+            Approval.user_id == current_user.id,
+            Approval.status == "noted",
+            Approval.approval_date.is_(None),
+        )
+        .first()
+    )
+    if noted_approval:
+        noted_approval.approval_date = datetime.now(timezone.utc)
+        db.commit()
 
     # S3에서 HTML 본문 가져오기
     content = _s3_get_text(doc.html_key) if doc.html_key else None
