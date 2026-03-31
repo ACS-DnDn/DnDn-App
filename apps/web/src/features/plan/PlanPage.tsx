@@ -397,6 +397,7 @@ export function PlanPage() {
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
+    if (generatedTfFiles.length === 0) { alert('Terraform 코드를 먼저 생성해 주세요.'); return; }
     if (approvers.length === 0) { alert('결재자를 1명 이상 지정해 주세요.'); return; }
     setAuthorComment('');
     setSubmitModalOpen(true);
