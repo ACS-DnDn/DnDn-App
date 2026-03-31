@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { checkDocumentReady } from '@/services/report.service';
+import { checkReportReady } from '@/services/report.service';
 import './GenerateProgress.css';
 
 export type ProgressStatus = 'collecting' | 'generating' | 'done' | 'failed' | null;
 
 interface Job {
   runId: string;
+  workspaceId: string;
   status: ProgressStatus;
   progress: number; // 0-100
 }
@@ -18,13 +19,13 @@ const SS_KEY = 'dndn-gen-job';
 
 function saveSession(job: Job | null) {
   if (job && job.status !== 'done' && job.status !== 'failed') {
-    sessionStorage.setItem(SS_KEY, JSON.stringify({ runId: job.runId, startedAt: Date.now() }));
+    sessionStorage.setItem(SS_KEY, JSON.stringify({ runId: job.runId, workspaceId: job.workspaceId, startedAt: Date.now() }));
   } else {
     sessionStorage.removeItem(SS_KEY);
   }
 }
 
-function loadSession(): { runId: string; startedAt: number } | null {
+function loadSession(): { runId: string; workspaceId: string; startedAt: number } | null {
   try {
     const raw = sessionStorage.getItem(SS_KEY);
     if (!raw) return null;
@@ -35,8 +36,8 @@ function loadSession(): { runId: string; startedAt: number } | null {
 // 전역 상태 — 여러 페이지에서 접근
 let _setJob: ((j: Job | null) => void) | null = null;
 
-export function startGenerateTracking(runId: string) {
-  _setJob?.({ runId, status: 'collecting', progress: 5 });
+export function startGenerateTracking(runId: string, workspaceId: string) {
+  _setJob?.({ runId, workspaceId, status: 'collecting', progress: 5 });
 }
 
 export function GenerateProgress() {
@@ -58,7 +59,7 @@ export function GenerateProgress() {
     if (saved) {
       const elapsed = Date.now() - saved.startedAt;
       if (elapsed < TIMEOUT) {
-        setJob({ runId: saved.runId, status: 'collecting', progress: Math.min(80, (elapsed / TIMEOUT) * 100 * 1.3) });
+        setJob({ runId: saved.runId, workspaceId: saved.workspaceId, status: 'collecting', progress: Math.min(80, (elapsed / TIMEOUT) * 100 * 1.3) });
       } else {
         sessionStorage.removeItem(SS_KEY);
       }
@@ -96,10 +97,10 @@ export function GenerateProgress() {
       const fakeProgress = Math.min(80, (elapsed / TIMEOUT) * 100 * 1.3);
       const fakeStatus: ProgressStatus = fakeProgress < 35 ? 'collecting' : 'generating';
 
-      // 실제 폴링
+      // 실제 폴링 — S3 HTML 존재 여부 확인
       try {
-        const result = await checkDocumentReady(job.runId);
-        if (result) {
+        const ready = await checkReportReady(job.runId, job.workspaceId);
+        if (ready) {
           setJob(prev => prev ? { ...prev, status: 'done', progress: 100 } : null);
           sessionStorage.removeItem(SS_KEY);
           // 5초 후 자동 닫기

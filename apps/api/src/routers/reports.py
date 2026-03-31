@@ -133,7 +133,32 @@ def create_summary_report(
 
     return SuccessResponse(
         data=SummaryCreateResponse(
-            reportId=0,  # Worker가 보고서 생성 후 별도 API로 ID 전달 예정
+            reportId=0,
             runId=run_id,
+            workspaceId=workspaceId,
         )
     )
+
+
+# ---------------------------------------------------------
+# 보고서 생성 완료 여부 폴링 (GET /reports/status/{runId})
+# ---------------------------------------------------------
+@router.get("/status/{runId}")
+def check_report_status(
+    runId: str,
+    workspaceId: str,
+    current_user: User = Depends(get_current_user),
+):
+    """S3에 보고서 HTML이 존재하는지 확인 (프론트 폴링용)"""
+    if not _S3_BUCKET:
+        raise HTTPException(status_code=503, detail="S3_NOT_CONFIGURED")
+
+    html_key = f"{workspaceId}/reports/{runId}.html"
+    try:
+        s3 = boto3.client("s3", region_name=_AWS_REGION)
+        s3.head_object(Bucket=_S3_BUCKET, Key=html_key)
+        return {"success": True, "data": {"ready": True, "runId": runId}}
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return {"success": True, "data": {"ready": False, "runId": runId}}
+        raise HTTPException(status_code=500, detail="S3_ERROR") from e

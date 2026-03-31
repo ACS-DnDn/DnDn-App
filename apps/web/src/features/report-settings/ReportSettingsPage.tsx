@@ -445,7 +445,7 @@ export function ReportSettingsPage() {
     try {
       const { runId } = await createSummaryReport(workspaceId, reportTitle, new Date(summaryStart).toISOString(), new Date(summaryEnd).toISOString());
       showToast('보고서 생성을 요청했습니다.');
-      startGenerateTracking(runId);
+      startGenerateTracking(runId, workspaceId);
     } catch {
       showToast('보고서 생성 요청 중 오류가 발생했습니다.');
     }

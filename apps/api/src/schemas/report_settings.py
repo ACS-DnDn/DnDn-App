@@ -33,6 +33,7 @@ class SummaryCreateRequest(BaseModel):
 class SummaryCreateResponse(BaseModel):
     reportId: int  # 생성된 보고서 ID
     runId: str  # Worker 실행 ID (상태 조회용)
+    workspaceId: str  # 폴링 시 S3 키 구성에 필요
 
 
 # --- 3/4. 스케줄 추가/수정 (POST·PATCH /report-settings/schedules) ---
