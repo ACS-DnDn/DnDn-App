@@ -20,8 +20,14 @@ resource "aws_s3_bucket" "second" {
 
     assert "resource" in merged
     assert len(merged["resource"]) == 2
-    assert merged["resource"][0]["aws_s3_bucket"]["first"]["bucket"] == "bucket-a"
-    assert merged["resource"][1]["aws_s3_bucket"]["second"]["bucket"] == "bucket-b"
+    buckets = {
+        name: conf["bucket"]
+        for block in merged["resource"]
+        for _, resources in block.items()
+        for name, conf in resources.items()
+    }
+    assert buckets["first"] == "bucket-a"
+    assert buckets["second"] == "bucket-b"
 
 
 def test_generate_rego_returns_header_when_no_policy_is_enabled():
