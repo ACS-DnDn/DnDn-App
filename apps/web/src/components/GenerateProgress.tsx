@@ -63,12 +63,16 @@ export function GenerateProgress() {
       const fakeStatus: ProgressStatus = fakeProgress < 35 ? 'collecting' : 'generating';
 
       // 실제 폴링
-      const result = await checkDocumentReady(job.runId);
-      if (result) {
-        setJob(prev => prev ? { ...prev, status: 'done', progress: 100 } : null);
-        // 5초 후 자동 닫기
-        dismissRef.current = setTimeout(() => setJob(null), 5000);
-        return;
+      try {
+        const result = await checkDocumentReady(job.runId);
+        if (result) {
+          setJob(prev => prev ? { ...prev, status: 'done', progress: 100 } : null);
+          // 5초 후 자동 닫기
+          dismissRef.current = setTimeout(() => setJob(null), 5000);
+          return;
+        }
+      } catch {
+        // 네트워크/서버 에러 시 폴링 계속 (타임아웃으로 최종 실패 처리)
       }
 
       setJob(prev => {
@@ -120,7 +124,7 @@ export function GenerateProgress() {
         </button>
       )}
       {(job.status === 'done' || job.status === 'failed') && (
-        <button className="gen-progress-close" onClick={() => setJob(null)}>
+        <button className="gen-progress-close" onClick={() => setJob(null)} aria-label="닫기">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" /></svg>
         </button>
       )}

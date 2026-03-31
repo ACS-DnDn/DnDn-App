@@ -527,8 +527,8 @@ def submit_document(
         # 임시저장 상태면 모두 'wait'로 둡니다.
         if req.isDraft:
             approval_status = "wait"
-        elif app.type == "참조":
-            # 참조는 결재 흐름에 참여하지 않음 — 열람 통보용
+        elif app.type in ("참조", "협조"):
+            # 참조/협조는 결재 흐름에 참여하지 않음 — 열람 통보용
             approval_status = "noted"
         elif app.type == "결재" and first_approver_seq is not None and app.seq == first_approver_seq:
             approval_status = "current"
