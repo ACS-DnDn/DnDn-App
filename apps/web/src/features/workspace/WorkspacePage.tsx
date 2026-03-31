@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
-import { getWorkspaces, getOpaSettings, saveOpaSettings } from '@/services/workspace.service';
+import { getWorkspaces, getOpaSettings, saveOpaSettings, updateWorkspace } from '@/services/workspace.service';
 import { WS_ICONS, ICON_KEYS } from '@/mocks/data/icons.mock';
 import type { Workspace, IconKey } from '@/mocks/types/workspace';
 import type { OpaCategory, OpaItem, OpaSeverity } from '@/mocks/types/report';
@@ -98,10 +98,17 @@ export function WorkspacePage() {
     setModalOpen(true);
   };
   const closeModal = () => { setModalOpen(false); setIconPickerOpen(false); };
-  const saveAccount = () => {
+  const saveAccount = async () => {
     if (!modalAlias.trim()) { showToast('별칭을 입력하세요.'); return; }
-    setAccount(prev => prev ? { ...prev, alias: modalAlias.trim(), memo: modalMemo.trim(), icon: selectedIcon } : prev);
-    closeModal();
+    if (!account) return;
+    try {
+      await updateWorkspace(account.id, { alias: modalAlias.trim(), icon: selectedIcon, memo: modalMemo.trim() });
+      setAccount(prev => prev ? { ...prev, alias: modalAlias.trim(), memo: modalMemo.trim(), icon: selectedIcon } : prev);
+      closeModal();
+      showToast('워크스페이스가 수정되었습니다.', 'ok');
+    } catch {
+      showToast('수정에 실패했습니다.');
+    }
   };
 
   // OPA helpers

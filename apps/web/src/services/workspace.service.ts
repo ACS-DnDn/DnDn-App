@@ -40,6 +40,20 @@ export async function getOpaSettings(workspaceId: string): Promise<OpaCategory[]
   })) as OpaCategory[];
 }
 
+export async function updateWorkspace(
+  workspaceId: string,
+  body: { alias: string; icon: string; memo: string }
+): Promise<{ id: string; alias: string; icon: string; memo: string }> {
+  const res = await apiFetch<{
+    success: boolean;
+    data: { id: string; alias: string; icon: string; memo: string };
+  }>(`/workspaces/${workspaceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return res.data;
+}
+
 export async function saveOpaSettings(workspaceId: string, policies: OpaCategory[]): Promise<void> {
   await apiFetch<{ success: boolean; data: { savedAt: string } }>(
     `/workspaces/${workspaceId}/opa-settings`,
