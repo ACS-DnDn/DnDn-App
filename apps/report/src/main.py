@@ -454,70 +454,95 @@ async def health_event_report(req: ReportRequest, db: Session = Depends(get_db))
     return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
 
 
-# ── 주간 보고서 ────────────────────────────────────────────
-@app.post("/api/report/weekly")
-async def weekly_report(req: WeeklyReportRequest, db: Session = Depends(get_db)):
-    doc_id = f"weekly-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+# ── 주간 보고서 (비동기) ─────────────────────────────────────
+def _run_weekly(job_id: str, req: "WeeklyReportRequest", ctx: dict):
+    db = SessionLocal()
+    try:
+        job = db.query(ReportJob).filter(ReportJob.job_id == job_id).first()
+        if not job:
+            return
+
+        doc_id = f"weekly-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        ctx_meta = ctx.get("meta", {})
+
+        canonical = {
+            "meta": {
+                **ctx_meta,
+                "type": "WEEKLY",
+                "run_id": doc_id,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "workspace_id": req.workspace_id,
+                "period": {"start": req.period_start, "end": req.period_end},
+                "title": req.target,
+            },
+            "content": req.content,
+            **{k: v for k, v in ctx.items() if k != "meta"},
+        }
+
+        # canonical 저장
+        json_key = save_report(doc_id, canonical, req.workspace_id)
+
+        # AI 생성
+        job.status = "generating"
+        db.commit()
+
+        weekly_doc_num = _next_doc_num(db, "주간보고서", req.workspace_id)
+        weekly_meta = {"doc_num": weekly_doc_num, "author_label": "DnDn Agent"}
+        html = generate_weekly_report(canonical, doc_meta=weekly_meta)
+
+        # HTML 저장
+        html_key = save_report_html(doc_id, html, req.workspace_id)
+        content_url = get_presigned_url(html_key)
+        weekly_title = _extract_title_from_html(html, req.target or doc_id)
+
+        doc = Document(
+            id=doc_id,
+            doc_num=weekly_doc_num,
+            title=weekly_title,
+            type="주간보고서",
+            html_key=html_key,
+            json_key=json_key,
+            workspace_id=req.workspace_id,
+            status="done",
+        )
+        db.add(doc)
+
+        job.status = "done"
+        job.document_id = doc_id
+        job.content_url = content_url
+        job.title = weekly_title
+        db.commit()
+
+    except Exception as e:
+        logger.error("weekly_report AI 생성 오류: %s", e, exc_info=True)
+        job = db.query(ReportJob).filter(ReportJob.job_id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_code = "AI_UNAVAILABLE"
+            job.error_message = str(e)
+            db.commit()
+    finally:
+        db.close()
+
+
+@app.post("/api/report/weekly", status_code=202)
+async def weekly_report(req: WeeklyReportRequest):
+    if not req.workspace_id:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": {"code": "INVALID_WORKSPACE", "message": "workspaceId는 필수입니다."}},
+        )
+
+    job_id = str(uuid.uuid4())
+    create_job(req.workspace_id, job_id)
 
     ctx = await _merge_context(req.ref_doc_ids, req.workspace_id)
-    ctx_meta = ctx.get("meta", {})
 
-    canonical = {
-        "meta": {
-            **ctx_meta,  # canonical_summary의 account_id, time_range 등 보존
-            # 요청 필드가 ctx_meta를 덮어씀
-            "type": "WEEKLY",
-            "run_id": doc_id,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "workspace_id": req.workspace_id,
-            "period": {"start": req.period_start, "end": req.period_end},
-            "title": req.target,
-        },
-        "content": req.content,
-        **{k: v for k, v in ctx.items() if k != "meta"},
-    }
+    task = asyncio.create_task(asyncio.to_thread(_run_weekly, job_id, req, ctx))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
-    try:
-        json_key = await asyncio.to_thread(
-            save_report, doc_id, canonical, req.workspace_id
-        )
-    except Exception as e:
-        logger.error("weekly_report: JSON 저장 실패: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="보고서 저장 실패")
-
-    weekly_doc_num = _next_doc_num(db, "주간보고서", req.workspace_id)
-    weekly_meta = {"doc_num": weekly_doc_num, "author_label": "DnDn Agent"}
-
-    try:
-        html = await asyncio.to_thread(generate_weekly_report, canonical, doc_meta=weekly_meta)
-    except Exception as e:
-        logger.error("weekly_report: AI 생성 실패: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="AI 보고서 생성 실패")
-
-    try:
-        html_key = await asyncio.to_thread(
-            save_report_html, doc_id, html, req.workspace_id
-        )
-        html_url = await asyncio.to_thread(get_presigned_url, html_key)
-    except Exception as e:
-        logger.error("weekly_report: HTML 저장 실패: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="HTML 저장 실패")
-    weekly_title = _extract_title_from_html(html, req.target or doc_id)
-    doc = Document(
-        id=doc_id,
-        doc_num=weekly_doc_num,
-        title=weekly_title,
-        type="주간보고서",
-        html_key=html_key,
-        json_key=json_key,
-        workspace_id=req.workspace_id,
-        status="done",
-    )
-    db.add(doc)
-    db.commit()
-
-
-    return {"success": True, "data": {"doc_id": doc_id, "html_url": html_url}}
+    return {"success": True, "data": {"jobId": job_id, "status": "pending"}}
 
 
 # ── 작업계획서 생성 (target + content + refDocIds → HTML) ──

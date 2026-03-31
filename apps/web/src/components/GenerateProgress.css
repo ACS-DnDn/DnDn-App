@@ -1,0 +1,164 @@
+/* ── 보고서 생성 프로그레스 (우하단) ── */
+.gen-progress {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  min-width: 280px;
+  animation: genSlideUp 0.3s ease both;
+}
+
+@keyframes genSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 아이콘 영역 */
+.gen-progress-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gen-progress-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 스피너 */
+.gen-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--border-med);
+  border-top-color: var(--mint);
+  border-radius: 50%;
+  animation: genSpin 0.8s linear infinite;
+}
+
+@keyframes genSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* 상태별 아이콘 색상 */
+.gen-progress.collecting .gen-progress-icon,
+.gen-progress.generating .gen-progress-icon {
+  background: var(--mint-soft);
+}
+
+.gen-progress.done .gen-progress-icon {
+  background: #e8faf3;
+  color: #22c55e;
+}
+:root.dark .gen-progress.done .gen-progress-icon {
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.gen-progress.failed .gen-progress-icon {
+  background: rgba(220, 53, 69, 0.08);
+  color: #dc3545;
+}
+:root.dark .gen-progress.failed .gen-progress-icon {
+  background: rgba(220, 53, 69, 0.15);
+}
+
+/* 본문 */
+.gen-progress-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.gen-progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* 프로그레스 바 */
+.gen-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.gen-progress-fill {
+  height: 100%;
+  background: var(--mint);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+.gen-progress.done .gen-progress-fill {
+  background: #22c55e;
+}
+
+.gen-progress.failed .gen-progress-fill {
+  background: #dc3545;
+}
+
+/* 바로가기 버튼 */
+.gen-progress-link {
+  padding: 5px 12px;
+  border: 1.5px solid var(--mint);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mint);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Pretendard', sans-serif;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.gen-progress-link:hover {
+  background: var(--mint);
+  color: #fff;
+}
+
+/* 닫기 */
+.gen-progress-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+
+.gen-progress-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gen-progress-close:hover {
+  color: var(--text);
+  background: var(--bg-alt);
+}
+
+/* 모바일 */
+@media (max-width: 768px) {
+  .gen-progress {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    min-width: 0;
+  }
+}

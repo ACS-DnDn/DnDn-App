@@ -397,6 +397,8 @@ export function PlanPage() {
 
   function openSubmitModal() {
     if (docState !== 'ready' || !draftDocumentId) { alert('저장할 계획서가 없습니다.'); return; }
+    if (tfState === 'loading') { alert('Terraform 코드 생성이 완료될 때까지 기다려 주세요.'); return; }
+    if (generatedTfFiles.length === 0) { alert('Terraform 코드를 먼저 생성해 주세요.'); return; }
     if (approvers.length === 0) { alert('결재자를 1명 이상 지정해 주세요.'); return; }
     setAuthorComment('');
     setSubmitModalOpen(true);
@@ -654,7 +656,7 @@ export function PlanPage() {
       </tr>
     );
 
-    const typeOrder = ['결재', '협조', '참조'];
+    const typeOrder = ['결재', '참조'];
     let isFirst = true;
     typeOrder.forEach(type => {
       const filtered = approvers.filter(a => a.type === type);
@@ -994,7 +996,6 @@ export function PlanPage() {
                     <span className="apv-pending-name">{p.name}</span>
                     <select className="apv-pending-type" value={p.type} onChange={e => changePendingType(i, e.target.value)}>
                       <option>결재</option>
-                      <option>협조</option>
                       <option>참조</option>
                     </select>
                     <button className="apv-pending-del" onClick={() => removePending(i)}>&times;</button>

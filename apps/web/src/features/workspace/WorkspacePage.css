@@ -174,6 +174,22 @@
 .btn-save-opa { padding: 9px 22px; border: none; border-radius: 8px; background: var(--mint); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: opacity .15s; }
 .btn-save-opa:hover { opacity: .85; }
 
+/* Flow Logs 가이드 */
+.flow-logs-row { display: flex; align-items: center; gap: 12px; }
+.btn-guide { padding: 4px 12px; border: 1.5px solid var(--mint); border-radius: 6px; background: transparent; color: var(--mint); font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: 'Pretendard', sans-serif; transition: all .15s; flex-shrink: 0; }
+.btn-guide:hover { background: var(--mint); color: #fff; }
+.guide-modal { width: 520px; }
+.guide-body { gap: 12px; }
+.guide-intro { font-size: 13px; color: var(--text-sub); line-height: 1.6; margin: 0; }
+.guide-steps { display: flex; flex-direction: column; gap: 2px; }
+.guide-step { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.guide-step:last-child { border-bottom: none; }
+.guide-num { width: 26px; height: 26px; border-radius: 50%; background: var(--mint); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.guide-text { flex: 1; min-width: 0; }
+.guide-text strong { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.guide-text p { font-size: 12.5px; color: var(--text-sub); line-height: 1.55; margin: 4px 0 0; }
+.guide-text code { font-size: 12px; font-weight: 600; color: var(--mint); background: var(--mint-soft); padding: 2px 6px; border-radius: 4px; }
+
 /* ── 모바일 ── */
 @media (max-width: 768px) {
   .workspace-page { padding: 20px 16px; }
@@ -192,4 +208,5 @@
   .ei-field { flex-direction: column; gap: 6px; }
   .ei-field-label { width: auto; padding-top: 0; }
   .workspace-page .empty-state { padding: 48px 20px; }
+  .guide-modal { width: 92vw; }
 }

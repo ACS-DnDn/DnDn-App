@@ -327,11 +327,16 @@ def get_documents(
             .distinct()
         )
     else:
-        # 워크스페이스 내 non-draft 문서 + 본인이 작성한 draft 문서 포함
+        # 워크스페이스 내 non-draft 문서 + 본인이 작성한 draft 문서 + 결재선에 포함된 문서
+        my_approval_doc_ids = (
+            db.query(Approval.document_id)
+            .filter(Approval.user_id == current_user.id)
+        )
         query = db.query(Document).filter(
             or_(
                 and_(Document.workspace_id.in_(my_ws_ids), Document.status != "draft"),
                 and_(Document.author_id == current_user.id, Document.status == "draft"),
+                and_(Document.id.in_(my_approval_doc_ids), Document.status != "draft"),
             )
         )
 
@@ -520,9 +525,15 @@ def submit_document(
 
     for app in req.approvers:
         # 임시저장 상태면 모두 'wait'로 둡니다.
-        approval_status = "wait"
-        if first_approver_seq is not None and app.seq == first_approver_seq and app.type == "결재":
+        if req.isDraft:
+            approval_status = "wait"
+        elif app.type in ("참조", "협조"):
+            # 참조/협조는 결재 흐름에 참여하지 않음 — 열람 통보용
+            approval_status = "noted"
+        elif app.type == "결재" and first_approver_seq is not None and app.seq == first_approver_seq:
             approval_status = "current"
+        else:
+            approval_status = "wait"
 
         new_approval = Approval(
             document_id=doc.id,
@@ -710,12 +721,13 @@ def approve_document(
         my_approval.comment = req.comment
     my_approval.approval_date = datetime.now(timezone.utc)
 
-    # 4. 다음 결재자 찾기 (나의 seq + 1 인 사람)
+    # 4. 다음 결재자 찾기 (결재 타입만 — 참조는 결재 흐름에서 제외)
     next_approval = (
         db.query(Approval)
         .filter(
             Approval.document_id == documentId,
             Approval.seq > my_approval.seq,
+            Approval.type == "결재",
             Approval.status.in_(["wait", "current"]),
         )
         .order_by(Approval.seq.asc())
@@ -724,11 +736,11 @@ def approve_document(
 
     # 5. 문서 상태 및 바통 터치 결정
     if next_approval:
-        # 다음 사람이 있다면 그 사람의 상태를 "current"로 열어줍니다.
+        # 다음 결재자가 있다면 그 사람의 상태를 "current"로 열어줍니다.
         next_approval.status = "current"
         new_status = "progress"  # 문서는 계속 진행 중
     else:
-        # 다음 사람이 없다면 내가 최종 결재자! 문서를 완료 처리합니다.
+        # 다음 결재자가 없다면 최종 결재 완료! 문서를 완료 처리합니다.
         doc.status = "done"
         new_status = "done"
 

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
@@ -64,10 +65,17 @@ def get_dashboard(
         db.query(DocumentRead.document_id)
         .filter(DocumentRead.user_id == current_user.id)
     )
+    my_approval_doc_ids = (
+        db.query(Approval.document_id)
+        .filter(Approval.user_id == current_user.id)
+    )
     new_doc_count = (
         db.query(Document)
         .filter(
-            Document.workspace_id.in_(my_ws_ids),
+            or_(
+                Document.workspace_id.in_(my_ws_ids),
+                Document.id.in_(my_approval_doc_ids),
+            ),
             Document.id.notin_(read_doc_ids),
             Document.status != "draft",
         )

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
-import { getWorkspaces, getOpaSettings, saveOpaSettings } from '@/services/workspace.service';
+import { getWorkspaces, getOpaSettings, saveOpaSettings, updateWorkspace } from '@/services/workspace.service';
 import { WS_ICONS, ICON_KEYS } from '@/mocks/data/icons.mock';
 import type { Workspace, IconKey } from '@/mocks/types/workspace';
 import type { OpaCategory, OpaItem, OpaSeverity } from '@/mocks/types/report';
@@ -29,6 +29,7 @@ export function WorkspacePage() {
 
   // 모달
   const [modalOpen, setModalOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [modalAlias, setModalAlias] = useState('');
   const [modalMemo, setModalMemo] = useState('');
   const [selectedIcon, setSelectedIcon] = useState<IconKey>('rocket');
@@ -97,10 +98,17 @@ export function WorkspacePage() {
     setModalOpen(true);
   };
   const closeModal = () => { setModalOpen(false); setIconPickerOpen(false); };
-  const saveAccount = () => {
+  const saveAccount = async () => {
     if (!modalAlias.trim()) { showToast('별칭을 입력하세요.'); return; }
-    setAccount(prev => prev ? { ...prev, alias: modalAlias.trim(), memo: modalMemo.trim(), icon: selectedIcon } : prev);
-    closeModal();
+    if (!account) return;
+    try {
+      await updateWorkspace(account.id, { alias: modalAlias.trim(), icon: selectedIcon, memo: modalMemo.trim() });
+      setAccount(prev => prev ? { ...prev, alias: modalAlias.trim(), memo: modalMemo.trim(), icon: selectedIcon } : prev);
+      closeModal();
+      showToast('워크스페이스가 수정되었습니다.', 'ok');
+    } catch {
+      showToast('수정에 실패했습니다.');
+    }
   };
 
   // OPA helpers
@@ -202,6 +210,13 @@ export function WorkspacePage() {
                 <div className="info-card aws-section">
                   <div className="info-card-header">AWS 연동</div>
                   <div className="info-row"><span className="info-label">계정 ID</span><span className="info-value">{account.acctId}</span></div>
+                  <div className="info-row">
+                    <span className="info-label">Flow Logs</span>
+                    <span className="info-value flow-logs-row">
+                      VPC에 Flow Logs를 활성화하세요
+                      <button className="btn-guide" onClick={() => setGuideOpen(true)}>가이드</button>
+                    </span>
+                  </div>
                 </div>
 
                 {/* GitHub 연동 */}
@@ -318,6 +333,77 @@ export function WorkspacePage() {
             <div className="modal-foot">
               <button className="btn-modal btn-cancel" onClick={closeModal}>취소</button>
               <button className="btn-modal btn-save" onClick={saveAccount}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flow Logs 가이드 모달 */}
+      {guideOpen && (
+        <div className="modal-overlay open" onClick={(e) => { if (e.target === e.currentTarget) setGuideOpen(false); }}>
+          <div className="modal guide-modal">
+            <div className="modal-head">
+              <span className="modal-title">VPC Flow Logs 설정 가이드</span>
+              <button className="modal-close" onClick={() => setGuideOpen(false)}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="3" x2="13" y2="13" /><line x1="13" y1="3" x2="3" y2="13" /></svg>
+              </button>
+            </div>
+            <div className="modal-body guide-body">
+              <p className="guide-intro">DnDn 플랫폼이 네트워크 트래픽을 분석하려면 VPC에 Flow Logs가 활성화되어 있어야 합니다. 아래 단계를 따라 설정하세요.</p>
+              <div className="guide-steps">
+                <div className="guide-step">
+                  <span className="guide-num">1</span>
+                  <div className="guide-text">
+                    <strong>VPC 콘솔 접속</strong>
+                    <p>AWS 콘솔에서 <strong>VPC</strong> 서비스로 이동합니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">2</span>
+                  <div className="guide-text">
+                    <strong>VPC 선택</strong>
+                    <p>좌측 메뉴에서 <strong>VPC</strong>를 클릭한 후, Flow Logs를 설정할 VPC를 선택합니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">3</span>
+                  <div className="guide-text">
+                    <strong>플로우 로그 탭</strong>
+                    <p>하단의 <strong>플로우 로그</strong> 탭을 클릭한 후 <strong>플로우 로그 생성</strong> 버튼을 클릭합니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">4</span>
+                  <div className="guide-text">
+                    <strong>대상 설정</strong>
+                    <p>대상을 <strong>CloudWatch Logs로 전송</strong>으로 선택합니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">5</span>
+                  <div className="guide-text">
+                    <strong>로그 그룹 선택</strong>
+                    <p>대상 로그 그룹에서 <code>/dndn/vpc-flow-logs</code>를 선택합니다. DnDn 연동 시 자동으로 생성된 로그 그룹입니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">6</span>
+                  <div className="guide-text">
+                    <strong>IAM 역할 선택</strong>
+                    <p>IAM 역할에서 <code>DnDnFlowLogsRole</code>을 선택합니다. DnDn 연동 시 자동으로 생성된 역할입니다.</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <span className="guide-num">7</span>
+                  <div className="guide-text">
+                    <strong>생성 완료</strong>
+                    <p>나머지 설정은 기본값으로 두고 <strong>플로우 로그 생성</strong>을 클릭하면 완료됩니다. 이후 보고서에 네트워크 트래픽 분석이 자동으로 포함됩니다.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn-modal btn-save" onClick={() => setGuideOpen(false)}>확인</button>
             </div>
           </div>
         </div>

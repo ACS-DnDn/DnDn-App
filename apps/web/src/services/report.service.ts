@@ -78,6 +78,19 @@ export async function createSummaryReport(
   return res.data;
 }
 
+/** 문서 생성 완료 여부 확인 (폴링용). 존재하면 documentId 반환, 아직이면 null, 그 외 에러는 rethrow */
+export async function checkDocumentReady(documentId: string): Promise<string | null> {
+  try {
+    await apiFetch<unknown>(`/documents/${encodeURIComponent(documentId)}`);
+    return documentId;
+  } catch (err) {
+    // 404 = 아직 생성 중 → null
+    if (err instanceof Error && err.message.includes('404')) return null;
+    // 그 외(401/403/500 등)는 상위에서 처리
+    throw err;
+  }
+}
+
 export async function updateEventSettings(
   workspaceId: string,
   settings: Record<string, boolean>,
