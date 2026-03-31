@@ -84,7 +84,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     apiFetch<{ success: boolean; data: { docStats: { pending: number } } }>('/dashboard')
       .then(res => setPendingCount(res.data.docStats.pending))
       .catch(() => {});
-  }, []);
+  }, [location.pathname]);
 
   const logoSrc = isDark && session.company.logoDarkUrl
     ? session.company.logoDarkUrl
