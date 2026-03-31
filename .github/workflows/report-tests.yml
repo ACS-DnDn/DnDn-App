@@ -11,6 +11,9 @@ on:
       - ".github/workflows/report-tests.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pytest:
     name: Run report pytest
