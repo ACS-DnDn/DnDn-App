@@ -510,11 +510,18 @@ def submit_document(
     db.flush()
 
     # 6. 새로운 결재선 등록
+    # 상신 시, '결재' 타입 중 seq가 가장 작은 사람만 'current'로 설정합니다.
+    # 협조/참조 타입이 배열 앞에 있더라도 결재 타입이 아니면 current가 되지 않습니다.
+    first_approver_seq = None
+    if not req.isDraft:
+        approval_seqs = [a.seq for a in req.approvers if a.type == "결재"]
+        if approval_seqs:
+            first_approver_seq = min(approval_seqs)
+
     for app in req.approvers:
-        # 상신 상태(isDraft=false)일 때, 첫 번째 결재자(seq=1)는 바로 'current(결재 대기)' 상태가 되고, 나머지는 'wait'가 됩니다.
         # 임시저장 상태면 모두 'wait'로 둡니다.
         approval_status = "wait"
-        if not req.isDraft and app.seq == 1:
+        if first_approver_seq is not None and app.seq == first_approver_seq and app.type == "결재":
             approval_status = "current"
 
         new_approval = Approval(
