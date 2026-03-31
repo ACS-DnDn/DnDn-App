@@ -14,6 +14,23 @@ interface Job {
 
 const POLL_INTERVAL = 5_000;
 const TIMEOUT = 180_000; // 3분
+const SS_KEY = 'dndn-gen-job';
+
+function saveSession(job: Job | null) {
+  if (job && job.status !== 'done' && job.status !== 'failed') {
+    sessionStorage.setItem(SS_KEY, JSON.stringify({ runId: job.runId, startedAt: Date.now() }));
+  } else {
+    sessionStorage.removeItem(SS_KEY);
+  }
+}
+
+function loadSession(): { runId: string; startedAt: number } | null {
+  try {
+    const raw = sessionStorage.getItem(SS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
 
 // 전역 상태 — 여러 페이지에서 접근
 let _setJob: ((j: Job | null) => void) | null = null;
@@ -31,8 +48,21 @@ export function GenerateProgress() {
 
   // 전역 setter 등록
   useEffect(() => {
-    _setJob = setJob;
+    _setJob = (j: Job | null) => { setJob(j); saveSession(j); };
     return () => { _setJob = null; };
+  }, []);
+
+  // 새로고침 시 sessionStorage에서 복원
+  useEffect(() => {
+    const saved = loadSession();
+    if (saved) {
+      const elapsed = Date.now() - saved.startedAt;
+      if (elapsed < TIMEOUT) {
+        setJob({ runId: saved.runId, status: 'collecting', progress: Math.min(80, (elapsed / TIMEOUT) * 100 * 1.3) });
+      } else {
+        sessionStorage.removeItem(SS_KEY);
+      }
+    }
   }, []);
 
   const cleanup = useCallback(() => {
@@ -46,7 +76,10 @@ export function GenerateProgress() {
       return;
     }
 
-    startRef.current = Date.now();
+    if (!startRef.current) {
+      const saved = loadSession();
+      startRef.current = saved?.startedAt ?? Date.now();
+    }
 
     // fake progress + 폴링
     timerRef.current = setInterval(async () => {
@@ -55,6 +88,7 @@ export function GenerateProgress() {
       // 타임아웃
       if (elapsed > TIMEOUT) {
         setJob(prev => prev ? { ...prev, status: 'failed', progress: 100 } : null);
+        sessionStorage.removeItem(SS_KEY);
         return;
       }
 
@@ -67,6 +101,7 @@ export function GenerateProgress() {
         const result = await checkDocumentReady(job.runId);
         if (result) {
           setJob(prev => prev ? { ...prev, status: 'done', progress: 100 } : null);
+          sessionStorage.removeItem(SS_KEY);
           // 5초 후 자동 닫기
           dismissRef.current = setTimeout(() => setJob(null), 5000);
           return;
