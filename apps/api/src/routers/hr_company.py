@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Company
+from apps.api.src.models import User, Company, Department
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.hr import CompanyResponse, CompanyUpdateRequest
 from apps.api.src.routers.hr_deps import require_hr
@@ -57,7 +57,15 @@ def update_company(
         raise HTTPException(status_code=404, detail="COMPANY_NOT_FOUND")
 
     if req.name is not None:
-        company.name = req.name.strip()
+        new_name = req.name.strip()
+        company.name = new_name
+        # 루트 부서(parent_id=NULL)명도 회사명과 동기화
+        root_dept = db.query(Department).filter(
+            Department.company_id == company.id,
+            Department.parent_id.is_(None),
+        ).first()
+        if root_dept:
+            root_dept.name = new_name
 
     db.commit()
     db.refresh(company)
