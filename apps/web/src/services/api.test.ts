@@ -102,9 +102,12 @@ describe('api service helpers', () => {
 
     const { apiFetch } = await import('@/services/api');
 
-    await expect(apiFetch('/dashboard')).rejects.toThrow('API 401: Unauthorized');
+    await expect(apiFetch('/dashboard')).rejects.toThrow('SESSION_EXPIRED');
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1]?.[0])).toMatch(/\/api\/auth\/refresh$/);
+    // 토큰이 삭제되었는지 확인
+    expect(storage.getItem('dndn-access-token')).toBeNull();
+    expect(storage.getItem('dndn-refresh-token')).toBeNull();
   });
 
   it('does not force content-type for FormData payloads', async () => {
