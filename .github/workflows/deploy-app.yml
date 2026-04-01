@@ -76,10 +76,66 @@ jobs:
             echo "web=${{ steps.filter.outputs.web }}" >> "$GITHUB_OUTPUT"
           fi
 
+  # ── API 단위 테스트 ───────────────────────────────────────────────────
+  test-api:
+    name: Test API
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            apps/api/requirements.txt
+            apps/api/requirements-test.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r apps/api/requirements.txt
+          pip install -r apps/api/requirements-test.txt
+
+      - name: Run tests
+        run: python -m pytest apps/api/tests/ -v --tb=short --junit-xml=test-results/junit.xml
+        env:
+          PYTHONPATH: .
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results-${{ github.sha }}
+          path: test-results/junit.xml
+          retention-days: 30
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## API 단위 테스트 결과" >> "$GITHUB_STEP_SUMMARY"
+          python - >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import xml.etree.ElementTree as ET, sys
+          try:
+            tree = ET.parse("test-results/junit.xml")
+            suite = tree.getroot()
+            tests   = suite.get("tests", "?")
+            failures = suite.get("failures", "0")
+            errors   = suite.get("errors", "0")
+            skipped  = suite.get("skipped", "0")
+            passed   = int(tests) - int(failures) - int(errors) - int(skipped)
+            icon = "✅" if int(failures) == 0 and int(errors) == 0 else "❌"
+            print(f"{icon} **{passed}/{tests} passed** — failures: {failures}, errors: {errors}, skipped: {skipped}")
+          except Exception as e:
+            print(f"⚠️ 결과 파싱 실패: {e}")
+          EOF
+
   # ── API ───────────────────────────────────────────────────────────────
   publish-api:
     name: Publish API Image
-    needs: detect
+    needs: [detect, test-api]
     if: needs.detect.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -183,7 +239,7 @@ jobs:
   # ── Deploy: GitOps image tag 업데이트 → ArgoCD 자동 sync ────────────────
   update-gitops:
     name: Update GitOps manifests
-    needs: [detect, publish-api, publish-worker, publish-report, publish-web]
+    needs: [detect, test-api, publish-api, publish-worker, publish-report, publish-web]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
