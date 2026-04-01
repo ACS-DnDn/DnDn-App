@@ -1657,6 +1657,7 @@ def build_weekly_cloudwatch_extensions(
                 alarm_count=total_count,
             )
 
+            # 현재 ALARM 상태인 알람 수집
             for alarm in metric_alarms:
                 state = alarm.get("StateValue") or "UNKNOWN"
                 state_counts[state] = state_counts.get(state, 0) + 1
@@ -1694,6 +1695,60 @@ def build_weekly_cloudwatch_extensions(
                         "evidence": {"raw_s3_uri": raw_uri},
                     }
                 )
+
+            # time_range 내 ALARM 이력 수집 (이미 복구된 알람 포함)
+            seen_alarm_names = {a["alarm_name"] for a in alarms if a.get("region") == region}
+            tr = payload.get("time_range", {})
+            hist_start = _parse_dt(tr["start"]) if tr.get("start") else None
+            hist_end = _parse_dt(tr["end"]) if tr.get("end") else None
+
+            if hist_start and hist_end:
+                all_alarm_names = [a.get("AlarmName", "") for a in metric_alarms + composite_alarms]
+                for alarm_name in all_alarm_names:
+                    if alarm_name in seen_alarm_names:
+                        continue
+                    try:
+                        hist_resp = cw.describe_alarm_history(
+                            AlarmName=alarm_name,
+                            HistoryItemType="StateUpdate",
+                            StartDate=hist_start,
+                            EndDate=hist_end,
+                            MaxRecords=50,
+                        )
+                        for item in hist_resp.get("AlarmHistoryItems", []):
+                            summary = item.get("HistorySummary", "")
+                            if "to ALARM" not in summary:
+                                continue
+                            # 이 알람이 time_range 내에 ALARM 상태였음
+                            alarm_meta = next(
+                                (a for a in metric_alarms if a.get("AlarmName") == alarm_name),
+                                next((a for a in composite_alarms if a.get("AlarmName") == alarm_name), {}),
+                            )
+                            is_composite = alarm_meta in composite_alarms
+                            entry: Dict[str, Any] = {
+                                "region": region,
+                                "alarm_name": alarm_name,
+                                "alarm_type": "COMPOSITE" if is_composite else "METRIC",
+                                "state_value": "ALARM (recovered)",
+                                "state_reason": item.get("HistorySummary", ""),
+                                "evidence": {"raw_s3_uri": raw_uri},
+                            }
+                            if not is_composite:
+                                entry.update({
+                                    "namespace": alarm_meta.get("Namespace"),
+                                    "metric_name": alarm_meta.get("MetricName"),
+                                    "evaluation_periods": alarm_meta.get("EvaluationPeriods"),
+                                    "threshold": alarm_meta.get("Threshold"),
+                                    "comparison_operator": alarm_meta.get("ComparisonOperator"),
+                                })
+                            else:
+                                entry["alarm_rule"] = alarm_meta.get("AlarmRule")
+                            alarms.append(entry)
+                            seen_alarm_names.add(alarm_name)
+                            state_counts["ALARM (recovered)"] = state_counts.get("ALARM (recovered)", 0) + 1
+                            break  # 알람당 1건만
+                    except ClientError:
+                        pass  # 이력 조회 실패 시 스킵
 
         except ClientError as e:
             na = _na_from_client_error(e)
