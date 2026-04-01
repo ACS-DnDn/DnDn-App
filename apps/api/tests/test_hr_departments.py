@@ -220,3 +220,64 @@ class TestSetLeader:
 
         res = client_member.patch(f"/api/hr/departments/{dept.id}/leader", json={"leaderId": None})
         assert res.status_code == 403
+
+
+# ── PATCH /api/hr/departments/{dept_id}/name ─────────────────────────────────
+
+
+class TestRenameDepartment:
+    def test_rename_success(self, client_hr, db, company):
+        """부서명을 정상적으로 변경한다."""
+        dept = Department(id=str(uuid.uuid4()), name="구팀명", parent_id=None, company_id=company.id)
+        # 루트가 아닌 하위 부서여야 하므로 parent 설정
+        parent = Department(id=str(uuid.uuid4()), name="본부", company_id=company.id)
+        db.add(parent)
+        db.flush()
+        dept.parent_id = parent.id
+        db.add(dept)
+        db.flush()
+
+        res = client_hr.patch(f"/api/hr/departments/{dept.id}/name", json={"name": "신팀명"})
+        assert res.status_code == 200
+        assert res.json()["data"]["name"] == "신팀명"
+
+    def test_rename_strips_whitespace(self, client_hr, db, company):
+        """앞뒤 공백이 제거된 이름으로 저장된다."""
+        parent = Department(id=str(uuid.uuid4()), name="본부", company_id=company.id)
+        db.add(parent)
+        db.flush()
+        dept = Department(id=str(uuid.uuid4()), name="팀", parent_id=parent.id, company_id=company.id)
+        db.add(dept)
+        db.flush()
+
+        res = client_hr.patch(f"/api/hr/departments/{dept.id}/name", json={"name": "  새팀명  "})
+        assert res.status_code == 200
+        assert res.json()["data"]["name"] == "새팀명"
+
+    def test_rename_root_department_blocked(self, client_hr, db, company):
+        """루트 부서(parent_id=None)는 이름 변경 불가 — 회사명 설정에서만 가능."""
+        root = Department(id=str(uuid.uuid4()), name="루트부서", company_id=company.id)
+        db.add(root)
+        db.flush()
+
+        res = client_hr.patch(f"/api/hr/departments/{root.id}/name", json={"name": "새이름"})
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "ROOT_DEPT_USE_COMPANY_SETTINGS"
+
+    def test_rename_nonexistent_department(self, client_hr):
+        """없는 부서 → 404."""
+        res = client_hr.patch("/api/hr/departments/nonexistent/name", json={"name": "새이름"})
+        assert res.status_code == 404
+        assert res.json()["error"]["code"] == "DEPT_NOT_FOUND"
+
+    def test_member_cannot_rename_department(self, client_member, db, company):
+        """일반 사원은 403."""
+        parent = Department(id=str(uuid.uuid4()), name="본부", company_id=company.id)
+        db.add(parent)
+        db.flush()
+        dept = Department(id=str(uuid.uuid4()), name="팀", parent_id=parent.id, company_id=company.id)
+        db.add(dept)
+        db.flush()
+
+        res = client_member.patch(f"/api/hr/departments/{dept.id}/name", json={"name": "몰래바꾼팀"})
+        assert res.status_code == 403
