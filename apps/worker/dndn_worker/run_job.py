@@ -1620,6 +1620,7 @@ def build_weekly_cloudwatch_extensions(
 
     collection: Dict[str, Any] = {}
     alarms: List[Dict[str, Any]] = []
+    recovered_alarms: List[Dict[str, Any]] = []
     total_alarm_count = 0
     state_counts: Dict[str, int] = {}
 
@@ -1657,6 +1658,7 @@ def build_weekly_cloudwatch_extensions(
                 alarm_count=total_count,
             )
 
+            # 현재 ALARM 상태인 알람 수집
             for alarm in metric_alarms:
                 state = alarm.get("StateValue") or "UNKNOWN"
                 state_counts[state] = state_counts.get(state, 0) + 1
@@ -1695,6 +1697,72 @@ def build_weekly_cloudwatch_extensions(
                     }
                 )
 
+            # time_range 내 ALARM 이력 수집 (이미 복구된 알람 포함)
+            seen_alarm_names = {a["alarm_name"] for a in alarms if a.get("region") == region}
+            tr = payload.get("time_range", {})
+            hist_start = _parse_dt(tr["start"]) if tr.get("start") else None
+            hist_end = _parse_dt(tr["end"]) if tr.get("end") else None
+
+            if hist_start and hist_end:
+                all_alarm_names = [a.get("AlarmName", "") for a in metric_alarms + composite_alarms]
+                for alarm_name in all_alarm_names:
+                    if alarm_name in seen_alarm_names:
+                        continue
+                    try:
+                        # 페이지네이션으로 전체 이력 수집
+                        history_items: List[Dict[str, Any]] = []
+                        hist_token: Optional[str] = None
+                        while True:
+                            hist_kwargs: Dict[str, Any] = {
+                                "AlarmName": alarm_name,
+                                "HistoryItemType": "StateUpdate",
+                                "StartDate": hist_start,
+                                "EndDate": hist_end,
+                                "MaxRecords": 50,
+                            }
+                            if hist_token:
+                                hist_kwargs["NextToken"] = hist_token
+                            hist_resp = cw.describe_alarm_history(**hist_kwargs)
+                            history_items.extend(hist_resp.get("AlarmHistoryItems", []))
+                            hist_token = hist_resp.get("NextToken")
+                            if not hist_token:
+                                break
+
+                        for item in history_items:
+                            summary = item.get("HistorySummary", "")
+                            if "to ALARM" not in summary:
+                                continue
+                            # 이 알람이 time_range 내에 ALARM 상태였음
+                            alarm_meta = next(
+                                (a for a in metric_alarms if a.get("AlarmName") == alarm_name),
+                                next((a for a in composite_alarms if a.get("AlarmName") == alarm_name), {}),
+                            )
+                            is_composite = alarm_meta in composite_alarms
+                            entry: Dict[str, Any] = {
+                                "region": region,
+                                "alarm_name": alarm_name,
+                                "alarm_type": "COMPOSITE" if is_composite else "METRIC",
+                                "state_value": "ALARM (recovered)",
+                                "state_reason": item.get("HistorySummary", ""),
+                                "evidence": {"raw_s3_uri": raw_uri},
+                            }
+                            if not is_composite:
+                                entry.update({
+                                    "namespace": alarm_meta.get("Namespace"),
+                                    "metric_name": alarm_meta.get("MetricName"),
+                                    "evaluation_periods": alarm_meta.get("EvaluationPeriods"),
+                                    "threshold": alarm_meta.get("Threshold"),
+                                    "comparison_operator": alarm_meta.get("ComparisonOperator"),
+                                })
+                            else:
+                                entry["alarm_rule"] = alarm_meta.get("AlarmRule")
+                            recovered_alarms.append(entry)
+                            seen_alarm_names.add(alarm_name)
+                            state_counts["ALARM (recovered)"] = state_counts.get("ALARM (recovered)", 0) + 1
+                            break  # 알람당 1건만
+                    except ClientError as hist_err:
+                        print(f"[CloudWatch] alarm history 조회 실패: alarm={alarm_name} region={region} error={hist_err}")
+
         except ClientError as e:
             na = _na_from_client_error(e)
             if na is not None:
@@ -1713,12 +1781,15 @@ def build_weekly_cloudwatch_extensions(
             )
 
     alarms.sort(key=lambda a: (str(a.get("region", "")), str(a.get("alarm_name", ""))))
+    recovered_alarms.sort(key=lambda a: (str(a.get("region", "")), str(a.get("alarm_name", ""))))
+    all_alarms = alarms + recovered_alarms
     return {
         "cloudwatch_collection_status": collection,
-        "cloudwatch_alarms": alarms,
+        "cloudwatch_alarms": all_alarms,
         "cloudwatch_rollup": {
             "alarm_count": total_alarm_count,
             "active_alarm_count": len(alarms),
+            "recovered_alarm_count": len(recovered_alarms),
             "state_counts": state_counts,
         },
     }
