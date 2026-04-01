@@ -23,8 +23,10 @@ from apps.api.src.database import get_db
 from apps.api.src.models import Base, Company, Department, User
 from apps.api.src.routers import (
     dashboard as dashboard_router,
+    documents as documents_router,
     hr_departments as hr_departments_router,
     hr_users as hr_users_router,
+    internal as internal_router,
     org as org_router,
 )
 from apps.api.src.routers.auth import get_current_user
@@ -119,6 +121,8 @@ def _build_test_app(db_session) -> FastAPI:
     app.include_router(hr_users_router.router, prefix="/api")
     app.include_router(hr_departments_router.router, prefix="/api")
     app.include_router(dashboard_router.router, prefix="/api")
+    app.include_router(documents_router.router, prefix="/api")
+    app.include_router(internal_router.router)  # /internal — prefix 없음
 
     def _override_db():
         yield db_session
