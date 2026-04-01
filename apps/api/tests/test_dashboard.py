@@ -27,38 +27,46 @@ class TestDashboard:
 
     def test_pending_count_includes_approval_waiting(self, client_member, db, member_user, company):
         """결재 대기(current) 건수가 pending에 포함된다."""
+        initial = client_member.get("/api/dashboard").json()["data"]["docStats"]["pending"]
+
         doc = _make_doc(db, member_user, status="progress", company=company)
         apv = Approval(document_id=doc.id, user_id=member_user.id, seq=1, type="결재", status="current")
         db.add(apv)
         db.flush()
 
         res = client_member.get("/api/dashboard")
-        assert res.json()["data"]["docStats"]["pending"] >= 1
+        assert res.json()["data"]["docStats"]["pending"] == initial + 1
 
     def test_pending_count_includes_rejected_docs(self, client_member, db, member_user, company):
         """내가 기안한 반려 문서가 pending에 포함된다."""
+        initial = client_member.get("/api/dashboard").json()["data"]["docStats"]["pending"]
+
         _make_doc(db, member_user, status="rejected", company=company)
         db.flush()
 
         res = client_member.get("/api/dashboard")
-        assert res.json()["data"]["docStats"]["pending"] >= 1
+        assert res.json()["data"]["docStats"]["pending"] == initial + 1
 
     def test_pending_count_includes_deploy_failed(self, client_member, db, member_user, company):
         """내가 기안한 배포 실패 문서가 pending에 포함된다."""
+        initial = client_member.get("/api/dashboard").json()["data"]["docStats"]["pending"]
+
         _make_doc(db, member_user, status="deploy_failed", company=company)
         db.flush()
 
         res = client_member.get("/api/dashboard")
-        assert res.json()["data"]["docStats"]["pending"] >= 1
+        assert res.json()["data"]["docStats"]["pending"] == initial + 1
 
     def test_ongoing_count_counts_progress_docs(self, client_member, db, member_user, company):
         """진행 중인(progress) 문서 수가 ongoing에 반영된다."""
+        initial = client_member.get("/api/dashboard").json()["data"]["docStats"]["ongoing"]
+
         _make_doc(db, member_user, status="progress", company=company)
         _make_doc(db, member_user, status="progress", company=company)
         db.flush()
 
         res = client_member.get("/api/dashboard")
-        assert res.json()["data"]["docStats"]["ongoing"] >= 2
+        assert res.json()["data"]["docStats"]["ongoing"] == initial + 2
 
     def test_pending_docs_contains_current_approval(self, client_member, db, member_user, company):
         """결재 대기 문서가 pendingDocs 목록에 나타난다."""
@@ -139,7 +147,7 @@ class TestDashboard:
 
         res = client_member.get("/api/dashboard")
         # 읽은 문서는 newDoc에서 제외되므로 unread_doc만 카운트
-        assert res.json()["data"]["docStats"]["newDoc"] >= 1
+        assert res.json()["data"]["docStats"]["newDoc"] == 1
 
 
 # ── 헬퍼 ──────────────────────────────────────────────────────────────────────

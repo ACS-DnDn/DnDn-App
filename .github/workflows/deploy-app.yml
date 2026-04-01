@@ -116,7 +116,7 @@ jobs:
         if: always()
         run: |
           echo "## API 단위 테스트 결과" >> "$GITHUB_STEP_SUMMARY"
-          python - <<'EOF'
+          python - >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           import xml.etree.ElementTree as ET, sys
           try:
             tree = ET.parse("test-results/junit.xml")
@@ -131,7 +131,6 @@ jobs:
           except Exception as e:
             print(f"⚠️ 결과 파싱 실패: {e}")
           EOF
-          >> "$GITHUB_STEP_SUMMARY"
 
   # ── API ───────────────────────────────────────────────────────────────
   publish-api:
