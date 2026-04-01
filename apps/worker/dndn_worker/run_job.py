@@ -1448,7 +1448,7 @@ def build_weekly_flow_logs_extensions(
 
     return {
         "flow_logs_collection_status": collection,
-        "flow_logs_rejected_top": rejected_top[:20],
+        "flow_logs_rejected_top": rejected_top,
         "flow_logs_port_distribution": port_distribution,
         "flow_logs_traffic_trend": traffic_trend,
         "flow_logs_top_talkers": top_talkers[:10],

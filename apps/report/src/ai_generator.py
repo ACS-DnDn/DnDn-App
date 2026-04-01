@@ -622,7 +622,7 @@ def generate_weekly_report(canonical: dict, *, doc_meta: dict | None = None) -> 
         if flow_logs_proto:
             ext_section += f"### 프로토콜 분포\n{json.dumps(flow_logs_proto, ensure_ascii=False, indent=2)}\n"
         if flow_logs_rejected:
-            ext_section += f"### 거부 트래픽 상위 소스 ({len(flow_logs_rejected)}건)\n{json.dumps(flow_logs_rejected[:20], ensure_ascii=False, indent=2)}\n"
+            ext_section += f"### 거부 트래픽 상위 소스 ({len(flow_logs_rejected)}건)\n{json.dumps(flow_logs_rejected, ensure_ascii=False, indent=2)}\n"
     if events_summary:
         ext_section += f"\n## CloudTrail 이벤트 요약\n{json.dumps(events_summary, ensure_ascii=False, indent=2)}\n"
     if resources_summary:
