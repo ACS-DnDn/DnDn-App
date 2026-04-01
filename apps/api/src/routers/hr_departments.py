@@ -39,7 +39,7 @@ def list_departments(
     """전체 부서 목록 반환 (트리 구성은 프론트에서)."""
     depts = db.query(Department).filter(
         Department.company_id == current_user.company_id
-    ).all()
+    ).order_by(Department.name.asc()).all()
     return SuccessResponse(data=[_to_node(d) for d in depts])
 
 
@@ -140,6 +140,30 @@ def set_leader(
             new_leader.role = "leader"
 
     dept.leader_id = req.leaderId
+    db.commit()
+    db.refresh(dept)
+    return SuccessResponse(data=_to_node(dept))
+
+
+# ── PATCH /hr/departments/{dept_id}/name ─────────────────
+@router.patch("/{dept_id}/name", response_model=SuccessResponse[DepartmentNode])
+def rename_department(
+    dept_id: str,
+    req: DepartmentCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_hr),
+):
+    """부서명 변경 (루트 부서는 회사명 변경으로만 가능)."""
+    dept = db.query(Department).filter(
+        Department.id == dept_id,
+        Department.company_id == current_user.company_id,
+    ).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="DEPT_NOT_FOUND")
+    if dept.parent_id is None:
+        raise HTTPException(status_code=400, detail="ROOT_DEPT_USE_COMPANY_SETTINGS")
+
+    dept.name = req.name.strip()
     db.commit()
     db.refresh(dept)
     return SuccessResponse(data=_to_node(dept))
