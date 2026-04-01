@@ -59,6 +59,11 @@ export async function reportApiFetch<T>(path: string, init?: RequestInit): Promi
     if (newToken) {
       headers = buildHeaders(init);
       res = await fetch(`${REPORT_BASE_URL}${path}`, { ...init, headers });
+    } else {
+      localStorage.removeItem('dndn-access-token');
+      localStorage.removeItem('dndn-refresh-token');
+      if (typeof window !== 'undefined') window.location.href = '/login';
+      throw new Error('SESSION_EXPIRED');
     }
   }
 
@@ -85,6 +90,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     if (newToken) {
       headers = buildHeaders(init);
       res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
+    } else {
+      // refresh 실패 → 자동 로그아웃
+      localStorage.removeItem('dndn-access-token');
+      localStorage.removeItem('dndn-refresh-token');
+      if (typeof window !== 'undefined') window.location.href = '/login';
+      throw new Error('SESSION_EXPIRED');
     }
   }
 

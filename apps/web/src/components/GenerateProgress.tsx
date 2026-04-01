@@ -35,8 +35,10 @@ function loadSession(): { runId: string; workspaceId: string; startedAt: number 
 
 // 전역 상태 — 여러 페이지에서 접근
 let _setJob: ((j: Job | null) => void) | null = null;
+let _resetStart: (() => void) | null = null;
 
 export function startGenerateTracking(runId: string, workspaceId: string) {
+  _resetStart?.();
   _setJob?.({ runId, workspaceId, status: 'collecting', progress: 5 });
 }
 
@@ -50,7 +52,8 @@ export function GenerateProgress() {
   // 전역 setter 등록
   useEffect(() => {
     _setJob = (j: Job | null) => { setJob(j); saveSession(j); };
-    return () => { _setJob = null; };
+    _resetStart = () => { startRef.current = 0; };
+    return () => { _setJob = null; _resetStart = null; };
   }, []);
 
   // 새로고침 시 sessionStorage에서 복원
@@ -118,7 +121,7 @@ export function GenerateProgress() {
     }, POLL_INTERVAL);
 
     return cleanup;
-  }, [job?.runId, cleanup]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job?.runId, job?.status, cleanup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 언마운트 시 dismiss timer 정리
   useEffect(() => {
