@@ -62,7 +62,7 @@ export async function reportApiFetch<T>(path: string, init?: RequestInit): Promi
     } else {
       localStorage.removeItem('dndn-access-token');
       localStorage.removeItem('dndn-refresh-token');
-      window.location.href = '/login';
+      if (typeof window !== 'undefined') window.location.href = '/login';
       throw new Error('SESSION_EXPIRED');
     }
   }
@@ -94,7 +94,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       // refresh 실패 → 자동 로그아웃
       localStorage.removeItem('dndn-access-token');
       localStorage.removeItem('dndn-refresh-token');
-      window.location.href = '/login';
+      if (typeof window !== 'undefined') window.location.href = '/login';
       throw new Error('SESSION_EXPIRED');
     }
   }
