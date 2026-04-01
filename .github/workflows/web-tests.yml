@@ -1,0 +1,36 @@
+name: Web Tests
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-tests.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    name: Run web vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run tests
+        working-directory: apps/web
+        run: npm run test
