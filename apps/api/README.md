@@ -96,10 +96,12 @@ apps/api/
 ├── requirements-test.txt    # pytest, httpx
 └── tests/
     ├── conftest.py          # 공통 픽스처 (DB, 인증 오버라이드)
-    ├── test_org.py          # GET /api/org/members
-    ├── test_hr_users.py     # /api/hr/users CRUD
-    ├── test_hr_departments.py  # /api/hr/departments CRUD
-    └── test_dashboard.py    # GET /api/dashboard
+    ├── test_org.py          # GET /api/org/members (9)
+    ├── test_hr_users.py     # /api/hr/users CRUD (25)
+    ├── test_hr_departments.py  # /api/hr/departments CRUD (24)
+    ├── test_dashboard.py    # GET /api/dashboard (13)
+    ├── test_documents.py    # 결재/반려/읽음 처리 (22)
+    └── test_internal.py     # POST /internal/notify-new-document (10)
 ```
 
 ### 설계 원칙
@@ -160,7 +162,7 @@ apps/api/
 | | `test_reset_password_user_not_found` | 없는 사원 → 404 |
 | | `test_reset_password_cognito_error` | Cognito 오류 시 500 |
 
-#### `test_hr_departments.py` — HR 부서 관리 (20개)
+#### `test_hr_departments.py` — HR 부서 관리 (24개)
 
 | 클래스 | 테스트 | 검증 내용 |
 |--------|--------|-----------|

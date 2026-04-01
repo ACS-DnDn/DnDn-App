@@ -113,7 +113,7 @@ class TestDashboard:
         db.flush()
 
         res = client_member.get("/api/dashboard")
-        assert len(res.json()["data"]["completedDocs"]) <= 5
+        assert len(res.json()["data"]["completedDocs"]) == 5
 
     def test_notices_always_present(self, client_member):
         """공지사항은 항상 반환된다."""
