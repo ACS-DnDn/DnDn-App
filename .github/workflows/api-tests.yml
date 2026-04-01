@@ -48,16 +48,18 @@ jobs:
         run: |
           echo "## API 단위 테스트 결과" >> "$GITHUB_STEP_SUMMARY"
           python - >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          import xml.etree.ElementTree as ET, sys
+          import xml.etree.ElementTree as ET
           try:
-            tree = ET.parse("test-results/junit.xml")
-            suite = tree.getroot()
-            tests   = suite.get("tests", "?")
-            failures = suite.get("failures", "0")
-            errors   = suite.get("errors", "0")
-            skipped  = suite.get("skipped", "0")
-            passed   = int(tests) - int(failures) - int(errors) - int(skipped)
-            icon = "✅" if int(failures) == 0 and int(errors) == 0 else "❌"
+            root = ET.parse("test-results/junit.xml").getroot()
+            suite = root.find("testsuite") if root.tag == "testsuites" else root
+            if suite is None:
+              suite = root
+            tests    = int(suite.get("tests",    0))
+            failures = int(suite.get("failures", 0))
+            errors   = int(suite.get("errors",   0))
+            skipped  = int(suite.get("skipped",  0))
+            passed   = tests - failures - errors - skipped
+            icon = "✅" if failures == 0 and errors == 0 else "❌"
             print(f"{icon} **{passed}/{tests} passed** — failures: {failures}, errors: {errors}, skipped: {skipped}")
           except Exception as e:
             print(f"⚠️ 결과 파싱 실패: {e}")
