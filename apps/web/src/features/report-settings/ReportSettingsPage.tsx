@@ -168,8 +168,8 @@ export function ReportSettingsPage() {
 
   /* 기간 선택 (캘린더) */
   const PERIOD_PRESETS = [
+    { key: '1d', label: '1일', days: 1 },
     { key: '1w', label: '1주', days: 7 },
-    { key: '2w', label: '2주', days: 14 },
     { key: '1m', label: '1개월', days: 30 },
   ] as const;
 
@@ -183,8 +183,14 @@ export function ReportSettingsPage() {
   const [rangeEnd, setRangeEnd] = useState<Date | null>(() => initRange(7).end);
   const [reportTitle, setReportTitle] = useState('');
   const reportTitleEdited = useRef(false);
-  const [startTime, setStartTime] = useState('00:00');
-  const [endTime, setEndTime] = useState('00:00');
+  const [startTime, setStartTime] = useState(() => {
+    const n = new Date();
+    return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+  });
+  const [endTime, setEndTime] = useState(() => {
+    const n = new Date();
+    return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+  });
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [picking, setPicking] = useState<'start' | 'end'>('start');
   const [calOpen, setCalOpen] = useState(false);
