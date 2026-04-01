@@ -136,11 +136,11 @@ def test_app(db):
 def client_hr(test_app, hr_user):
     """HR 권한 사용자로 인증된 TestClient."""
     test_app.dependency_overrides[get_current_user] = lambda: hr_user
-    return TestClient(test_app, raise_server_exceptions=False)
+    return TestClient(test_app, raise_server_exceptions=True)
 
 
 @pytest.fixture
 def client_member(test_app, member_user):
     """일반 사원 권한으로 인증된 TestClient."""
     test_app.dependency_overrides[get_current_user] = lambda: member_user
-    return TestClient(test_app, raise_server_exceptions=False)
+    return TestClient(test_app, raise_server_exceptions=True)
