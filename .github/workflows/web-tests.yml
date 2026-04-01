@@ -1,5 +1,5 @@
 name: Web Tests
-# trigger on workflow file change
+# trigger on workflow file change (touch to satisfy required check)
 on:
   push:
     paths:
