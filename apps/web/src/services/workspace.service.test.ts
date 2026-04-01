@@ -72,24 +72,30 @@ describe('workspace.service', () => {
       },
     ]);
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/workspaces/ws-1/opa-settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        policies: [
-          {
-            category: '네트워크 보안',
-            items: [
-              {
-                key: 'net-sg-open',
-                label: '보안그룹 과다 개방',
-                on: true,
-                severity: 'warn',
-                params: { type: 'list', label: '허용 CIDR', values: ['10.0.0.0/8'] },
-              },
-            ],
-          },
-        ],
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/workspaces/ws-1/opa-settings',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.any(String),
       }),
+    );
+
+    const [, options] = apiFetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse((options as { body: string }).body)).toEqual({
+      policies: [
+        {
+          category: '네트워크 보안',
+          items: [
+            {
+              key: 'net-sg-open',
+              label: '보안그룹 과다 개방',
+              on: true,
+              severity: 'warn',
+              params: { type: 'list', label: '허용 CIDR', values: ['10.0.0.0/8'] },
+            },
+          ],
+        },
+      ],
     });
   });
 });

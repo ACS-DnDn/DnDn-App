@@ -30,5 +30,6 @@ describe('report.service', () => {
     apiFetchMock.mockRejectedValue(new Error('network error'));
 
     await expect(checkReportReady('run-1', 'ws-1')).resolves.toBe(false);
+    expect(apiFetchMock).toHaveBeenCalledWith('/reports/status/run-1?workspaceId=ws-1');
   });
 });
