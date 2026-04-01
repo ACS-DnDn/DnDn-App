@@ -54,13 +54,22 @@ def test_build_deploy_log_section_returns_empty_when_no_failure():
 
 
 def test_build_user_prompt_includes_all_sections():
+    deploy_log_section = _build_deploy_log_section(
+        [
+            {
+                "event": "apply_failed",
+                "status": "failure",
+                "description": "이전 apply 실패",
+            }
+        ]
+    )
     prompt = _build_user_prompt(
         '{"title":"보안그룹 수정"}',
         'resource "aws_security_group" "main" {}',
         "\n## AWS docs\nsg docs\n",
         "\n## Best practices\nbp\n",
         "\n## OPA\nopa rules\n",
-        "\n## Deploy log\nfailed before\n",
+        deploy_log_section,
     )
 
     assert "## 작업계획서" in prompt
@@ -69,7 +78,8 @@ def test_build_user_prompt_includes_all_sections():
     assert "## AWS docs" in prompt
     assert "## Best practices" in prompt
     assert "## OPA" in prompt
-    assert "## Deploy log" in prompt
+    assert "## 이전 배포 실패 이력" in prompt
+    assert "이전 apply 실패" in prompt
     assert '"files"' in prompt
     assert '"summary"' in prompt
 

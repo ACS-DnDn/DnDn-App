@@ -4,10 +4,16 @@ on:
   push:
     paths:
       - "apps/worker/**"
+      - "contracts/payload/job_payload.schema.json"
+      - "contracts/canonical_model.schema.json"
+      - "contracts/event_model.schema.json"
       - ".github/workflows/worker-tests.yml"
   pull_request:
     paths:
       - "apps/worker/**"
+      - "contracts/payload/job_payload.schema.json"
+      - "contracts/canonical_model.schema.json"
+      - "contracts/event_model.schema.json"
       - ".github/workflows/worker-tests.yml"
   workflow_dispatch:
 

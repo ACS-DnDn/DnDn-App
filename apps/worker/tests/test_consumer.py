@@ -41,6 +41,19 @@ def test_resolve_heartbeat_interval_auto_calculates_from_visibility_timeout():
     assert _resolve_heartbeat_interval_seconds(config) == 10
 
 
+def test_resolve_heartbeat_interval_rejects_visibility_timeout_one():
+    config = ConsumerConfig(
+        queue_url="https://example.com/queue",
+        repo_root=Path("."),
+        out_root=Path("out"),
+        visibility_timeout=1,
+        heartbeat_interval_seconds=0,
+    )
+
+    with pytest.raises(ValueError, match="greater than 1"):
+        _resolve_heartbeat_interval_seconds(config)
+
+
 def test_resolve_heartbeat_interval_rejects_invalid_custom_interval():
     config = ConsumerConfig(
         queue_url="https://example.com/queue",

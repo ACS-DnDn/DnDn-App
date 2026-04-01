@@ -41,6 +41,7 @@ def test_upload_tree_to_s3_skips_noise_and_sets_metadata(tmp_path: Path):
         "s3://worker-bucket/artifacts/hello.txt",
         "s3://worker-bucket/artifacts/nested/data.json",
     ]
+    assert len(fake_client.uploads) == 2
     assert fake_client.uploads[0][2] == "artifacts/hello.txt"
     assert fake_client.uploads[0][3]["ServerSideEncryption"] == "AES256"
     assert fake_client.uploads[0][3]["ContentType"] == "text/plain"

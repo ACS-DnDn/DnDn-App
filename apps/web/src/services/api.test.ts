@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 
 class MemoryStorage implements Storage {
@@ -54,6 +54,10 @@ describe('api service helpers', () => {
     vi.stubGlobal('localStorage', storage);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('adds authorization and json headers for apiFetch', async () => {
     storage.setItem('dndn-access-token', 'token-123');
     fetchMock.mockResolvedValue(createJsonResponse({ ok: true }));
@@ -86,6 +90,21 @@ describe('api service helpers', () => {
     expect(String(fetchMock.mock.calls[2]?.[0])).toMatch(/\/api\/dashboard$/);
     expect(storage.getItem('dndn-access-token')).toBe('fresh-token');
     expect((((fetchMock.mock.calls[2]?.[1] as RequestInit).headers) as Headers).get('Authorization')).toBe('Bearer fresh-token');
+  });
+
+  it('throws original error when refresh token flow cannot recover', async () => {
+    storage.setItem('dndn-access-token', 'expired-token');
+    storage.setItem('dndn-refresh-token', 'refresh-token');
+
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse({ error: 'expired' }, { ok: false, status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(createJsonResponse({ error: 'refresh failed' }, { ok: false, status: 401, statusText: 'Unauthorized' }));
+
+    const { apiFetch } = await import('@/services/api');
+
+    await expect(apiFetch('/dashboard')).rejects.toThrow('API 401: Unauthorized');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toMatch(/\/api\/auth\/refresh$/);
   });
 
   it('does not force content-type for FormData payloads', async () => {
