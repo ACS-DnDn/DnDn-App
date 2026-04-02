@@ -1,5 +1,5 @@
 name: Report Tests
-# trigger on workflow file change
+# trigger on workflow file change (touch)
 on:
   push:
     paths:

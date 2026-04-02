@@ -1,5 +1,5 @@
 name: Worker Tests
-# trigger on workflow file change (touch)
+# trigger on workflow file change (touch2)
 on:
   push:
     paths:

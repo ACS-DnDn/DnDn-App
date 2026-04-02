@@ -173,13 +173,10 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
-    # 워크스페이스 소유자인 경우 삭제 불가
-    owns_ws = db.query(Workspace).filter(Workspace.owner_id == user_id).first()
-    if owns_ws:
-        raise HTTPException(
-            status_code=409,
-            detail="이 사용자가 소유한 워크스페이스가 있어 삭제할 수 없습니다. 먼저 워크스페이스 소유자를 변경해주세요.",
-        )
+    # 소유한 워크스페이스도 함께 삭제 (Document, ReportSettings는 CASCADE)
+    owned_workspaces = db.query(Workspace).filter(Workspace.owner_id == user_id).all()
+    for ws in owned_workspaces:
+        db.delete(ws)
 
     try:
         admin_delete_user(user.email)

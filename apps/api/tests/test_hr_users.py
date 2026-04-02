@@ -226,10 +226,11 @@ class TestDeleteUser:
         assert res.json()["error"]["code"] == "USER_NOT_FOUND"
 
     @patch(f"{_COGNITO}.admin_delete_user", return_value=None)
-    def test_delete_workspace_owner_blocked(self, _du, client_hr, db, member_user):
-        """워크스페이스 소유자는 삭제 불가."""
+    def test_delete_workspace_owner_cascades(self, _du, client_hr, db, member_user):
+        """워크스페이스 소유자 삭제 시 워크스페이스도 함께 삭제."""
+        ws_id = str(uuid.uuid4())
         ws = Workspace(
-            id=str(uuid.uuid4()),
+            id=ws_id,
             alias="테스트WS",
             acct_id="123456789012",
             github_org="test-org",
@@ -241,7 +242,8 @@ class TestDeleteUser:
         db.flush()
 
         res = client_hr.delete(f"/api/hr/users/{member_user.id}")
-        assert res.status_code == 409
+        assert res.status_code == 200
+        assert db.query(Workspace).filter(Workspace.id == ws_id).first() is None
 
     def test_member_cannot_delete_user(self, client_member, member_user):
         res = client_member.delete(f"/api/hr/users/{member_user.id}")
