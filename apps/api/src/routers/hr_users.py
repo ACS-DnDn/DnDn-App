@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from apps.api.src.database import get_db
-from apps.api.src.models import User, Department, Document, Approval, Workspace, ReportSettings
+from apps.api.src.models import User, Department, Document, Approval, Workspace, ReportSettings, Attachment, DocumentRead
 from apps.api.src.schemas.common import SuccessResponse
 from apps.api.src.schemas.hr import (
     HrUserResponse,
@@ -173,11 +173,16 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
-    # 소유한 워크스페이스도 함께 삭제
+    # 소유한 워크스페이스도 함께 삭제 (하위 테이블 순서대로 정리)
     owned_workspaces = db.query(Workspace).filter(Workspace.owner_id == user_id).all()
     for ws in owned_workspaces:
-        db.query(ReportSettings).filter(ReportSettings.workspace_id == ws.id).delete()
-        db.query(Document).filter(Document.workspace_id == ws.id).delete()
+        doc_ids = [d.id for d in db.query(Document.id).filter(Document.workspace_id == ws.id).all()]
+        if doc_ids:
+            db.query(Attachment).filter(Attachment.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            db.query(DocumentRead).filter(DocumentRead.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            db.query(Approval).filter(Approval.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            db.query(Document).filter(Document.workspace_id == ws.id).delete(synchronize_session=False)
+        db.query(ReportSettings).filter(ReportSettings.workspace_id == ws.id).delete(synchronize_session=False)
         db.delete(ws)
 
     try:
