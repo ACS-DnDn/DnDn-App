@@ -14,7 +14,7 @@ interface Job {
 }
 
 const POLL_INTERVAL = 5_000;
-const TIMEOUT = 180_000; // 3분
+const TIMEOUT = 300_000; // 5분
 const SS_KEY = 'dndn-gen-job';
 
 function saveSession(job: Job | null) {
