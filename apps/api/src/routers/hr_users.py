@@ -195,7 +195,8 @@ def delete_user(
     # FK 참조 정리
     db.query(Department).filter(Department.leader_id == user_id).update({"leader_id": None})
     db.query(Document).filter(Document.author_id == user_id).update({"author_id": None})
-    db.query(Approval).filter(Approval.user_id == user_id).delete()
+    db.query(Approval).filter(Approval.user_id == user_id).delete(synchronize_session=False)
+    db.query(DocumentRead).filter(DocumentRead.user_id == user_id).delete(synchronize_session=False)
 
     db.delete(user)
     db.commit()
