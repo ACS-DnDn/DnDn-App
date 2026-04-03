@@ -34,7 +34,7 @@ from .ai_generator import (
     generate_work_plan,
     generate_health_event_report,
 )
-from .terraform_generator import generate_terraform_code, _run_checkov_scan, _load_opa_policies
+from .terraform_generator import generate_terraform_code, _run_checkov_scan, _load_opa_policies, _OPA_TF_HINTS
 from .s3_client import (
     save_result,
     save_report,
@@ -965,7 +965,6 @@ async def terraform_fix(req: dict):
         for b in opa_blocks:
             detail = f" — {b['detail']}" if b.get('detail') else ""
             key = b.get('key', '')
-            from .terraform_generator import _OPA_TF_HINTS
             hint = _OPA_TF_HINTS.get(key, '')
             hint_part = f"\n  수정 방법: {hint}" if hint else ""
             issues_text += f"- [차단] {b.get('label', '')}{detail}{hint_part}\n"

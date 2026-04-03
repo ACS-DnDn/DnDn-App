@@ -69,6 +69,7 @@
 .badge-waiting  { background: var(--orange-soft); color: var(--orange); }
 .badge-done     { background: var(--green-soft);  color: var(--green);  }
 .badge-rejected { background: var(--red-soft);    color: var(--red);    }
+.badge-draft    { background: rgba(148,163,184,0.15); color: #94a3b8; }
 
 @keyframes digit-slide { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .digit.changed { animation: digit-slide 0.35s cubic-bezier(0.22, 1, 0.36, 1); }

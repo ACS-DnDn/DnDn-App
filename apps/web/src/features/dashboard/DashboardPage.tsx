@@ -74,6 +74,7 @@ export function DashboardPage() {
     waiting: { cls: 'badge-waiting', label: '결재 대기' },
     rejected: { cls: 'badge-rejected', label: '반려' },
     deploy_failed: { cls: 'badge-rejected', label: '배포 실패' },
+    draft: { cls: 'badge-draft', label: '임시저장' },
     done: { cls: 'badge-done', label: '완료' },
   };
 
@@ -152,7 +153,7 @@ export function DashboardPage() {
               ) : (data?.pendingDocs ?? []).map((d) => {
                 const s = statusMap[d.status];
                 return (
-                  <tr key={d.docNum} onClick={() => navigate(`/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
+                  <tr key={d.docNum} onClick={() => navigate(d.status === 'draft' ? `/plan/${d.id}` : `/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(d.status === 'draft' ? `/plan/${d.id}` : `/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                     <td className="td-num">{d.docNum}</td>
                     <td>
                       <div className="doc-title-row">

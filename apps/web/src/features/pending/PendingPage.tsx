@@ -108,7 +108,11 @@ export function PendingPage() {
   };
 
   const handleRowClick = (doc: Document) => {
-    navigate(`/viewer/${doc.id}?from=pending`);
+    if (doc.status === 'draft') {
+      navigate(`/plan/${doc.id}`);
+    } else {
+      navigate(`/viewer/${doc.id}?from=pending`);
+    }
   };
 
   // 날짜 피커
@@ -265,6 +269,7 @@ export function PendingPage() {
                       <option value="progress">결재 대기</option>
                       <option value="rejected">반려</option>
                       <option value="deploy_failed">배포 실패</option>
+                      <option value="draft">임시저장</option>
                     </select>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
                   </div>
@@ -274,8 +279,8 @@ export function PendingPage() {
             <tbody>
               {pageDocs.length > 0 ? pageDocs.map(doc => {
                 const docNum = doc.docNum || 'Editing';
-                const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : doc.status === 'deploy_failed' ? 'badge badge-rejected' : 'badge badge-progress';
-                const badgeLabel = doc.status === 'rejected' ? '반려' : doc.status === 'deploy_failed' ? '배포 실패' : '결재 대기';
+                const badgeCls = doc.status === 'rejected' ? 'badge badge-rejected' : doc.status === 'deploy_failed' ? 'badge badge-rejected' : doc.status === 'draft' ? 'badge badge-draft' : 'badge badge-progress';
+                const badgeLabel = doc.status === 'rejected' ? '반려' : doc.status === 'deploy_failed' ? '배포 실패' : doc.status === 'draft' ? '임시저장' : '결재 대기';
                 return (
                   <tr key={doc.id} onClick={() => handleRowClick(doc)}>
                     <td className="td-check" onClick={(e) => e.stopPropagation()}>

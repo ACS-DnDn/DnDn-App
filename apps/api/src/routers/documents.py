@@ -313,7 +313,7 @@ def get_documents(
             Document.workspace_id.in_(my_ws_ids), Document.status == "done"
         )
     elif tab == "action":
-        # 결재 대상 문서 + 내가 쓴 반려/배포실패 문서
+        # 결재 대상 문서 + 내가 쓴 반려/배포실패/임시저장 문서
         query = (
             db.query(Document)
             .outerjoin(Approval, Approval.document_id == Document.id)
@@ -322,6 +322,7 @@ def get_documents(
                     and_(Approval.user_id == current_user.id, Approval.status == "current"),
                     and_(Document.author_id == current_user.id, Document.status == "rejected"),
                     and_(Document.author_id == current_user.id, Document.status == "deploy_failed"),
+                    and_(Document.author_id == current_user.id, Document.status == "draft"),
                 )
             )
             .distinct()
@@ -421,8 +422,8 @@ def get_documents(
                     action_val = "approve"
                 elif my_approval.status == "rejected":
                     action_val = "rejected"
-            # 내가 쓴 반려/배포실패 문서 → 수정 필요
-            if doc.author_id == current_user.id and doc.status in ("rejected", "deploy_failed"):
+            # 내가 쓴 반려/배포실패/임시저장 문서 → 수정 필요
+            if doc.author_id == current_user.id and doc.status in ("rejected", "deploy_failed", "draft"):
                 action_val = "edit"
 
         items.append(

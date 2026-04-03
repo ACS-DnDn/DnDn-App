@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import requests as _requests
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -243,11 +244,11 @@ def _mark_unread(db: Session, doc: Document) -> None:
 
 def _fetch_check_run_summary(repo_full: str, check_run_id: int, db: Session) -> str:
     """GitHub API로 check_run output의 title + summary 첫 줄만 조회. 실패 시 빈 문자열."""
-    token, _req = _get_github_token_for_repo(repo_full, db)
+    token = _get_github_token_for_repo(repo_full, db)
     if not token:
         return ""
     try:
-        resp = _req.get(
+        resp = _requests.get(
             f"https://api.github.com/repos/{repo_full}/check-runs/{check_run_id}",
             headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
             timeout=10,
@@ -265,50 +266,47 @@ def _fetch_check_run_summary(repo_full: str, check_run_id: int, db: Session) -> 
         return ""
 
 
-def _get_github_token_for_repo(repo_full: str, db: Session):
+def _get_github_token_for_repo(repo_full: str, db: Session) -> str | None:
     """repo_full에서 workspace owner의 GitHub 토큰을 조회."""
-    import requests as _req
     parts = repo_full.split("/", 1)
     if len(parts) != 2:
-        return None, None
+        return None
     owner, repo_name = parts
     ws = db.query(Workspace).filter(
         Workspace.github_org == owner, Workspace.repo == repo_name
     ).first()
     if not ws:
-        return None, None
+        return None
     owner_user = db.query(User).filter(User.id == ws.owner_id).first()
     if not owner_user or not owner_user.github_access_token:
-        return None, None
-    return owner_user.github_access_token, _req
+        return None
+    return owner_user.github_access_token
 
 
 def _fetch_status_description(repo_full: str, sha: str, context: str, db: Session) -> str:
     """GitHub API로 상세 에러 메시지를 조회. check_runs output > commit status description 순으로 시도."""
-    token, _req = _get_github_token_for_repo(repo_full, db)
+    token = _get_github_token_for_repo(repo_full, db)
     if not token:
         return ""
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
 
     # 1차: 같은 커밋의 check_runs에서 Terraform 관련 output 조회 (가장 상세)
     try:
-        resp = _req.get(
+        resp = _requests.get(
             f"https://api.github.com/repos/{repo_full}/commits/{sha}/check-runs",
             headers=headers, timeout=10,
         )
         if resp.status_code == 200:
             for cr in resp.json().get("check_runs", []):
                 cr_name = (cr.get("name") or "").lower()
-                cr_conclusion = cr.get("conclusion") or ""
-                # Terraform 관련 check_run 중 실패한 것 우선
                 if "terraform" in cr_name or context.lower() in cr_name:
                     output = cr.get("output", {})
                     title = output.get("title", "")
                     summary = output.get("summary", "")
                     if summary:
                         first_line = summary.split("\n")[0].strip()
-                        parts = [p for p in [title, first_line] if p]
-                        desc = " — ".join(parts)[:300]
+                        desc_parts = [p for p in [title, first_line] if p]
+                        desc = " — ".join(desc_parts)[:300]
                         if len(desc) > 20:
                             _logger.info("[check_runs API] found: name=%s desc=%s", cr.get("name"), desc[:80])
                             return desc
@@ -317,7 +315,7 @@ def _fetch_status_description(repo_full: str, sha: str, context: str, db: Sessio
 
     # 2차: Combined Status API (fallback)
     try:
-        resp = _req.get(
+        resp = _requests.get(
             f"https://api.github.com/repos/{repo_full}/commits/{sha}/status",
             headers=headers, timeout=10,
         )
