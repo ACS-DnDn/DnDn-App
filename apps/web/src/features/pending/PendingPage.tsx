@@ -109,7 +109,7 @@ export function PendingPage() {
 
   const handleRowClick = (doc: Document) => {
     if (doc.status === 'draft') {
-      navigate(`/plan/${doc.id}`);
+      navigate(`/plan?editDocId=${doc.id}`);
     } else {
       navigate(`/viewer/${doc.id}?from=pending`);
     }
