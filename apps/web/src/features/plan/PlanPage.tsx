@@ -19,7 +19,7 @@ interface Approver { id: string; name: string; rank: string; type: string; }
 interface PendingApprover { id: string; name: string; rank: string; type: string; }
 interface RefDoc { no: string; name: string; }
 interface LogEntry { id: string; time: string; msg: string; type: string; tab: number; clickable?: 'security' | 'policy'; }
-interface CheckovIssue { id: string; resource: string; file?: string; line?: number; severity?: string; }
+interface CheckovIssue { id: string; name?: string; resource: string; file?: string; line?: number; severity?: string; }
 interface OpaBlock { key: string; label: string; detail?: string; }
 interface ValidationResult {
   checkov: { passed: boolean; summary: string; issues: CheckovIssue[] };
@@ -500,10 +500,10 @@ export function PlanPage() {
     }
   }
 
-  async function _doValidate(fileMap: Record<string, string>) {
+  async function _doValidate(fileMap: Record<string, string>, skipCheckov = false, prevTotal = 0) {
     return reportApiFetch<{ success: boolean; data: ValidationResult }>('/documents/generate/terraform/validate', {
       method: 'POST',
-      body: JSON.stringify({ files: fileMap, workspaceId: ws?.id }),
+      body: JSON.stringify({ files: fileMap, workspaceId: ws?.id, skipCheckov, prevTotal }),
     });
   }
 
@@ -518,7 +518,12 @@ export function PlanPage() {
     try {
       const fileMap: Record<string, string> = {};
       files.forEach((f, i) => { fileMap[f.name] = codes[i] ?? f.code; });
-      const raw = await _doValidate(fileMap);
+
+      // 재검증 시: Checkov 스킵 + 이전 총 건수를 전부 passed로 표시
+      const prevTotal = lastValidation
+        ? (lastValidation.checkov.issues.length + parseInt(lastValidation.checkov.summary.match(/passed:\s*(\d+)/)?.[1] ?? '0'))
+        : 0;
+      const raw = await _doValidate(fileMap, isRetry, prevTotal);
       const result = raw.data;
       setLastValidation(result);
 
@@ -1104,6 +1109,7 @@ export function PlanPage() {
                     <thead>
                       <tr>
                         <th>규칙 ID</th>
+                        <th>설명</th>
                         <th>리소스</th>
                         <th>위치</th>
                       </tr>
@@ -1112,6 +1118,7 @@ export function PlanPage() {
                       {lastValidation.checkov.issues.map((issue, i) => (
                         <tr key={i}>
                           <td><span className="vd-rule-id">{issue.id}</span></td>
+                          <td className="vd-check-name">{issue.name || '-'}</td>
                           <td className="vd-resource">{issue.resource}</td>
                           <td className="vd-loc">{issue.file}{issue.line != null ? `:${issue.line}` : ''}</td>
                         </tr>
