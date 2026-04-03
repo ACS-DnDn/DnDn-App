@@ -808,6 +808,8 @@ def _run_checkov_cli(files_list: list[dict]) -> dict:
 async def terraform_validate(req: dict):
     files_map = req.get("files", {})
     workspace_id = req.get("workspaceId", "default")
+    skip_checkov = req.get("skipCheckov", False)
+    prev_total = req.get("prevTotal", 0)  # 이전 검증의 총 건수 (skip 시 사용)
 
     files_list = [{"filename": k, "content": v} for k, v in files_map.items()]
 
@@ -815,23 +817,28 @@ async def terraform_validate(req: dict):
     checkov_passed = True
     checkov_issues = []
     summary = {}
-    try:
-        checkov_raw = await asyncio.to_thread(_run_checkov_cli, files_list)
-        failed_checks = checkov_raw.get("failed_checks", [])
-        summary = checkov_raw.get("summary", {})
-        checkov_passed = summary.get("failed", 0) == 0
-        checkov_issues = [
-            {
-                "id": c.get("check_id", ""),
-                "resource": c.get("resource", ""),
-                "file": c.get("file_path", ""),
-                "line": c.get("file_line_range", [0])[0] if c.get("file_line_range") else 0,
-                "severity": c.get("severity", ""),
-            }
-            for c in failed_checks
-        ]
-    except Exception as e:
-        logger.warning("Checkov 스캔 실패 (계속 진행): %s", e, exc_info=True)
+    if skip_checkov:
+        # 재검증 시 Checkov 스킵 — 이전 총 건수를 전부 passed로 표시
+        summary = {"passed": prev_total, "failed": 0}
+    else:
+        try:
+            checkov_raw = await asyncio.to_thread(_run_checkov_cli, files_list)
+            failed_checks = checkov_raw.get("failed_checks", [])
+            summary = checkov_raw.get("summary", {})
+            checkov_passed = summary.get("failed", 0) == 0
+            checkov_issues = [
+                {
+                    "id": c.get("check_id", ""),
+                    "name": c.get("check_name", ""),
+                    "resource": c.get("resource", ""),
+                    "file": c.get("file_path", ""),
+                    "line": c.get("file_line_range", [0])[0] if c.get("file_line_range") else 0,
+                    "severity": c.get("severity", ""),
+                }
+                for c in failed_checks
+            ]
+        except Exception as e:
+            logger.warning("Checkov 스캔 실패 (계속 진행): %s", e, exc_info=True)
 
     # OPA 정책 검증 (실제 OPA 엔진)
     opa_blocks, opa_warns = [], []
@@ -955,7 +962,9 @@ async def terraform_fix(req: dict):
     if checkov_issues:
         issues_text += "\n## Checkov 보안 이슈\n"
         for issue in checkov_issues:
-            issues_text += f"- {issue.get('id', '')}: {issue.get('resource', '')} ({issue.get('file', '')}:{issue.get('line', '')})\n"
+            name = issue.get('name', '')
+            name_part = f" — {name}" if name else ""
+            issues_text += f"- {issue.get('id', '')}{name_part}: {issue.get('resource', '')} ({issue.get('file', '')}:{issue.get('line', '')})\n"
     if opa_blocks:
         issues_text += "\n## OPA 정책 위반 (차단)\n"
         for b in opa_blocks:
@@ -979,11 +988,15 @@ async def terraform_fix(req: dict):
         "max_tokens": 8192,
         "system": (
             "당신은 Terraform 보안 전문가입니다. "
-            "아래 Terraform 코드에서 보안/정책 이슈를 수정하세요. "
+            "아래 Terraform 코드에서 Checkov/OPA 보안 이슈를 **전부** 수정하세요. "
+            "각 이슈의 check_name이 요구하는 보안 속성을 정확히 추가하세요. "
+            "일반적인 수정 패턴: encryption 활성화, logging/monitoring 설정, versioning 활성화, "
+            "과도한 권한(0.0.0.0/0) 제한, metadata_options 설정, public access 차단 등. "
+            "기존 리소스 이름과 구조는 유지하고, 보안 속성만 추가/수정하세요. "
             "반드시 JSON만 출력하세요. 설명, 주석, 마크다운 코드펜스 없이 순수 JSON만 반환하세요. "
             '형식: {"files": {"파일명.tf": "수정된 전체 코드", ...}}'
         ),
-        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 모두 수정한 전체 코드를 순수 JSON으로만 반환하세요. 설명 없이 JSON만 출력."}],
+        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 **빠짐없이 전부** 수정한 전체 코드를 순수 JSON으로만 반환하세요. 수정하지 않은 이슈가 하나라도 있으면 안 됩니다. 설명 없이 JSON만 출력."}],
     }
 
     logger.info("terraform fix 시작 — 파일 %d개, 이슈: checkov=%d, opa_block=%d, opa_warn=%d",
