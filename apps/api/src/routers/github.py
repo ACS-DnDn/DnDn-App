@@ -243,23 +243,13 @@ def _mark_unread(db: Session, doc: Document) -> None:
 
 def _fetch_check_run_summary(repo_full: str, check_run_id: int, db: Session) -> str:
     """GitHub API로 check_run output의 title + summary 첫 줄만 조회. 실패 시 빈 문자열."""
-    import requests as _req
-    parts = repo_full.split("/", 1)
-    if len(parts) != 2:
-        return ""
-    owner, repo_name = parts
-    ws = db.query(Workspace).filter(
-        Workspace.github_org == owner, Workspace.repo == repo_name
-    ).first()
-    if not ws:
-        return ""
-    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
-    if not owner_user or not owner_user.github_access_token:
+    token, _req = _get_github_token_for_repo(repo_full, db)
+    if not token:
         return ""
     try:
         resp = _req.get(
             f"https://api.github.com/repos/{repo_full}/check-runs/{check_run_id}",
-            headers={"Authorization": f"token {owner_user.github_access_token}", "Accept": "application/vnd.github+json"},
+            headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
             timeout=10,
         )
         if resp.status_code != 200:
@@ -267,13 +257,80 @@ def _fetch_check_run_summary(repo_full: str, check_run_id: int, db: Session) -> 
         output = resp.json().get("output", {})
         title = output.get("title", "")
         summary = output.get("summary", "")
-        # summary 첫 줄만 추출 (핵심 에러 메시지)
         first_line = summary.split("\n")[0].strip() if summary else ""
         parts = [p for p in [title, first_line] if p]
         return " — ".join(parts)[:300]
     except Exception as e:
         _logger.warning("check_run output 조회 실패: %s", e)
         return ""
+
+
+def _get_github_token_for_repo(repo_full: str, db: Session):
+    """repo_full에서 workspace owner의 GitHub 토큰을 조회."""
+    import requests as _req
+    parts = repo_full.split("/", 1)
+    if len(parts) != 2:
+        return None, None
+    owner, repo_name = parts
+    ws = db.query(Workspace).filter(
+        Workspace.github_org == owner, Workspace.repo == repo_name
+    ).first()
+    if not ws:
+        return None, None
+    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+    if not owner_user or not owner_user.github_access_token:
+        return None, None
+    return owner_user.github_access_token, _req
+
+
+def _fetch_status_description(repo_full: str, sha: str, context: str, db: Session) -> str:
+    """GitHub API로 상세 에러 메시지를 조회. check_runs output > commit status description 순으로 시도."""
+    token, _req = _get_github_token_for_repo(repo_full, db)
+    if not token:
+        return ""
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+
+    # 1차: 같은 커밋의 check_runs에서 Terraform 관련 output 조회 (가장 상세)
+    try:
+        resp = _req.get(
+            f"https://api.github.com/repos/{repo_full}/commits/{sha}/check-runs",
+            headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            for cr in resp.json().get("check_runs", []):
+                cr_name = (cr.get("name") or "").lower()
+                cr_conclusion = cr.get("conclusion") or ""
+                # Terraform 관련 check_run 중 실패한 것 우선
+                if "terraform" in cr_name or context.lower() in cr_name:
+                    output = cr.get("output", {})
+                    title = output.get("title", "")
+                    summary = output.get("summary", "")
+                    if summary:
+                        first_line = summary.split("\n")[0].strip()
+                        parts = [p for p in [title, first_line] if p]
+                        desc = " — ".join(parts)[:300]
+                        if len(desc) > 20:
+                            _logger.info("[check_runs API] found: name=%s desc=%s", cr.get("name"), desc[:80])
+                            return desc
+    except Exception as e:
+        _logger.warning("check_runs 조회 실패: %s", e)
+
+    # 2차: Combined Status API (fallback)
+    try:
+        resp = _req.get(
+            f"https://api.github.com/repos/{repo_full}/commits/{sha}/status",
+            headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            for s in resp.json().get("statuses", []):
+                if s.get("context") == context:
+                    desc = s.get("description", "")
+                    if len(desc) > 20:
+                        return desc[:300]
+    except Exception as e:
+        _logger.warning("status API 조회 실패: %s", e)
+
+    return ""
 
 
 def _append_deploy_log(
@@ -403,6 +460,8 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         conclusion = check_run.get("conclusion")
         action = check_run.get("status")  # completed
         pull_requests = check_run.get("pull_requests", [])
+        _logger.info("[webhook:check_run] repo=%s name=%s conclusion=%s prs=%d",
+                     repo_full, check_run.get("name", ""), conclusion, len(pull_requests))
 
         for pr_ref in pull_requests:
             pr_number = pr_ref.get("number")
@@ -459,6 +518,9 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
         context = payload.get("context", "")
         sha = payload.get("sha", "")
 
+        _logger.info("[webhook:status] repo=%s state=%s context=%s desc=%s",
+                     repo_full, state, context, (payload.get("description", ""))[:100])
+
         if "/" not in repo_full:
             return JSONResponse({"received": True})
         repo_owner, repo_name = repo_full.split("/", 1)
@@ -482,9 +544,14 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     .first()
                 )
                 if doc:
-                    st_desc = payload.get("description", "")
+                    st_desc = payload.get("description", "") or ""
                     st_url = payload.get("target_url", "")
                     st_ctx = context
+                    # Terraform Cloud 등 description이 빈약하면 상세 조회
+                    if len(st_desc) < 50 and sha:
+                        api_desc = _fetch_status_description(repo_full, sha, context, db)
+                        if api_desc and len(api_desc) > len(st_desc):
+                            st_desc = api_desc
                     if state in ("failure", "error"):
                         first_failure = doc.pr_status != "checks_failed"
                         if first_failure:
@@ -518,9 +585,13 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     .first()
                 )
                 if doc:
-                    apply_desc = payload.get("description", "")
+                    apply_desc = payload.get("description", "") or ""
                     apply_url = payload.get("target_url", "")
                     apply_ctx = context
+                    if len(apply_desc) < 50 and sha:
+                        api_desc = _fetch_status_description(repo_full, sha, context, db)
+                        if api_desc and len(api_desc) > len(apply_desc):
+                            apply_desc = api_desc
                     new_pr_status = None
                     new_doc_status = None
                     if state == "success":
