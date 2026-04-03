@@ -122,7 +122,7 @@ def set_leader(
                 admin_set_group(old_leader.email, "member", old_group="leader")
             except CognitoError as e:
                 # Cognito에 없는 사용자(수동 DB 삽입 등)는 무시하고 DB만 변경
-                if e.exception_name not in ("UserNotFoundException", "NotAuthorizedException"):
+                if e.exception_name != "UserNotFoundException":
                     raise HTTPException(status_code=e.status, detail=e.code) from e
             old_leader.role = "member"
 
