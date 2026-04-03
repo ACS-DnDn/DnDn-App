@@ -46,7 +46,12 @@ def get_dashboard(
         .filter(Document.author_id == current_user.id, Document.status == "deploy_failed")
         .count()
     )
-    pending_count = approval_pending + rejected_pending + deploy_failed_pending
+    draft_pending = (
+        db.query(Document)
+        .filter(Document.author_id == current_user.id, Document.status == "draft")
+        .count()
+    )
+    pending_count = approval_pending + rejected_pending + deploy_failed_pending + draft_pending
     ongoing_count = (
         db.query(Document)
         .filter(Document.author_id == current_user.id, Document.status == "progress")
@@ -111,7 +116,7 @@ def get_dashboard(
         db.query(Document)
         .filter(
             Document.author_id == current_user.id,
-            Document.status.in_(["rejected", "deploy_failed"]),
+            Document.status.in_(["rejected", "deploy_failed", "draft"]),
         )
         .order_by(Document.created_at.desc())
         .all()
@@ -124,7 +129,7 @@ def get_dashboard(
                     "id": str(doc.id),
                     "docNum": doc.doc_num or str(doc.id)[:8],
                     "title": doc.title,
-                    "status": "deploy_failed" if doc.status == "deploy_failed" else "rejected",
+                    "status": doc.status if doc.status in ("deploy_failed", "draft") else "rejected",
                     "type": doc.type if doc.type else "작업 계획서",
                     "author": doc.author.name if doc.author else "DnDn Agent",
                     "date": _to_kst_str(doc.created_at),

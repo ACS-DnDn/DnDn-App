@@ -283,52 +283,45 @@ def _get_github_token_for_repo(repo_full: str, db: Session) -> str | None:
     return owner_user.github_access_token
 
 
-def _fetch_status_description(repo_full: str, sha: str, context: str, db: Session) -> str:
-    """GitHub API로 상세 에러 메시지를 조회. check_runs output > commit status description 순으로 시도."""
-    token = _get_github_token_for_repo(repo_full, db)
-    if not token:
-        return ""
-    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+def _enrich_tfc_description(raw_desc: str, state: str, context: str) -> str:
+    """Terraform Cloud status 이벤트의 짧은 description을 의미 있는 한국어 설명으로 변환."""
+    # context 예: "atlas/org-name/workspace-name" → workspace 이름 추출
+    ws_name = context.rsplit("/", 1)[-1] if "/" in context else context
 
-    # 1차: 같은 커밋의 check_runs에서 Terraform 관련 output 조회 (가장 상세)
-    try:
-        resp = _requests.get(
-            f"https://api.github.com/repos/{repo_full}/commits/{sha}/check-runs",
-            headers=headers, timeout=10,
-        )
-        if resp.status_code == 200:
-            for cr in resp.json().get("check_runs", []):
-                cr_name = (cr.get("name") or "").lower()
-                if "terraform" in cr_name or context.lower() in cr_name:
-                    output = cr.get("output", {})
-                    title = output.get("title", "")
-                    summary = output.get("summary", "")
-                    if summary:
-                        first_line = summary.split("\n")[0].strip()
-                        desc_parts = [p for p in [title, first_line] if p]
-                        desc = " — ".join(desc_parts)[:300]
-                        if len(desc) > 20:
-                            _logger.info("[check_runs API] found: name=%s desc=%s", cr.get("name"), desc[:80])
-                            return desc
-    except Exception as e:
-        _logger.warning("check_runs 조회 실패: %s", e)
+    # TFC description 패턴 매핑
+    desc_lower = raw_desc.lower().strip()
+    _TFC_DESC_MAP: dict[str, str] = {
+        "terraform plan has changes": f"Terraform Plan 완료 — 변경사항 감지됨 (workspace: {ws_name})",
+        "terraform plan has no changes": f"Terraform Plan 완료 — 변경사항 없음 (workspace: {ws_name})",
+        "terraform plan errored": f"Terraform Plan 실패 — 구문 오류 또는 Provider 에러 (workspace: {ws_name})",
+        "terraform plan failed": f"Terraform Plan 실패 — 정책 위반 또는 구성 오류 (workspace: {ws_name})",
+        "terraform apply finished": f"Terraform Apply 완료 — 인프라 배포 성공 (workspace: {ws_name})",
+        "terraform apply errored": f"Terraform Apply 실패 — 리소스 생성/수정 중 에러 (workspace: {ws_name})",
+        "terraform plan running": f"Terraform Plan 실행 중 (workspace: {ws_name})",
+        "terraform apply running": f"Terraform Apply 실행 중 (workspace: {ws_name})",
+    }
 
-    # 2차: Combined Status API (fallback)
-    try:
-        resp = _requests.get(
-            f"https://api.github.com/repos/{repo_full}/commits/{sha}/status",
-            headers=headers, timeout=10,
-        )
-        if resp.status_code == 200:
-            for s in resp.json().get("statuses", []):
-                if s.get("context") == context:
-                    desc = s.get("description", "")
-                    if len(desc) > 20:
-                        return desc[:300]
-    except Exception as e:
-        _logger.warning("status API 조회 실패: %s", e)
+    # 정확히 매칭
+    if desc_lower in _TFC_DESC_MAP:
+        return _TFC_DESC_MAP[desc_lower]
 
-    return ""
+    # 부분 매칭
+    for pattern, mapped in _TFC_DESC_MAP.items():
+        if pattern in desc_lower:
+            return mapped
+
+    # 매칭 안 되면 state 기반 기본 설명 생성
+    if not raw_desc or raw_desc.lower() in ("terraform", "terraform cloud"):
+        state_labels = {
+            "success": f"Terraform 검증 통과 (workspace: {ws_name})",
+            "failure": f"Terraform 검증 실패 (workspace: {ws_name})",
+            "error": f"Terraform 실행 오류 (workspace: {ws_name})",
+            "pending": f"Terraform 실행 대기 중 (workspace: {ws_name})",
+        }
+        return state_labels.get(state, f"Terraform: {state} (workspace: {ws_name})")
+
+    # 그 외: 원본 유지하되 workspace 정보 추가
+    return f"{raw_desc} (workspace: {ws_name})"
 
 
 def _append_deploy_log(
@@ -545,11 +538,9 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     st_desc = payload.get("description", "") or ""
                     st_url = payload.get("target_url", "")
                     st_ctx = context
-                    # Terraform Cloud 등 description이 빈약하면 상세 조회
-                    if len(st_desc) < 50 and sha:
-                        api_desc = _fetch_status_description(repo_full, sha, context, db)
-                        if api_desc and len(api_desc) > len(st_desc):
-                            st_desc = api_desc
+                    # Terraform Cloud description → 한국어 의미 변환
+                    if "terraform" in context.lower():
+                        st_desc = _enrich_tfc_description(st_desc, state, context)
                     if state in ("failure", "error"):
                         first_failure = doc.pr_status != "checks_failed"
                         if first_failure:
@@ -586,10 +577,8 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                     apply_desc = payload.get("description", "") or ""
                     apply_url = payload.get("target_url", "")
                     apply_ctx = context
-                    if len(apply_desc) < 50 and sha:
-                        api_desc = _fetch_status_description(repo_full, sha, context, db)
-                        if api_desc and len(api_desc) > len(apply_desc):
-                            apply_desc = api_desc
+                    if "terraform" in context.lower():
+                        apply_desc = _enrich_tfc_description(apply_desc, state, context)
                     new_pr_status = None
                     new_doc_status = None
                     if state == "success":
