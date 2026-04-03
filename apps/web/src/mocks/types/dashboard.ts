@@ -14,7 +14,7 @@ export interface Notice {
   date: string;
 }
 
-export type PendingDocStatus = 'waiting' | 'rejected';
+export type PendingDocStatus = 'waiting' | 'rejected' | 'deploy_failed' | 'draft';
 export type PendingDocType = '이벤트' | '계획서';
 
 export interface PendingDoc {
