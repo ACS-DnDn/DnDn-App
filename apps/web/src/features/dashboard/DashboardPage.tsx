@@ -150,10 +150,11 @@ export function DashboardPage() {
                     <span>처리 대기 중인 문서가 없습니다</span>
                   </div>
                 </td></tr>
-              ) : (data?.pendingDocs ?? []).map((d) => {
+              ) : (data?.pendingDocs ?? []).slice(0, 5).map((d) => {
                 const s = statusMap[d.status];
+                const dest = d.status === 'draft' ? `/plan?editDocId=${d.id}` : `/viewer/${d.id}`;
                 return (
-                  <tr key={d.docNum} onClick={() => navigate(d.status === 'draft' ? `/plan/${d.id}` : `/viewer/${d.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(d.status === 'draft' ? `/plan/${d.id}` : `/viewer/${d.id}`); }} tabIndex={0} style={{ cursor: 'pointer' }}>
+                  <tr key={d.docNum} onClick={() => navigate(dest)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(dest); }} tabIndex={0} style={{ cursor: 'pointer' }}>
                     <td className="td-num">{d.docNum}</td>
                     <td>
                       <div className="doc-title-row">
