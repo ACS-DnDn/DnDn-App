@@ -241,6 +241,41 @@ def _mark_unread(db: Session, doc: Document) -> None:
     db.query(DocumentRead).filter(DocumentRead.document_id == doc.id).delete()
 
 
+def _fetch_check_run_summary(repo_full: str, check_run_id: int, db: Session) -> str:
+    """GitHub API로 check_run output의 title + summary 첫 줄만 조회. 실패 시 빈 문자열."""
+    import requests as _req
+    parts = repo_full.split("/", 1)
+    if len(parts) != 2:
+        return ""
+    owner, repo_name = parts
+    ws = db.query(Workspace).filter(
+        Workspace.github_org == owner, Workspace.repo == repo_name
+    ).first()
+    if not ws:
+        return ""
+    owner_user = db.query(User).filter(User.id == ws.owner_id).first()
+    if not owner_user or not owner_user.github_access_token:
+        return ""
+    try:
+        resp = _req.get(
+            f"https://api.github.com/repos/{repo_full}/check-runs/{check_run_id}",
+            headers={"Authorization": f"token {owner_user.github_access_token}", "Accept": "application/vnd.github+json"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return ""
+        output = resp.json().get("output", {})
+        title = output.get("title", "")
+        summary = output.get("summary", "")
+        # summary 첫 줄만 추출 (핵심 에러 메시지)
+        first_line = summary.split("\n")[0].strip() if summary else ""
+        parts = [p for p in [title, first_line] if p]
+        return " — ".join(parts)[:300]
+    except Exception as e:
+        _logger.warning("check_run output 조회 실패: %s", e)
+        return ""
+
+
 def _append_deploy_log(
     db: Session,
     doc: Document,
@@ -386,7 +421,12 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 # 상세 로그 조합: title + summary + text (최대 5000자)
                 cr_parts = [p for p in [cr_title, cr_summary, cr_text] if p]
                 cr_desc = "\n".join(cr_parts)[:5000] or check_run.get("name", "")
-                cr_url = check_run.get("html_url")
+                # webhook output이 빈약하면 GitHub API로 요약 조회
+                if len(cr_desc) < 100 and check_run.get("id"):
+                    api_desc = _fetch_check_run_summary(repo_full, check_run["id"], db)
+                    if len(api_desc) > len(cr_desc):
+                        cr_desc = api_desc
+                cr_url = check_run.get("details_url") or check_run.get("html_url")
                 cr_ctx = check_run.get("name", "")
                 first_failure = doc.pr_status != "checks_failed"
                 if first_failure:
@@ -404,7 +444,7 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
                 cr_summary = cr_output.get("summary") or ""
                 cr_parts = [p for p in [cr_title, cr_summary] if p]
                 cr_desc = "\n".join(cr_parts)[:500] or check_run.get("name", "")
-                cr_url = check_run.get("html_url")
+                cr_url = check_run.get("details_url") or check_run.get("html_url")
                 cr_ctx = check_run.get("name", "")
                 _append_deploy_log(db, doc, "checks_passed", "success",
                                    description=cr_desc, url=cr_url, context=cr_ctx)
