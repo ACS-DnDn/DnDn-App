@@ -341,6 +341,27 @@ def _load_opa_policies(workspace_id: str) -> list[dict]:
         db.close()
 
 
+_OPA_TF_HINTS: dict[str, str] = {
+    "net-sg-open": "aws_security_group의 ingress cidr_blocks에 허용 CIDR만 사용. 0.0.0.0/0 금지",
+    "net-rds-public": "aws_db_instance에 publicly_accessible = false 명시",
+    "net-flow-log": "aws_vpc 생성 시 aws_flow_log 리소스도 함께 생성",
+    "iam-wildcard": "IAM policy에서 Action: \"*\" 또는 Resource: \"*\" + Allow 조합 사용 금지",
+    "iam-admin-attach": "AdministratorAccess 정책 직접 연결 금지",
+    "iam-boundary": "aws_iam_role에 permissions_boundary ARN 설정",
+    "stor-s3-public": "aws_s3_bucket에 acl=\"public-read\" 사용 금지, aws_s3_bucket_public_access_block 리소스 생성 (block_public_acls=true 등)",
+    "stor-s3-encrypt": "aws_s3_bucket 생성 시 aws_s3_bucket_server_side_encryption_configuration 리소스도 함께 생성",
+    "stor-rds-encrypt": "aws_db_instance에 storage_encrypted = true 명시",
+    "stor-ebs-encrypt": "aws_ebs_volume에 encrypted = true 명시",
+    "comp-ec2-public-ip": "aws_instance에 associate_public_ip_address = false 명시",
+    "comp-instance": "aws_instance의 instance_type을 허용 목록 내 값만 사용",
+    "comp-tag": "모든 리소스에 필수 태그 포함 (tags 블록에 명시)",
+    "log-cloudtrail": "인프라에 aws_cloudtrail 리소스 포함",
+    "cost-region": "aws provider의 region을 허용 목록 내 값만 사용",
+    "avail-multi-az": "RDS: multi_az=true, ElastiCache: automatic_failover_enabled=true, Aurora: availability_zones 2개 이상",
+    "avail-backup": "aws_db_instance에 backup_retention_period를 최소값 이상 설정",
+}
+
+
 def _format_opa_for_prompt(policies: list[dict]) -> str:
     """OPA 정책을 Bedrock 프롬프트에 삽입할 자연어 제약조건 텍스트로 변환한다."""
     if not policies:
@@ -358,6 +379,7 @@ def _format_opa_for_prompt(policies: list[dict]) -> str:
         for item in active_items:
             severity = item.get("severity", "warn").upper()
             label = item.get("label", "")
+            key = item.get("key", "")
             line = f"- [{severity}] {label}"
 
             params = item.get("params")
@@ -377,6 +399,10 @@ def _format_opa_for_prompt(policies: list[dict]) -> str:
             exceptions = item.get("exceptions", [])
             if exceptions:
                 line += f" — 예외: {', '.join(exceptions)}"
+
+            tf_hint = _OPA_TF_HINTS.get(key)
+            if tf_hint:
+                line += f"\n  → Terraform 구현: {tf_hint}"
 
             lines.append(line)
 
@@ -462,8 +488,8 @@ def _call_bedrock(workplan: dict, existing_tf: str, mcp_context: dict, opa_text:
     opa_rule = ""
     opa_section = ""
     if opa_text:
-        opa_rule = "\n5. 워크스페이스 인프라 정책(OPA)을 반드시 준수하세요. BLOCK 정책 위반 시 해당 리소스 설정을 정책에 맞게 수정하세요."
-        opa_section = f"\n## 워크스페이스 인프라 정책 (OPA)\n아래 정책을 반드시 준수하여 코드를 생성하세요. BLOCK은 필수 준수, WARN은 권고 사항입니다.\n{opa_text}\n"
+        opa_rule = "\n5. 워크스페이스 인프라 정책(OPA)을 반드시 준수하세요. [BLOCK] 정책은 위반 시 배포가 차단됩니다 — 각 정책의 'Terraform 구현' 지시를 정확히 따르세요."
+        opa_section = f"\n## 워크스페이스 인프라 정책 (OPA) — 코드 생성 시 반드시 준수\n[BLOCK]은 위반 시 배포 차단됩니다. 각 항목의 'Terraform 구현' 지시에 따라 해당 속성을 반드시 코드에 포함하세요.\n[WARN]은 권고 사항이지만 가능하면 준수하세요.\n{opa_text}\n"
 
     system = f"""
 당신은 AWS 인프라 테라폼 코드 전문가입니다.

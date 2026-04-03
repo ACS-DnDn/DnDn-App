@@ -959,17 +959,22 @@ async def terraform_fix(req: dict):
     opa_warns = req.get("opaWarns", [])
 
     issues_text = ""
+    # OPA 차단을 최상단에 배치 — 반드시 해결해야 하는 항목
+    if opa_blocks:
+        issues_text += "\n## ⚠️ OPA 정책 차단 (최우선 — 반드시 해결)\n"
+        for b in opa_blocks:
+            detail = f" — {b['detail']}" if b.get('detail') else ""
+            key = b.get('key', '')
+            from .terraform_generator import _OPA_TF_HINTS
+            hint = _OPA_TF_HINTS.get(key, '')
+            hint_part = f"\n  수정 방법: {hint}" if hint else ""
+            issues_text += f"- [차단] {b.get('label', '')}{detail}{hint_part}\n"
     if checkov_issues:
         issues_text += "\n## Checkov 보안 이슈\n"
         for issue in checkov_issues:
             name = issue.get('name', '')
             name_part = f" — {name}" if name else ""
             issues_text += f"- {issue.get('id', '')}{name_part}: {issue.get('resource', '')} ({issue.get('file', '')}:{issue.get('line', '')})\n"
-    if opa_blocks:
-        issues_text += "\n## OPA 정책 위반 (차단)\n"
-        for b in opa_blocks:
-            detail = f" — {b['detail']}" if b.get('detail') else ""
-            issues_text += f"- [차단] {b.get('label', '')}{detail}\n"
     if opa_warns:
         issues_text += "\n## OPA 정책 경고\n"
         for w in opa_warns:
@@ -988,15 +993,23 @@ async def terraform_fix(req: dict):
         "max_tokens": 8192,
         "system": (
             "당신은 Terraform 보안 전문가입니다. "
-            "아래 Terraform 코드에서 Checkov/OPA 보안 이슈를 **전부** 수정하세요. "
-            "각 이슈의 check_name이 요구하는 보안 속성을 정확히 추가하세요. "
-            "일반적인 수정 패턴: encryption 활성화, logging/monitoring 설정, versioning 활성화, "
-            "과도한 권한(0.0.0.0/0) 제한, metadata_options 설정, public access 차단 등. "
+            "아래 Terraform 코드의 보안 이슈를 수정하세요.\n\n"
+            "**우선순위**: OPA 정책 차단 > Checkov 이슈 > OPA 경고\n"
+            "OPA 차단 항목은 반드시 100% 해결해야 합니다. 각 차단 항목의 '수정 방법'을 정확히 따르세요.\n\n"
+            "수정 패턴:\n"
+            "- associate_public_ip_address = false (퍼블릭 IP 차단)\n"
+            "- encrypted = true, storage_encrypted = true (암호화)\n"
+            "- tags { Environment = \"...\", Name = \"...\" } (필수 태그)\n"
+            "- instance_type은 허용 목록 내 값만 사용\n"
+            "- metadata_options { http_tokens = \"required\" } (IMDSv2)\n"
+            "- monitoring = true (상세 모니터링)\n"
+            "- multi_az = true (고가용성)\n"
+            "- ingress cidr_blocks에 0.0.0.0/0 대신 사설 대역 사용\n\n"
             "기존 리소스 이름과 구조는 유지하고, 보안 속성만 추가/수정하세요. "
             "반드시 JSON만 출력하세요. 설명, 주석, 마크다운 코드펜스 없이 순수 JSON만 반환하세요. "
             '형식: {"files": {"파일명.tf": "수정된 전체 코드", ...}}'
         ),
-        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 **빠짐없이 전부** 수정한 전체 코드를 순수 JSON으로만 반환하세요. 수정하지 않은 이슈가 하나라도 있으면 안 됩니다. 설명 없이 JSON만 출력."}],
+        "messages": [{"role": "user", "content": f"## 현재 코드\n{files_text}\n{issues_text}\n위 이슈를 수정한 전체 코드를 순수 JSON으로 반환하세요. 특히 OPA 차단 항목은 반드시 전부 해결해야 합니다. 설명 없이 JSON만 출력."}],
     }
 
     logger.info("terraform fix 시작 — 파일 %d개, 이슈: checkov=%d, opa_block=%d, opa_warn=%d",
