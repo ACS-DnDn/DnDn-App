@@ -111,7 +111,7 @@ PYTHONPATH=. uvicorn apps.api.src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 - Health check: `GET http://localhost:8000/health`
-- 기본 prefix: `/api`
+- 대부분의 비즈니스 API는 `/api` prefix 사용(예외: `/health`, `/`, `/internal`)
 
 ### 3) Report
 
